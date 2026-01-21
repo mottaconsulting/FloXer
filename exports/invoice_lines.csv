@@ -1,0 +1,1 @@
+invoice_id,invoice_number,invoice_date,status,contact_id,contact_name,line_item_id,description,item_code,account_code,tax_type,quantity,unit_amount,line_amount,discount_rate,tax_amount,tracking_name_1,tracking_option_1,tracking_name_2,tracking_option_2
