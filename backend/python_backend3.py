@@ -7,6 +7,9 @@ import time
 import urllib.parse
 from datetime import datetime
 from dotenv import load_dotenv
+import pandas as pd
+from pathlib import Path
+
 
 # ----------------------------
 # Why this file exists
@@ -25,6 +28,8 @@ load_dotenv()
 # CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_MODE = os.getenv("DATA_MODE", "xero").lower()  # "xero" or "csv"
+EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", os.path.join(BASE_DIR, "exports")))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
@@ -172,6 +177,94 @@ def parse_xero_date(xero_date_str: str | None) -> datetime | None:
     except Exception:
         return None
 
+# ----------------------------
+# CSV mode helpers
+# ----------------------------
+def _read_exports_csv(filename: str) -> pd.DataFrame:
+    fp = EXPORTS_DIR / filename
+    if not fp.exists():
+        raise FileNotFoundError(f"CSV file not found: {fp}")
+
+    df = pd.read_csv(fp)
+
+    # clean column names
+    df.columns = [str(c).strip().replace("\ufeff", "") for c in df.columns]
+    return df
+
+
+def fetch_accounts_csv() -> list[dict]:
+    df = _read_exports_csv("Account.csv")
+    # return raw rows as dicts (frontend tables can use directly)
+    return df.to_dict(orient="records")
+
+
+def fetch_journals_csv_nested() -> list[dict]:
+    """
+    Builds Xero-like Journal objects:
+    [
+      {
+        "JournalID": "...",
+        "JournalDate": "...",
+        "JournalNumber": ...,
+        "Reference": "...",
+        "JournalLines": [
+            {"AccountType": "...", "AccountName": "...", "AccountCode": "...", "GrossAmount": ..., "NetAmount": ...}
+        ]
+      }
+    ]
+    """
+    journals_df = _read_exports_csv("Journals.csv")
+    lines_df = _read_exports_csv("Journal Lines.csv")
+
+    # Parse journal date if present
+    if "JOURNAL_DATE" in journals_df.columns:
+        journals_df["JOURNAL_DATE"] = pd.to_datetime(journals_df["JOURNAL_DATE"], errors="coerce")
+
+    # Group lines by JOURNAL_ID
+    lines_by_journal = {}
+    if "JOURNAL_ID" in lines_df.columns:
+        for jid, grp in lines_df.groupby("JOURNAL_ID"):
+            # Map CSV columns -> Xero-ish keys used by your dashboard code
+            mapped_lines = []
+            for _, row in grp.iterrows():
+                mapped_lines.append(
+                    {
+                        "AccountType": row.get("ACCOUNT_TYPE"),
+                        "AccountName": row.get("ACCOUNT_NAME"),
+                        "AccountCode": row.get("ACCOUNT_CODE"),
+                        "Description": row.get("DESCRIPTION"),
+                        "NetAmount": float(row.get("NET_AMOUNT") or 0),
+                        "GrossAmount": float(row.get("GROSS_AMOUNT") or 0),
+                        "TaxAmount": float(row.get("TAX_AMOUNT") or 0),
+                        "JournalID": row.get("JOURNAL_ID"),
+                    }
+                )
+            lines_by_journal[jid] = mapped_lines
+
+    # Build nested journals
+    nested = []
+    for _, j in journals_df.iterrows():
+        jid = j.get("JOURNAL_ID")
+        jdate = j.get("JOURNAL_DATE")
+        nested.append(
+            {
+                "JournalID": jid,
+                "JournalNumber": j.get("JOURNAL_NUMBER"),
+                "JournalDate": jdate.isoformat() if hasattr(jdate, "isoformat") and pd.notna(jdate) else (j.get("JOURNAL_DATE") or None),
+                "CreatedDateUTC": j.get("CREATED_DATE_UTC"),
+                "Reference": j.get("REFERENCE"),
+                "SourceID": j.get("SOURCE_ID"),
+                "SourceType": j.get("SOURCE_TYPE"),
+                "JournalLines": lines_by_journal.get(jid, []),
+            }
+        )
+
+    return nested
+
+
+def fetch_journal_lines_csv() -> list[dict]:
+    df = _read_exports_csv("Journal Lines.csv")
+    return df.to_dict(orient="records")
 
 # ----------------------------
 # OAuth
@@ -325,6 +418,8 @@ def health():
             "token_valid": token_is_valid(tokens),
             "token_expires_in": int(tokens.get("expires_at", 0)) - now,
             "note": "If token expired and no refresh_token, go to /auth to re-authorize",
+            "data_mode": DATA_MODE,
+            "exports_dir": str(EXPORTS_DIR),
         }
     )
 
@@ -357,6 +452,9 @@ def api_contacts():
 @app.route("/api/accounts")
 def api_accounts():
     try:
+        if DATA_MODE == "csv":
+            return jsonify({"Accounts": fetch_accounts_csv()})
+
         resp = requests.get(f"{XERO_API_BASE}/Accounts", headers=xero_headers())
         if resp.status_code != 200:
             return jsonify({"error": f"Xero API error: {resp.status_code}", "details": resp.text}), resp.status_code
@@ -364,10 +462,12 @@ def api_accounts():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route("/api/journals")
 def api_journals():
     try:
+        if DATA_MODE == "csv":
+            return jsonify({"Journals": fetch_journals_csv_nested()})
+
         resp = requests.get(
             f"{XERO_API_BASE}/Journals",
             headers=xero_headers(),
@@ -379,17 +479,34 @@ def api_journals():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/journal-lines")
+def api_journal_lines():
+    try:
+        if DATA_MODE == "csv":
+            return jsonify({"JournalLines": fetch_journal_lines_csv()})
+        return jsonify({"error": "JournalLines not implemented in Xero mode in this endpoint"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ----------------------------
 # Dashboard endpoints (the main recommendation)
 # ----------------------------
 def fetch_invoices() -> list[dict]:
+    if DATA_MODE == "csv":
+        # You don't have invoices CSV yet, so return empty.
+        # (Dashboard endpoints that rely on invoices will show empty charts.)
+        return []
+
     resp = requests.get(f"{XERO_API_BASE}/Invoices", headers=xero_headers())
     resp.raise_for_status()
     return resp.json().get("Invoices", [])
 
 
+
 def fetch_journals() -> list[dict]:
+    if DATA_MODE == "csv":
+        return fetch_journals_csv_nested()
+
     resp = requests.get(
         f"{XERO_API_BASE}/Journals",
         headers=xero_headers(),
@@ -397,7 +514,6 @@ def fetch_journals() -> list[dict]:
     )
     resp.raise_for_status()
     return resp.json().get("Journals", [])
-
 
 @app.route("/api/dashboard/summary")
 def dashboard_summary():
