@@ -1,72 +1,171 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Cashflow Health Dashboard (Xero)</title>
+  <title>Cashflow Health for Small Business</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 1200px;
-      margin: 20px auto;
-      padding: 20px;
+    @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
+
+    :root {
+      --bg: #f4f1ea;
+      --bg-2: #f9f6f1;
+      --ink: #1f2937;
+      --ink-2: #4b5563;
+      --accent: #0f766e;
+      --accent-2: #e11d48;
+      --accent-3: #f59e0b;
+      --panel: #ffffff;
+      --shadow: 0 16px 45px rgba(15, 23, 42, 0.12);
+      --shadow-soft: 0 6px 18px rgba(15, 23, 42, 0.08);
+      --radius: 18px;
+      --radius-sm: 12px;
+      --grid-gap: 14px;
     }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: "Source Sans 3", sans-serif;
+      color: var(--ink);
+      max-width: 1200px;
+      margin: 28px auto;
+      padding: 24px;
+      background:
+        radial-gradient(1200px 400px at 15% -10%, #e7f5f2 0%, transparent 60%),
+        radial-gradient(1000px 380px at 90% 0%, #fff1e6 0%, transparent 65%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    }
+
+    h1, h2, h3 {
+      font-family: "Space Grotesk", sans-serif;
+      letter-spacing: -0.02em;
+    }
+
     .header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 18px;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 20px;
+      padding: 14px 16px;
+      background: var(--panel);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-soft);
+      flex-wrap: wrap;
+      animation: rise 400ms ease-out both;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 26px;
+    }
+
+    .header .actions {
+      display: flex;
+      gap: 10px;
       flex-wrap: wrap;
     }
+
     button {
-      background: #0078d4;
+      background: #0f172a;
       color: white;
       border: none;
       padding: 10px 14px;
-      border-radius: 6px;
+      border-radius: 999px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
     }
-    button:hover { background: #106ebe; }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
 
-    .loading { text-align: center; padding: 20px; color: #666; }
-    .error { color: #c62828; padding: 10px; background: #ffebee; border-radius: 6px; display:none; }
+    .btn-accent { background: var(--accent); }
+    .btn-muted { background: #374151; }
+    .btn-warm { background: #b45309; }
 
-    .muted { color: #666; font-size: 12px; }
-    .card { background:#f8f9fa; padding:14px; border-radius:10px; border-left:4px solid #ddd; }
-    .big { font-size:26px; font-weight:700; margin-top:6px; }
+    .loading { text-align: center; padding: 20px; color: var(--ink-2); }
+    .error {
+      color: #7f1d1d;
+      padding: 12px 14px;
+      background: #fee2e2;
+      border-radius: var(--radius-sm);
+      display: none;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .muted { color: var(--ink-2); font-size: 12px; }
+    .card {
+      background: var(--panel);
+      padding: 16px;
+      border-radius: var(--radius-sm);
+      border-left: 5px solid #ddd;
+      box-shadow: var(--shadow-soft);
+    }
+    .big { font-size: 28px; font-weight: 700; margin-top: 6px; }
 
     .table-container { overflow-x: auto; margin-top: 12px; }
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      background: var(--panel);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      box-shadow: var(--shadow-soft);
     }
     th, td {
-      padding: 10px;
+      padding: 12px 12px;
       text-align: left;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid #e5e7eb;
       vertical-align: top;
     }
-    th { background-color: #f8f9fa; font-weight: 600; color: #333; }
+    th { background-color: #f1f5f9; font-weight: 600; color: #0f172a; }
 
     .panel {
-      background: white;
-      padding: 16px;
-      border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      background: var(--panel);
+      padding: 18px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      animation: fadeUp 420ms ease both;
+    }
+
+    #dashboardContainer, #transactionsContainer, #liabilitiesContainer {
+      animation: fadeUp 420ms ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 900px) {
+      body { margin: 10px; padding: 16px; }
+      .header { flex-direction: column; align-items: flex-start; }
+      .header .actions { width: 100%; }
+      button { width: 100%; }
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1 style="margin:0;">Cashflow Health</h1>
-    <button onclick="showDashboard()">Dashboard</button>
-    <button onclick="showTransactions()">Transactions</button>
-    <button onclick="showLiabilities()">Liabilities</button>
-    <button onclick="authorize()" style="background:#10b981">Authorize</button>
-    <button onclick="checkHealth()" style="background:#6b7280">Status</button>
-    <button onclick="showRawJson()" id="rawJsonBtn" style="background:#6b7280">Show Raw JSON</button>
+    <div>
+      <h1>Cashflow in One Glance</h1>
+      <div class="muted">For small business owners: instant answers to profit, bills, and risks.</div>
+    </div>
+    <div class="actions">
+      <button onclick="showDashboard()">Overview</button>
+      <button onclick="showTransactions()">All transactions</button>
+      <button onclick="showLiabilities()">Upcoming risks</button>
+      <button onclick="authorize()" class="btn-accent">Authorize</button>
+      <button onclick="checkHealth()" class="btn-muted">Status</button>
+      <button onclick="showRawJson()" id="rawJsonBtn" class="btn-warm">Show Raw JSON</button>
+    </div>
   </div>
 
   <div id="loading" class="loading" style="display:none;">Loading…</div>
@@ -75,7 +174,7 @@
   <!-- DASHBOARD -->
   <div id="dashboardContainer" style="display:none;">
     <div class="muted" style="margin-bottom:10px;">
-      Journal-only mode (P&L + cashflow proxy from BANK journal lines)
+      Instant snapshot from your journals: profit, cash runway, and next risk.
        <div id="healthStrip" class="panel" style="margin-bottom:14px; padding:12px; display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
         <div id="healthBadge" style="font-weight:700; padding:6px 10px; border-radius:999px; background:#e5e7eb;">
             —
@@ -92,34 +191,56 @@
     <!-- KPI tiles -->
     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px;">
       <div class="card" style="border-left-color:#10b981;">
-        <div class="muted">Cash balance (bank proxy)</div>
+        <div class="muted">Cash in bank (estimated)</div>
         <div id="kpiCash" class="big">$0.00</div>
       </div>
       <div class="card" style="border-left-color:#10b981;">
-        <div class="muted">Monthly revenue</div>
+        <div class="muted">Sales this month</div>
         <div id="kpiRevenue" class="big">$0.00</div>
       </div>
       <div class="card" style="border-left-color:#ef4444;">
-        <div class="muted">Monthly expenses</div>
+        <div class="muted">Spending this month</div>
         <div id="kpiExpenses" class="big">$0.00</div>
       </div>
       <div class="card" style="border-left-color:#6366f1;">
-        <div class="muted">Net profit (month)</div>
+        <div class="muted">Profit this month</div>
         <div id="kpiProfit" class="big">$0.00</div>
       </div>
       <div class="card">
-        <div class="muted">Accounts receivable</div>
+        <div class="muted">Money owed to you</div>
         <div id="kpiAR" class="big">—</div>
-        <div class="muted">Enable invoices/contacts later</div>
+        <div class="muted">Connect invoices to show</div>
       </div>
       <div class="card">
-        <div class="muted">Accounts payable</div>
+        <div class="muted">Bills you owe</div>
         <div id="kpiAP" class="big">—</div>
-        <div class="muted">Enable bills/contacts later</div>
+        <div class="muted">Connect bills to show</div>
       </div>
     </div>
 
-    <h2 style="margin:0 0 10px 0;">Profit & Loss</h2>
+    <h2 style="margin:0 0 10px 0;">Am I making money?</h2>
+    <div class="muted" style="margin-bottom:10px;">
+      Profit + trend from journals (P&amp;L accrual): Revenue − COGS − Opex.
+      <span>Run-rate = last 30 days annualized.</span>
+    </div>
+    <div class="panel" style="margin-bottom:12px; display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+      <div>
+        <div class="muted">Profit MTD</div>
+        <div class="big" id="profitMtd">$0.00</div>
+      </div>
+      <div>
+        <div class="muted">Profit last 30 days</div>
+        <div class="big" id="profit30">$0.00</div>
+      </div>
+      <div>
+        <div class="muted">Trend vs previous period</div>
+        <div class="big" id="profitTrend">—</div>
+      </div>
+      <div style="min-width:160px;">
+        <div class="muted">Sparkline</div>
+        <div id="profitSparkline" class="muted">Coming next</div>
+      </div>
+    </div>
     <div style="display:flex; gap: 16px; flex-wrap:wrap; margin-bottom: 18px;">
       <div class="panel" style="flex:1; min-width:320px; height:320px;">
         <canvas id="plTrendChart"></canvas>
@@ -129,13 +250,13 @@
       </div>
     </div>
 
-    <h2 style="margin:0 0 10px 0;">Cash Flow</h2>
+    <h2 style="margin:0 0 10px 0;">Can I pay my bills?</h2>
     <div style="display:flex; gap: 16px; flex-wrap:wrap;">
       <div class="panel" style="flex:1; min-width:320px; height:320px;">
         <canvas id="cashflowChart"></canvas>
       </div>
       <div class="panel" style="flex:1; min-width:320px;">
-        <h3 style="margin-top:0;">Biggest cash outflows (bank)</h3>
+        <h3 style="margin-top:0;">Biggest cash outflows</h3>
         <div id="bigOutflows" class="muted">—</div>
       </div>
     </div>
@@ -143,11 +264,11 @@
 
   <!-- TRANSACTIONS -->
   <div id="transactionsContainer" style="display:none;">
-    <h2 style="margin:0 0 10px 0;">Transactions (Journal Lines)</h2>
+    <h2 style="margin:0 0 10px 0;">All transactions</h2>
 
     <div style="display:flex; gap: 10px; align-items:end; flex-wrap:wrap; margin-bottom:10px;">
       <div>
-        <div class="muted">Account contains</div>
+        <div class="muted">Filter by account</div>
         <input id="filterAccount" placeholder="e.g. rent, bank" style="padding:8px; width:220px;">
       </div>
       <div>
@@ -171,27 +292,27 @@
   </div>
     <!-- LIABILITIES -->
      <div id="liabilitiesContainer" style="display:none;">
-  <h2 style="margin:0 0 10px 0;">Liabilities</h2>
+  <h2 style="margin:0 0 10px 0;">What should I worry about next?</h2>
   <div class="muted" style="margin-bottom:10px;">
-    Journal-only mode: due dates are estimated from rules + last activity date.
+    Estimated due dates based on recent activity (best-effort until bills are connected).
   </div>
 
   <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px;">
     <div class="card" style="border-left-color:#ef4444;">
-      <div class="muted">Total current liabilities (proxy)</div>
+      <div class="muted">Total liabilities (estimated)</div>
       <div id="kpiCurLiab" class="big">$0.00</div>
     </div>
     <div class="card" style="border-left-color:#f59e0b;">
-      <div class="muted">Tax liabilities due soon (proxy)</div>
+      <div class="muted">Taxes due soon (estimated)</div>
       <div id="kpiTaxLiab" class="big">$0.00</div>
     </div>
     <div class="card" style="border-left-color:#6b7280;">
-      <div class="muted">Non-due / internal (proxy)</div>
+      <div class="muted">Other liabilities (estimated)</div>
       <div id="kpiOtherLiab" class="big">$0.00</div>
     </div>
   </div>
 
-  <h3 style="margin:0 0 8px 0;">Estimated due dates (tax)</h3>
+  <h3 style="margin:0 0 8px 0;">Estimated due dates</h3>
   <div class="table-container">
     <table>
       <thead id="liabHeader"></thead>
@@ -199,7 +320,7 @@
     </table>
   </div>
 
-  <h3 style="margin:18px 0 8px 0;">Other liabilities (no due date from journals)</h3>
+  <h3 style="margin:18px 0 8px 0;">Other liabilities (no due date yet)</h3>
   <div class="table-container">
     <table>
       <thead id="liabOtherHeader"></thead>

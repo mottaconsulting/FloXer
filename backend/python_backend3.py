@@ -9,6 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import pandas as pd
 from pathlib import Path
+import math
 
 
 # ----------------------------
@@ -195,6 +196,30 @@ def parse_xero_date(xero_date_str: str | None) -> datetime | None:
 # ----------------------------
 # CSV mode helpers
 # ----------------------------
+def _clean_nan_values(obj):
+    """Replace NaN/NaT/Infinity with None so JSON is valid for browsers."""
+    if isinstance(obj, dict):
+        return {k: _clean_nan_values(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean_nan_values(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [_clean_nan_values(v) for v in obj]
+
+    if obj is None:
+        return None
+
+    # Handle pandas/numpy NaN/NaT and Python floats
+    try:
+        if pd.isna(obj):
+            return None
+    except Exception:
+        pass
+
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+
+    return obj
+
 def _read_exports_csv(filename: str) -> pd.DataFrame:
     fp = EXPORTS_DIR / filename
     if not fp.exists():
@@ -204,15 +229,24 @@ def _read_exports_csv(filename: str) -> pd.DataFrame:
         fp = matches[0]        
     df = pd.read_csv(fp)
 
-    # clean column names
-    df.columns = [str(c).strip().replace("\ufeff", "") for c in df.columns]
+    # clean + normalize column names so CSVs from different sources still work
+    def _normalize_col(name: str) -> str:
+        s = str(name).strip().replace("\ufeff", "")
+        s = s.replace(" ", "_").replace("-", "_")
+        # keep only letters/numbers/underscore
+        s = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in s)
+        while "__" in s:
+            s = s.replace("__", "_")
+        return s.upper()
+
+    df.columns = [_normalize_col(c) for c in df.columns]
     return df
 
 
 def fetch_accounts_csv() -> list[dict]:
     df = _read_exports_csv("Account.csv")
     # return raw rows as dicts (frontend tables can use directly)
-    return df.to_dict(orient="records")
+    return _clean_nan_values(df.to_dict(orient="records"))
 
 
 
@@ -272,12 +306,36 @@ def fetch_journals_csv_nested() -> list[dict]:
             "JournalLines": lines_by_journal.get(jid, []),
         })
 
-    return journals
+    return _clean_nan_values(journals)
 
 
 def fetch_journal_lines_csv() -> list[dict]:
     df = _read_exports_csv("Journal Lines.csv")
-    return df.to_dict(orient="records")
+    return _clean_nan_values(df.to_dict(orient="records"))
+
+
+@app.route("/api/debug/csv")
+def debug_csv():
+    """Quick sanity check for CSV inputs."""
+    try:
+        accounts_df = _read_exports_csv("Account.csv")
+        journals_df = _read_exports_csv("Journals.csv")
+        lines_df = _read_exports_csv("Journal Lines.csv")
+
+        return jsonify(
+            {
+                "exports_dir": str(EXPORTS_DIR),
+                "account_rows": int(len(accounts_df)),
+                "journal_rows": int(len(journals_df)),
+                "journal_line_rows": int(len(lines_df)),
+                "journal_columns": list(journals_df.columns),
+                "journal_line_columns": list(lines_df.columns),
+                "sample_journal_ids": list(journals_df["JOURNAL_ID"].head(5).astype(str)),
+                "sample_line_journal_ids": list(lines_df["JOURNAL_ID"].head(5).astype(str)),
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ----------------------------
 # OAuth
