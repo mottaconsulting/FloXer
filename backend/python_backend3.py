@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 import pandas as pd
 from pathlib import Path
 import math
+import argparse
+import numpy as np
 
 
 # ----------------------------
@@ -30,6 +32,7 @@ load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", os.path.join(BASE_DIR, "exports")))
+BUDGET_FILE = os.getenv("BUDGET_FILE", str(EXPORTS_DIR / "budget.csv.xlsx"))
 
 def resolve_data_mode() -> str:
     """Pick csv when available if DATA_MODE not explicitly set."""
@@ -220,6 +223,14 @@ def _clean_nan_values(obj):
 
     return obj
 
+def _normalize_col(name: str) -> str:
+    s = str(name).strip().replace("\ufeff", "")
+    s = s.replace(" ", "_").replace("-", "_")
+    s = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in s)
+    while "__" in s:
+        s = s.replace("__", "_")
+    return s.upper()
+
 def _read_exports_csv(filename: str) -> pd.DataFrame:
     fp = EXPORTS_DIR / filename
     if not fp.exists():
@@ -229,17 +240,176 @@ def _read_exports_csv(filename: str) -> pd.DataFrame:
         fp = matches[0]        
     df = pd.read_csv(fp)
 
-    # clean + normalize column names so CSVs from different sources still work
-    def _normalize_col(name: str) -> str:
-        s = str(name).strip().replace("\ufeff", "")
-        s = s.replace(" ", "_").replace("-", "_")
-        # keep only letters/numbers/underscore
-        s = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in s)
-        while "__" in s:
-            s = s.replace("__", "_")
-        return s.upper()
-
     df.columns = [_normalize_col(c) for c in df.columns]
+    return df
+
+def _read_budget_excel(filepath: str) -> pd.DataFrame:
+    fp = Path(filepath)
+    if not fp.exists():
+        raise FileNotFoundError(f"Budget file not found: {fp}")
+    df = pd.read_excel(fp, sheet_name=0)
+    df.columns = [_normalize_col(c) for c in df.columns]
+    return df
+
+def _pick_col(normalized_cols: dict, candidates: list[str]) -> str | None:
+    for c in candidates:
+        if c in normalized_cols:
+            return normalized_cols[c]
+    return None
+
+def _normalize_schema(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize input to canonical schema."""
+    normalized_cols = {_normalize_col(c): c for c in df.columns}
+
+    col_account_code = _pick_col(
+        normalized_cols,
+        ["ACCOUNT_CODE", "ACCT_CODE", "CODE"],
+    )
+    col_account_type = _pick_col(
+        normalized_cols,
+        ["ACCOUNT_TYPE", "ACCT_TYPE", "TYPE", "ACCOUNTCLASS", "ACCOUNT_CLASS", "DATA_CATEGORY"],
+    )
+    col_account_name = _pick_col(
+        normalized_cols,
+        ["ACCOUNT_NAME", "ACCT_NAME", "NAME", "ACCOUNT"],
+    )
+    col_data_category = _pick_col(
+        normalized_cols,
+        ["DATA_CATEGORY", "CATEGORY", "CATEGORY_NAME", "DATA_CAT", "ACCOUNT_CATEGORY"],
+    )
+    col_journal_date = _pick_col(
+        normalized_cols,
+        ["JOURNAL_DATE", "DATE", "TRANSACTION_DATE", "POSTED_DATE"],
+    )
+    col_net_amount = _pick_col(
+        normalized_cols,
+        ["NET_AMOUNT", "AMOUNT", "VALUE", "NET", "AMT"],
+    )
+
+    missing = [k for k, v in {
+        "ACCOUNT_NAME": col_account_name,
+        "JOURNAL_DATE": col_journal_date,
+        "NET_AMOUNT": col_net_amount,
+    }.items() if v is None]
+    if missing:
+        raise ValueError(f"Missing required columns: {', '.join(missing)}")
+
+    raw_dates = df[col_journal_date]
+    try:
+        parsed_dates = pd.to_datetime(raw_dates, errors="coerce", dayfirst=True, format="mixed")
+        if parsed_dates.isna().any():
+            alt = pd.to_datetime(raw_dates, errors="coerce", dayfirst=False, format="mixed")
+            parsed_dates = parsed_dates.fillna(alt)
+    except Exception:
+        parsed_dates = pd.to_datetime(raw_dates, errors="coerce", dayfirst=True)
+        if parsed_dates.isna().any():
+            alt = pd.to_datetime(raw_dates, errors="coerce", dayfirst=False)
+            parsed_dates = parsed_dates.fillna(alt)
+
+    out = pd.DataFrame(
+        {
+            "ACCOUNT_TYPE": df[col_account_type].astype(str).str.strip().str.upper() if col_account_type else "",
+            "ACCOUNT_NAME": df[col_account_name].astype(str).str.strip(),
+            "ACCOUNT_CODE": df[col_account_code].astype(str).str.strip() if col_account_code else "",
+            "DATA_CATEGORY": df[col_data_category].astype(str).str.strip() if col_data_category else "",
+            "JOURNAL_DATE": parsed_dates,
+            "NET_AMOUNT": pd.to_numeric(df[col_net_amount], errors="coerce"),
+        }
+    )
+
+    if col_account_type is None:
+        if col_data_category:
+            out["ACCOUNT_TYPE"] = out["DATA_CATEGORY"].astype(str).str.strip().str.upper()
+        else:
+            out["ACCOUNT_TYPE"] = ""
+
+    out = out.dropna(subset=["JOURNAL_DATE"])
+    return out
+
+def _enforce_sign_convention(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure REVENUE is negative and EXPENSE is positive."""
+    df = df.copy()
+    if "ACCOUNT_TYPE" not in df.columns:
+        return df
+    is_revenue = df["ACCOUNT_TYPE"] == "REVENUE"
+    is_expense = df["ACCOUNT_TYPE"] == "EXPENSE"
+    if is_revenue.any():
+        rev = pd.to_numeric(df.loc[is_revenue, "NET_AMOUNT"], errors="coerce")
+        if (rev >= 0).all():
+            df.loc[is_revenue, "NET_AMOUNT"] = -rev.abs()
+    if is_expense.any():
+        exp = pd.to_numeric(df.loc[is_expense, "NET_AMOUNT"], errors="coerce")
+        if (exp <= 0).all():
+            df.loc[is_expense, "NET_AMOUNT"] = exp.abs()
+    return df
+
+def _load_actuals_df() -> pd.DataFrame:
+    journals_df = _read_exports_csv("journals.csv")
+    lines_df = _read_exports_csv("Journal Lines.csv")
+
+    if "JOURNAL_ID" not in journals_df.columns or "JOURNAL_ID" not in lines_df.columns:
+        raise ValueError("JOURNAL_ID missing from journals or journal lines")
+    if "JOURNAL_DATE" not in journals_df.columns:
+        raise ValueError("JOURNAL_DATE missing from journals.csv")
+
+    merged = lines_df.merge(
+        journals_df[["JOURNAL_ID", "JOURNAL_DATE"]],
+        on="JOURNAL_ID",
+        how="left",
+    )
+
+    base = pd.DataFrame(
+        {
+            "ACCOUNT_TYPE": merged.get("ACCOUNT_TYPE"),
+            "ACCOUNT_NAME": merged.get("ACCOUNT_NAME"),
+            "ACCOUNT_CODE": merged.get("ACCOUNT_CODE") if "ACCOUNT_CODE" in merged.columns else "",
+            "DATA_CATEGORY": merged.get("DATA_CATEGORY") if "DATA_CATEGORY" in merged.columns else "",
+            "JOURNAL_DATE": merged.get("JOURNAL_DATE"),
+            "NET_AMOUNT": merged.get("NET_AMOUNT"),
+        }
+    )
+    base = _normalize_schema(base)
+    base = _enforce_sign_convention(base)
+    return base
+
+def _load_budget_df() -> pd.DataFrame:
+    budget_raw = _read_budget_excel(BUDGET_FILE)
+    budget = _normalize_schema(budget_raw)
+    if "ACCOUNT_TYPE" in budget.columns and "DATA_CATEGORY" in budget.columns:
+        missing_types = budget["ACCOUNT_TYPE"].isna() | (budget["ACCOUNT_TYPE"].astype(str).str.strip() == "")
+        if missing_types.any():
+            budget.loc[missing_types, "ACCOUNT_TYPE"] = budget.loc[missing_types, "DATA_CATEGORY"]
+    budget = _enforce_sign_convention(budget)
+    return budget
+
+
+def _load_liability_lines_df() -> pd.DataFrame:
+    journals_df = _read_exports_csv("journals.csv")
+    lines_df = _read_exports_csv("Journal Lines.csv")
+
+    if "JOURNAL_ID" not in journals_df.columns or "JOURNAL_ID" not in lines_df.columns:
+        raise ValueError("JOURNAL_ID missing from journals or journal lines")
+    if "JOURNAL_DATE" not in journals_df.columns:
+        raise ValueError("JOURNAL_DATE missing from journals.csv")
+
+    merged = lines_df.merge(
+        journals_df[["JOURNAL_ID", "JOURNAL_DATE"]],
+        on="JOURNAL_ID",
+        how="left",
+    )
+
+    df = pd.DataFrame(
+        {
+            "ACCOUNT_TYPE": merged.get("ACCOUNT_TYPE"),
+            "ACCOUNT_NAME": merged.get("ACCOUNT_NAME"),
+            "ACCOUNT_CODE": merged.get("ACCOUNT_CODE") if "ACCOUNT_CODE" in merged.columns else "",
+            "JOURNAL_DATE": merged.get("JOURNAL_DATE"),
+            "NET_AMOUNT": merged.get("NET_AMOUNT"),
+        }
+    )
+    df = _normalize_schema(df)
+    df["ACCOUNT_CODE"] = df["ACCOUNT_CODE"].astype(str).str.strip()
+    df = df[df["ACCOUNT_TYPE"] == "CURRLIAB"]
     return df
 
 
@@ -312,6 +482,534 @@ def fetch_journals_csv_nested() -> list[dict]:
 def fetch_journal_lines_csv() -> list[dict]:
     df = _read_exports_csv("Journal Lines.csv")
     return _clean_nan_values(df.to_dict(orient="records"))
+
+
+# ----------------------------
+# Forecast helpers
+# ----------------------------
+def _fy_bounds(today: datetime, fy_start_month: int) -> tuple[datetime, datetime]:
+    if fy_start_month < 1 or fy_start_month > 12:
+        raise ValueError("fy_start_month must be between 1 and 12")
+    start_year = today.year - 1 if today.month < fy_start_month else today.year
+    fy_start = datetime(start_year, fy_start_month, 1)
+    fy_end = (pd.Timestamp(fy_start) + pd.DateOffset(months=12) - pd.Timedelta(days=1)).to_pydatetime()
+    return fy_start, fy_end
+
+
+def _month_range(fy_start: datetime, fy_end: datetime) -> list[datetime]:
+    return [d.to_pydatetime() for d in pd.date_range(fy_start, fy_end, freq="MS")]
+
+
+def _fy_quarter_bounds(date: datetime, fy_start_month: int) -> tuple[datetime, datetime]:
+    if fy_start_month < 1 or fy_start_month > 12:
+        raise ValueError("fy_start_month must be between 1 and 12")
+    fy_year = date.year if date.month >= fy_start_month else date.year - 1
+    months_since_fy = (date.month - fy_start_month) % 12
+    quarter_index = months_since_fy // 3
+    start_month = ((fy_start_month - 1 + quarter_index * 3) % 12) + 1
+    start_year = fy_year if start_month >= fy_start_month else fy_year + 1
+    q_start = datetime(start_year, start_month, 1)
+    q_end = (pd.Timestamp(q_start) + pd.DateOffset(months=3) - pd.Timedelta(days=1)).to_pydatetime()
+    return q_start, q_end
+
+
+def _period_bounds(date: datetime, period: str, fy_start_month: int) -> tuple[datetime, datetime]:
+    if period == "month":
+        start = datetime(date.year, date.month, 1)
+        end = (pd.Timestamp(start) + pd.DateOffset(months=1) - pd.Timedelta(days=1)).to_pydatetime()
+        return start, end
+    if period == "quarter":
+        return _fy_quarter_bounds(date, fy_start_month)
+    raise ValueError("period must be 'month' or 'quarter'")
+
+
+def _next_business_day_if_weekend(d: datetime) -> datetime:
+    if d.weekday() == 5:
+        return d + pd.Timedelta(days=2)
+    if d.weekday() == 6:
+        return d + pd.Timedelta(days=1)
+    return d
+
+
+def _liability_type(account_code: str, account_name: str) -> str:
+    code = str(account_code or "").strip()
+    name = str(account_name or "").lower()
+    if code.startswith("820") or "gst" in name or "bas" in name:
+        return "GST"
+    if code.startswith("825") or "payg" in name or "withholding" in name:
+        return "PAYG"
+    if code.startswith("826") or "super" in name:
+        return "SUPER"
+    if code.startswith("804") or "wages" in name or "payroll" in name:
+        return "WAGES"
+    return "OTHER"
+
+
+def _expected_due_date(
+    liability_type: str,
+    period_end: datetime,
+    frequency_map: dict,
+) -> datetime | None:
+    if liability_type == "GST":
+        freq = frequency_map.get("GST", "monthly")
+        if freq == "monthly":
+            next_month = pd.Timestamp(period_end) + pd.DateOffset(months=1)
+            due = datetime(next_month.year, next_month.month, 21)
+        else:
+            due = period_end + pd.Timedelta(days=28)
+        return _next_business_day_if_weekend(due)
+
+    if liability_type in {"SUPER", "PAYG"}:
+        due = period_end + pd.Timedelta(days=28)
+        return _next_business_day_if_weekend(due)
+
+    return None
+
+
+def complete_budget_to_fy(
+    budget_df: pd.DataFrame, fy_start: datetime, fy_end: datetime
+) -> tuple[pd.DataFrame, int]:
+    """Fill missing months using mean of latest 3 available months per (ACCOUNT_TYPE, ACCOUNT_NAME)."""
+    if "ACCOUNT_TYPE" not in budget_df.columns:
+        budget_df = budget_df.copy()
+        budget_df["ACCOUNT_TYPE"] = ""
+    if "ACCOUNT_NAME" not in budget_df.columns:
+        budget_df = budget_df.copy()
+        budget_df["ACCOUNT_NAME"] = ""
+    months = _month_range(fy_start, fy_end)
+    budget_df = budget_df.copy()
+    budget_df["MONTH"] = budget_df["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
+
+    rows = []
+    filled_count = 0
+
+    for (acct_type, acct_name), grp in budget_df.groupby(["ACCOUNT_TYPE", "ACCOUNT_NAME"]):
+        grp_monthly = grp.groupby("MONTH")["NET_AMOUNT"].sum().sort_index()
+        latest_vals = grp_monthly.tail(3).values
+        fill_value = float(np.mean(latest_vals)) if len(latest_vals) else 0.0
+
+        for m in months:
+            if m in grp_monthly.index:
+                val = float(grp_monthly.loc[m])
+            else:
+                val = float(fill_value)
+                filled_count += 1
+
+            rows.append(
+                {
+                    "ACCOUNT_TYPE": acct_type,
+                    "ACCOUNT_NAME": acct_name,
+                    "DATA_CATEGORY": "",
+                    "JOURNAL_DATE": m,
+                    "NET_AMOUNT": val,
+                }
+            )
+
+    completed = pd.DataFrame(rows)
+    completed = _enforce_sign_convention(completed)
+    return completed, filled_count
+
+
+def _calc_revenue_expense(df: pd.DataFrame) -> tuple[float, float]:
+    if "ACCOUNT_TYPE" not in df.columns or "NET_AMOUNT" not in df.columns:
+        return 0.0, 0.0
+    revenue_value = -df.loc[df["ACCOUNT_TYPE"] == "REVENUE", "NET_AMOUNT"].sum()
+    expense_value = df.loc[df["ACCOUNT_TYPE"] == "EXPENSE", "NET_AMOUNT"].sum()
+    return float(revenue_value), float(expense_value)
+
+
+def _monthly_series(df: pd.DataFrame, months: list[datetime], account_type: str) -> list[float]:
+    if "ACCOUNT_TYPE" not in df.columns or "NET_AMOUNT" not in df.columns:
+        return [0.0 for _ in months]
+    df = df[df["ACCOUNT_TYPE"] == account_type].copy()
+    df["MONTH"] = df["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
+    monthly = df.groupby("MONTH")["NET_AMOUNT"].sum()
+    series = []
+    for m in months:
+        val = float(monthly.get(pd.Timestamp(m), 0.0))
+        if account_type == "REVENUE":
+            val = -val
+        series.append(val)
+    return series
+
+
+def _build_sales_series(
+    actual_df: pd.DataFrame,
+    budget_df: pd.DataFrame,
+    fy_start: datetime,
+    fy_end: datetime,
+    today: datetime,
+) -> dict:
+    months = _month_range(fy_start, fy_end)
+    current_month = datetime(today.year, today.month, 1)
+
+    actual_rev = _monthly_series(actual_df, months, "REVENUE")
+    budget_rev = _monthly_series(budget_df, months, "REVENUE")
+
+    projected_monthly = []
+    for m, actual_val, budget_val in zip(months, actual_rev, budget_rev):
+        projected_monthly.append(actual_val if m <= current_month else budget_val)
+
+    actual_cumulative = list(np.cumsum(actual_rev).astype(float))
+    projected_cumulative = list(np.cumsum(projected_monthly).astype(float))
+
+    labels = [f"{m.year}-{m.month:02d}" for m in months]
+    return {
+        "labels": labels,
+        "actual_monthly": [round(v, 2) for v in actual_rev],
+        "projected_monthly": [round(v, 2) for v in projected_monthly],
+        "actual_cumulative": [round(v, 2) for v in actual_cumulative],
+        "projected_cumulative": [round(v, 2) for v in projected_cumulative],
+    }
+
+
+def build_forecast_payload(
+    today: datetime | None = None,
+    fy_start_month: int = 1,
+    cash_balance: float | None = None,
+    burn_months: int = 3,
+) -> dict:
+    if today is None:
+        today = datetime.today()
+
+    if DATA_MODE != "csv":
+        raise ValueError("Forecast requires CSV exports (DATA_MODE=csv).")
+
+    actuals = _load_actuals_df()
+    budget = _load_budget_df()
+
+    fy_start, fy_end = _fy_bounds(today, fy_start_month)
+    actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
+    budget_fy = budget[(budget["JOURNAL_DATE"] >= fy_start) & (budget["JOURNAL_DATE"] <= fy_end)]
+
+    budget_completed, filled_count = complete_budget_to_fy(budget_fy, fy_start, fy_end)
+
+    current_month = datetime(today.year, today.month, 1)
+
+    actuals_to_date = actuals_fy[actuals_fy["JOURNAL_DATE"] <= today]
+    revenue_value, expense_value = _calc_revenue_expense(actuals_to_date)
+    profit_now = revenue_value - expense_value
+
+    months = _month_range(fy_start, fy_end)
+    actual_profit = [
+        r - e
+        for r, e in zip(
+            _monthly_series(actuals_fy, months, "REVENUE"),
+            _monthly_series(actuals_fy, months, "EXPENSE"),
+        )
+    ]
+    budget_profit = [
+        r - e
+        for r, e in zip(
+            _monthly_series(budget_completed, months, "REVENUE"),
+            _monthly_series(budget_completed, months, "EXPENSE"),
+        )
+    ]
+    projected_profit = [
+        a if m <= current_month else b
+        for m, a, b in zip(months, actual_profit, budget_profit)
+    ]
+    future_profit = float(np.sum(projected_profit))
+
+    expense_series = _monthly_series(actuals_fy, months, "EXPENSE")
+    past_expenses = [v for m, v in zip(months, expense_series) if m <= current_month]
+    if past_expenses:
+        tail = past_expenses[-burn_months:] if burn_months > 0 else past_expenses
+        monthly_burn = float(np.mean(tail))
+    else:
+        monthly_burn = None
+
+    warnings = []
+    runway_months = None
+    if cash_balance is None:
+        warnings.append("Cash balance not provided; runway_months unavailable.")
+    elif monthly_burn and monthly_burn > 0:
+        runway_months = float(cash_balance) / monthly_burn
+    else:
+        warnings.append("Insufficient expense history to compute runway.")
+
+    if filled_count:
+        warnings.append(f"Budget missing months; filled {filled_count} rows using recent averages.")
+
+    sales_series = _build_sales_series(actuals_fy, budget_completed, fy_start, fy_end, today)
+
+    payload = {
+        "as_of": today.date().isoformat(),
+        "fy_start": fy_start.date().isoformat(),
+        "fy_end": fy_end.date().isoformat(),
+        "kpis": {
+            "profit_now": round(float(profit_now), 2),
+            "future_profit": round(float(future_profit), 2),
+            "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
+            "monthly_burn": round(float(monthly_burn), 2) if monthly_burn is not None else None,
+        },
+        "warnings": warnings,
+        "sales": sales_series,
+    }
+
+    return _clean_nan_values(payload)
+
+
+def build_overview_payload(
+    today: datetime | None = None,
+    fy_start_month: int = 7,
+    cash_balance: float | None = None,
+    burn_months: int = 3,
+    currency: str = "AUD",
+) -> dict:
+    if today is None:
+        today = datetime.today()
+
+    if DATA_MODE != "csv":
+        raise ValueError("Overview requires CSV exports (DATA_MODE=csv).")
+
+    actuals = _load_actuals_df()
+    budget = _load_budget_df()
+
+    fy_start, fy_end = _fy_bounds(today, fy_start_month)
+    actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
+    budget_fy = budget[(budget["JOURNAL_DATE"] >= fy_start) & (budget["JOURNAL_DATE"] <= fy_end)]
+
+    if actuals_fy.empty and len(actuals):
+        latest_actual = actuals["JOURNAL_DATE"].max()
+        if pd.notna(latest_actual):
+            today = latest_actual.to_pydatetime() if hasattr(latest_actual, "to_pydatetime") else latest_actual
+            fy_start, fy_end = _fy_bounds(today, fy_start_month)
+            actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
+            budget_fy = budget[(budget["JOURNAL_DATE"] >= fy_start) & (budget["JOURNAL_DATE"] <= fy_end)]
+
+    budget_completed, filled_count = complete_budget_to_fy(budget_fy, fy_start, fy_end)
+
+    current_month = datetime(today.year, today.month, 1)
+    next_month = (pd.Timestamp(current_month) + pd.DateOffset(months=1)).to_pydatetime()
+
+    actuals_to_date = actuals_fy[actuals_fy["JOURNAL_DATE"] <= today]
+    revenue_value, expense_value = _calc_revenue_expense(actuals_to_date)
+    profit_now = revenue_value - expense_value
+
+    months = _month_range(fy_start, fy_end)
+    actual_profit = [
+        r - e
+        for r, e in zip(
+            _monthly_series(actuals_fy, months, "REVENUE"),
+            _monthly_series(actuals_fy, months, "EXPENSE"),
+        )
+    ]
+    budget_profit = [
+        r - e
+        for r, e in zip(
+            _monthly_series(budget_completed, months, "REVENUE"),
+            _monthly_series(budget_completed, months, "EXPENSE"),
+        )
+    ]
+    projected_profit = [
+        a if m <= current_month else b
+        for m, a, b in zip(months, actual_profit, budget_profit)
+    ]
+    future_profit = float(np.sum(projected_profit))
+
+    sales_series = _build_sales_series(actuals_fy, budget_completed, fy_start, fy_end, today)
+
+    month_actuals = actuals_fy[
+        (actuals_fy["JOURNAL_DATE"] >= current_month) & (actuals_fy["JOURNAL_DATE"] < next_month)
+    ]
+    if len(month_actuals):
+        month_rev, month_exp = _calc_revenue_expense(month_actuals)
+    else:
+        month_rev, month_exp = None, None
+
+    expense_series = _monthly_series(actuals_fy, months, "EXPENSE")
+    past_expenses = [v for m, v in zip(months, expense_series) if m <= current_month]
+    if past_expenses:
+        tail = past_expenses[-burn_months:] if burn_months > 0 else past_expenses
+        monthly_burn = float(np.mean(tail))
+    else:
+        monthly_burn = None
+
+    warnings = []
+    runway_months = None
+    if cash_balance is None:
+        warnings.append("Cash balance not provided; runway_months unavailable.")
+    elif monthly_burn and monthly_burn > 0:
+        runway_months = float(cash_balance) / monthly_burn
+    else:
+        warnings.append("Insufficient expense history to compute runway.")
+
+    if filled_count:
+        warnings.append(f"Budget missing months; filled {filled_count} rows using recent averages.")
+
+    current_liabilities = None
+    if "ACCOUNT_TYPE" in actuals_fy.columns and "NET_AMOUNT" in actuals_fy.columns:
+        cur = actuals_fy.loc[actuals_fy["ACCOUNT_TYPE"] == "CURRLIAB", "NET_AMOUNT"]
+        if len(cur):
+            current_liabilities = float(cur.abs().sum())
+
+    profit_fy = {
+        "labels": sales_series["labels"],
+        "actual_monthly_profit": [round(v, 2) for v in actual_profit],
+        "projected_monthly_profit": [round(v, 2) for v in projected_profit],
+    }
+
+    payload = {
+        "meta": {
+            "today": today.date().isoformat(),
+            "fy_start": fy_start.date().isoformat(),
+            "fy_end": fy_end.date().isoformat(),
+            "currency": currency,
+        },
+        "kpis": {
+            "profit_now": round(float(profit_now), 2),
+            "future_profit": round(float(future_profit), 2),
+            "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
+            "sales_this_month": round(float(month_rev), 2) if month_rev is not None else None,
+            "spending_this_month": round(float(month_exp), 2) if month_exp is not None else None,
+            "current_liabilities": round(float(current_liabilities), 2) if current_liabilities is not None else None,
+            "warnings": warnings,
+        },
+        "charts": {
+            "sales_fy": sales_series,
+            "profit_fy": profit_fy,
+        },
+    }
+
+    return _clean_nan_values(payload)
+
+
+def build_liabilities_payload(
+    today: datetime | None = None,
+    period: str = "month",
+    fy_start_month: int = 7,
+    gst_frequency: str = "monthly",
+) -> dict:
+    if today is None:
+        today = datetime.today()
+
+    lines = _load_liability_lines_df()
+    if lines.empty:
+        return {
+            "meta": {
+                "today": today.date().isoformat(),
+                "period": period,
+            },
+            "rows": [],
+        }
+
+    period_start, period_end = _period_bounds(today, period, fy_start_month)
+    period_lines = lines[(lines["JOURNAL_DATE"] >= period_start) & (lines["JOURNAL_DATE"] <= period_end)]
+    if period_lines.empty:
+        latest_date = lines["JOURNAL_DATE"].max()
+        if pd.notna(latest_date):
+            today = latest_date.to_pydatetime() if hasattr(latest_date, "to_pydatetime") else latest_date
+            period_start, period_end = _period_bounds(today, period, fy_start_month)
+            period_lines = lines[(lines["JOURNAL_DATE"] >= period_start) & (lines["JOURNAL_DATE"] <= period_end)]
+
+    freq_map = {"GST": gst_frequency, "PAYG": "quarterly", "SUPER": "quarterly", "WAGES": "payrun"}
+
+    rows = []
+    for (code, name), grp in period_lines.groupby(["ACCOUNT_CODE", "ACCOUNT_NAME"]):
+        net = pd.to_numeric(grp["NET_AMOUNT"], errors="coerce").fillna(0.0)
+        neg = net[net < 0]
+        pos = net[net > 0]
+
+        obligation_created = float((-neg).sum())
+        amount_paid = float(pos.sum())
+        outstanding = float(net.sum())
+
+        first_accrual = grp.loc[net < 0, "JOURNAL_DATE"].min()
+        last_activity = grp["JOURNAL_DATE"].max()
+        last_payment = grp.loc[net > 0, "JOURNAL_DATE"].max()
+
+        ltype = _liability_type(code, name)
+        expected_due = _expected_due_date(ltype, period_end, freq_map)
+        days_to_due = (expected_due.date() - today.date()).days if expected_due else None
+
+        if outstanding == 0:
+            status = "Paid"
+        elif outstanding > 0:
+            status = "Credit/Overpaid"
+        elif expected_due and today.date() > expected_due.date():
+            status = "Overdue"
+        elif expected_due and days_to_due is not None and days_to_due <= 14:
+            status = "Due soon"
+        else:
+            status = "Not due"
+
+        rows.append(
+            {
+                "account_code": code,
+                "account_name": name,
+                "obligation_created": round(obligation_created, 2),
+                "amount_paid": round(amount_paid, 2),
+                "outstanding": round(abs(outstanding), 2),
+                "outstanding_sign": "credit" if outstanding > 0 else "owed",
+                "first_accrual_date": first_accrual.date().isoformat() if pd.notna(first_accrual) else None,
+                "last_payment_date": last_payment.date().isoformat() if pd.notna(last_payment) else None,
+                "last_activity_date": last_activity.date().isoformat() if pd.notna(last_activity) else None,
+                "expected_due_date": expected_due.date().isoformat() if expected_due else None,
+                "days_to_due": days_to_due,
+                "status": status,
+            }
+        )
+
+    return _clean_nan_values(
+        {
+            "meta": {
+                "today": today.date().isoformat(),
+                "period": period,
+                "period_start": period_start.date().isoformat(),
+                "period_end": period_end.date().isoformat(),
+                "gst_frequency": gst_frequency,
+            },
+            "rows": rows,
+        }
+    )
+
+
+def _run_tests() -> None:
+    # a) revenue negative converts to positive revenue_value
+    df_a = pd.DataFrame(
+        {
+            "ACCOUNT_TYPE": ["REVENUE", "EXPENSE"],
+            "ACCOUNT_NAME": ["Sales", "Rent"],
+            "DATA_CATEGORY": ["", ""],
+            "JOURNAL_DATE": [datetime(2024, 1, 1), datetime(2024, 1, 2)],
+            "NET_AMOUNT": [-100.0, 30.0],
+        }
+    )
+    rev, exp = _calc_revenue_expense(df_a)
+    assert rev == 100.0 and exp == 30.0
+
+    # b) complete_budget_to_fy fills missing months
+    df_b = pd.DataFrame(
+        {
+            "ACCOUNT_TYPE": ["REVENUE", "REVENUE"],
+            "ACCOUNT_NAME": ["Sales", "Sales"],
+            "DATA_CATEGORY": ["", ""],
+            "JOURNAL_DATE": [datetime(2024, 1, 1), datetime(2024, 3, 1)],
+            "NET_AMOUNT": [-100.0, -120.0],
+        }
+    )
+    fy_start = datetime(2024, 1, 1)
+    fy_end = datetime(2024, 3, 31)
+    completed, filled = complete_budget_to_fy(df_b, fy_start, fy_end)
+    assert len(completed) == 3 and filled >= 1
+
+    # c) sales series arrays match number of FY months
+    empty = pd.DataFrame(
+        {
+            "ACCOUNT_TYPE": pd.Series(dtype=str),
+            "ACCOUNT_NAME": pd.Series(dtype=str),
+            "DATA_CATEGORY": pd.Series(dtype=str),
+            "JOURNAL_DATE": pd.Series(dtype="datetime64[ns]"),
+            "NET_AMOUNT": pd.Series(dtype=float),
+        }
+    )
+    fy_start = datetime(2024, 1, 1)
+    fy_end = datetime(2024, 12, 31)
+    series = _build_sales_series(empty, empty, fy_start, fy_end, datetime(2024, 6, 15))
+    assert len(series["labels"]) == 12
+    assert len(series["actual_monthly"]) == 12
+    assert len(series["projected_monthly"]) == 12
 
 
 @app.route("/api/debug/csv")
@@ -847,11 +1545,99 @@ def dashboard_profit_chart():
         return jsonify({"error": str(e)}), 500
 
 
-if __name__ == "__main__":
-    print("ENV PORT =", os.getenv("PORT"))
-    print("ENV DATA_MODE =", os.getenv("DATA_MODE"))
+@app.route("/api/dashboard/forecast")
+def dashboard_forecast():
+    try:
+        today_str = request.args.get("today")
+        fy_start_month = int(request.args.get("fy_start_month", "1"))
+        cash_balance = request.args.get("cash_balance")
+        burn_months = int(request.args.get("burn_months", "3"))
 
-    port = int(os.getenv("PORT", "5000"))
-    host = os.getenv("HOST", "127.0.0.1")
-    app.run(debug=True, host=host, port=port)
+        today = datetime.fromisoformat(today_str) if today_str else None
+        cash_val = float(cash_balance) if cash_balance is not None else None
+
+        payload = build_forecast_payload(
+            today=today,
+            fy_start_month=fy_start_month,
+            cash_balance=cash_val,
+            burn_months=burn_months,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/overview")
+def dashboard_overview():
+    try:
+        today_str = request.args.get("today")
+        fy_start_month = int(request.args.get("fy_start_month", "7"))
+        cash_balance = request.args.get("cash_balance")
+        burn_months = int(request.args.get("burn_months", "3"))
+
+        today = datetime.fromisoformat(today_str) if today_str else None
+        cash_val = float(cash_balance) if cash_balance is not None else None
+
+        payload = build_overview_payload(
+            today=today,
+            fy_start_month=fy_start_month,
+            cash_balance=cash_val,
+            burn_months=burn_months,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/liabilities")
+def dashboard_liabilities():
+    try:
+        today_str = request.args.get("today")
+        period = request.args.get("period", "month")
+        fy_start_month = int(request.args.get("fy_start_month", "7"))
+        gst_frequency = request.args.get("gst_frequency", "monthly")
+
+        today = datetime.fromisoformat(today_str) if today_str else None
+        payload = build_liabilities_payload(
+            today=today,
+            period=period,
+            fy_start_month=fy_start_month,
+            gst_frequency=gst_frequency,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--today", type=str, default=None)
+    parser.add_argument("--fy-start-month", type=int, default=None)
+    parser.add_argument("--cash-balance", type=float, default=None)
+    parser.add_argument("--burn-months", type=int, default=3)
+    parser.add_argument("--run-tests", action="store_true")
+    parser.add_argument("--serve", action="store_true")
+    args = parser.parse_args()
+
+    if args.run_tests:
+        _run_tests()
+    else:
+        wants_cli = args.today or args.fy_start_month is not None or args.cash_balance is not None
+        if wants_cli and not args.serve:
+            today = datetime.fromisoformat(args.today) if args.today else None
+            fy_start_month = args.fy_start_month if args.fy_start_month is not None else 1
+            payload = build_forecast_payload(
+                today=today,
+                fy_start_month=fy_start_month,
+                cash_balance=args.cash_balance,
+                burn_months=args.burn_months,
+            )
+            print(json.dumps(payload, indent=2))
+        else:
+            print("ENV PORT =", os.getenv("PORT"))
+            print("ENV DATA_MODE =", os.getenv("DATA_MODE"))
+
+            port = int(os.getenv("PORT", "5000"))
+            host = os.getenv("HOST", "127.0.0.1")
+            app.run(debug=True, host=host, port=port)
 

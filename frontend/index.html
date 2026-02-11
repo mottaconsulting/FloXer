@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Cashflow Health for Small Business</title>
+  <title>Cashflow in One Glance</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
@@ -155,8 +155,8 @@
 <body>
   <div class="header">
     <div>
-      <h1>Cashflow in One Glance</h1>
-      <div class="muted">For small business owners: instant answers to profit, bills, and risks.</div>
+      <h1>Business Pulse</h1>
+      <div class="muted">Profit, runway, and next‑step clarity in seconds.</div>
     </div>
     <div class="actions">
       <button onclick="showDashboard()">Overview</button>
@@ -173,92 +173,60 @@
 
   <!-- DASHBOARD -->
   <div id="dashboardContainer" style="display:none;">
-    <div class="muted" style="margin-bottom:10px;">
-      Instant snapshot from your journals: profit, cash runway, and next risk.
-       <div id="healthStrip" class="panel" style="margin-bottom:14px; padding:12px; display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
-        <div id="healthBadge" style="font-weight:700; padding:6px 10px; border-radius:999px; background:#e5e7eb;">
-            —
-        </div>
-
-        <div style="display:flex; gap:18px; flex-wrap:wrap;">
-            <div><span class="muted">Status</span><div id="healthText" style="font-weight:700;">—</div></div>
-            <div><span class="muted">Cash runway</span><div id="healthRunway" style="font-weight:700;">—</div></div>
-            <div><span class="muted">Next tax due</span><div id="healthNextTax" style="font-weight:700;">—</div></div>
-        </div>
-        </div> 
-    </div>
-
     <!-- KPI tiles -->
     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px;">
       <div class="card" style="border-left-color:#10b981;">
-        <div class="muted">Cash in bank (estimated)</div>
-        <div id="kpiCash" class="big">$0.00</div>
+        <div class="muted">Profit Now (FY-to-date)</div>
+        <div id="kpiProfitNow" class="big">&mdash;</div>
+        <div id="kpiProfitNowMeta" class="muted">FY to date</div>
+      </div>
+      <div class="card" style="border-left-color:#10b981;">
+        <div class="muted">Future Profit</div>
+        <div id="kpiFutureProfit" class="big">&mdash;</div>
+        <div id="kpiFutureProfitMeta" class="muted">Projected to FY end</div>
+      </div>
+      <div class="card" style="border-left-color:#f59e0b;">
+        <div class="muted">Runway</div>
+        <div id="kpiRunway" class="big">&mdash;</div>
+        <div id="kpiRunwayMeta" class="muted">months</div>
       </div>
       <div class="card" style="border-left-color:#10b981;">
         <div class="muted">Sales this month</div>
-        <div id="kpiRevenue" class="big">$0.00</div>
+        <div id="kpiSalesMonth" class="big">&mdash;</div>
+        <div id="kpiSalesMonthMeta" class="muted"></div>
       </div>
       <div class="card" style="border-left-color:#ef4444;">
         <div class="muted">Spending this month</div>
-        <div id="kpiExpenses" class="big">$0.00</div>
+        <div id="kpiSpendMonth" class="big">&mdash;</div>
+        <div id="kpiSpendMonthMeta" class="muted"></div>
       </div>
-      <div class="card" style="border-left-color:#6366f1;">
-        <div class="muted">Profit this month</div>
-        <div id="kpiProfit" class="big">$0.00</div>
-      </div>
-      <div class="card">
-        <div class="muted">Money owed to you</div>
-        <div id="kpiAR" class="big">—</div>
-        <div class="muted">Connect invoices to show</div>
-      </div>
-      <div class="card">
-        <div class="muted">Bills you owe</div>
-        <div id="kpiAP" class="big">—</div>
-        <div class="muted">Connect bills to show</div>
+      <div class="card" style="border-left-color:#ef4444;">
+        <div class="muted">Current liabilities</div>
+        <div id="kpiCurLiabOverview" class="big">&mdash;</div>
+        <div id="kpiCurLiabOverviewMeta" class="muted"></div>
       </div>
     </div>
 
-    <h2 style="margin:0 0 10px 0;">Am I making money?</h2>
-    <div class="muted" style="margin-bottom:10px;">
-      Profit + trend from journals (P&amp;L accrual): Revenue − COGS − Opex.
-      <span>Run-rate = last 30 days annualized.</span>
-    </div>
-    <div class="panel" style="margin-bottom:12px; display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
-      <div>
-        <div class="muted">Profit MTD</div>
-        <div class="big" id="profitMtd">$0.00</div>
+    <h2 style="margin:0 0 10px 0;">Sales: actual vs projected (financial year)</h2>
+    <div class="panel" style="margin-bottom: 18px;">
+      <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+        <button id="salesModeMonthly" class="btn-muted">Monthly</button>
+        <button id="salesModeCumulative" class="btn-muted">Cumulative</button>
+        <select id="overviewDateSelect" style="margin-left:auto; padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#0f172a;"></select>
+        <select id="fySelect" style="padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#0f172a;">
+          <option value="2024">FY 2023–2024</option>
+          <option value="2025">FY 2024–2025</option>
+        </select>
+        <input id="cashBalanceInput" type="number" inputmode="decimal" placeholder="Cash balance" style="padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#0f172a; width:160px;">
       </div>
-      <div>
-        <div class="muted">Profit last 30 days</div>
-        <div class="big" id="profit30">$0.00</div>
-      </div>
-      <div>
-        <div class="muted">Trend vs previous period</div>
-        <div class="big" id="profitTrend">—</div>
-      </div>
-      <div style="min-width:160px;">
-        <div class="muted">Sparkline</div>
-        <div id="profitSparkline" class="muted">Coming next</div>
-      </div>
-    </div>
-    <div style="display:flex; gap: 16px; flex-wrap:wrap; margin-bottom: 18px;">
-      <div class="panel" style="flex:1; min-width:320px; height:320px;">
-        <canvas id="plTrendChart"></canvas>
-      </div>
-      <div class="panel" style="flex:1; min-width:320px; height:320px;">
-        <canvas id="expenseCategoryChart"></canvas>
+      <div style="height:320px;">
+        <canvas id="salesFyChart"></canvas>
       </div>
     </div>
 
-    <h2 style="margin:0 0 10px 0;">Can I pay my bills?</h2>
-    <div style="display:flex; gap: 16px; flex-wrap:wrap;">
-      <div class="panel" style="flex:1; min-width:320px; height:320px;">
-        <canvas id="cashflowChart"></canvas>
-      </div>
-      <div class="panel" style="flex:1; min-width:320px;">
-        <h3 style="margin-top:0;">Biggest cash outflows</h3>
-        <div id="bigOutflows" class="muted">—</div>
-      </div>
+    <h2 style="margin:0 0 10px 0;">Profit trend (FY)</h2>
+    <div class="panel" style="height:320px;">
+      <canvas id="profitFyChart"></canvas>
     </div>
   </div>
 
@@ -294,7 +262,13 @@
      <div id="liabilitiesContainer" style="display:none;">
   <h2 style="margin:0 0 10px 0;">What should I worry about next?</h2>
   <div class="muted" style="margin-bottom:10px;">
-    Estimated due dates based on recent activity (best-effort until bills are connected).
+    Liability summary based on journal postings (credits create obligations, debits reduce them).
+  </div>
+  <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+    <select id="liabFySelect" style="padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#0f172a;">
+      <option value="2024">FY 2023–2024</option>
+      <option value="2025">FY 2024–2025</option>
+    </select>
   </div>
 
   <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px;">
@@ -312,7 +286,7 @@
     </div>
   </div>
 
-  <h3 style="margin:0 0 8px 0;">Estimated due dates</h3>
+  <h3 style="margin:0 0 8px 0;">Liability summary (current period)</h3>
   <div class="table-container">
     <table>
       <thead id="liabHeader"></thead>
@@ -320,8 +294,7 @@
     </table>
   </div>
 
-  <h3 style="margin:18px 0 8px 0;">Other liabilities (no due date yet)</h3>
-  <div class="table-container">
+  <div class="table-container" style="display:none;">
     <table>
       <thead id="liabOtherHeader"></thead>
       <tbody id="liabOtherBody"></tbody>
