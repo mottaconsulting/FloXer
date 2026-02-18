@@ -5,12 +5,13 @@ const API_BASE = (() => {
   return DEFAULT_API_BASE;
 })();
 
-async function fetch_json(path) {
+async function request_json(path, options = {}) {
   const tryFetch = async (base) => {
     const url = `${base}${path}`;
     const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-      cache: "no-store"
+      headers: { Accept: "application/json", ...(options.headers || {}) },
+      cache: "no-store",
+      ...options
     });
 
     const contentType = res.headers.get("content-type") || "";
@@ -51,8 +52,12 @@ async function fetch_json(path) {
   return primary.data;
 }
 
+async function fetch_json(path) {
+  return request_json(path);
+}
+
 function open_auth_popup() {
   return window.open("/auth", "_blank", "width=600,height=700");
 }
 
-window.XeroAPI = { fetch_json, open_auth_popup };
+window.XeroAPI = { fetch_json, request_json, open_auth_popup };

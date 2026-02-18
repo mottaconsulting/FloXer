@@ -1,4 +1,4 @@
-let currentData = null;
+﻿let currentData = null;
 let showingRaw = false;
 
 let JOURNAL_CACHE = null;
@@ -30,7 +30,7 @@ function hideError() {
   if (el) el.style.display = "none";
 }
 function hideAllViews() {
-  ["dashboardContainer","transactionsContainer","liabilitiesContainer","rawOutput"].forEach(id => {
+  ["dashboardContainer","transactionsContainer","liabilitiesContainer","budgetContainer","rawOutput"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = "none";
   });
@@ -84,7 +84,7 @@ function avgLastNMonths(values, n = 3) {
 }
 
 function computeHealthFromModel(model, liabilitiesRows) {
-  // Use CASH OUT (bank) for runway because it’s closer to real cash burn
+  // Use CASH OUT (bank) for runway because itâ€™s closer to real cash burn
   const cashBalance = Number(model?.kpis?.cash_balance_proxy || 0);
 
   const cashOutMonthly = (model?.charts?.cashflow?.cashOut || []).map(x => Number(x || 0));
@@ -92,7 +92,7 @@ function computeHealthFromModel(model, liabilitiesRows) {
 
   const runwayMonths = avgCashOut > 0 ? (cashBalance / avgCashOut) : null;
 
-  // Find next “tax-like” liability with a due date
+  // Find next â€œtax-likeâ€ liability with a due date
   const TAX_BUCKETS = new Set(["GST", "PAYG", "SUPER", "INCOME_TAX", "WAGES"]);
   const nextTax = (liabilitiesRows || [])
     .filter(r => TAX_BUCKETS.has(r.bucket) && r.due_date)
@@ -116,7 +116,7 @@ function computeHealthFromModel(model, liabilitiesRows) {
   // Add tax warning if due soon
   if (nextTax && nextTax.due_in_days !== null && nextTax.due_in_days <= 21) {
     if (level === "ok") level = "warn";
-    text = `${text} • ${nextTax.label} due soon`;
+    text = `${text} â€¢ ${nextTax.label} due soon`;
   }
 
   return { level, text, runwayMonths, nextTax };
@@ -148,17 +148,17 @@ function renderHealthStrip(health) {
   txt.textContent = health.text;
 
   if (health.runwayMonths === null) {
-    runway.textContent = "—";
+    runway.textContent = "â€”";
   } else {
     runway.textContent = `${health.runwayMonths.toFixed(1)} months`;
   }
 
   if (health.nextTax) {
     const days = health.nextTax.due_in_days;
-    const due = health.nextTax.due_date ? health.nextTax.due_date.toLocaleDateString() : "—";
-    nextTax.textContent = `${health.nextTax.label} • ${due}${(days !== null ? ` (${days}d)` : "")}`;
+    const due = health.nextTax.due_date ? health.nextTax.due_date.toLocaleDateString() : "â€”";
+    nextTax.textContent = `${health.nextTax.label} â€¢ ${due}${(days !== null ? ` (${days}d)` : "")}`;
   } else {
-    nextTax.textContent = "—";
+    nextTax.textContent = "â€”";
   }
 }
 
@@ -196,6 +196,36 @@ function setKpiValue(valueEl, metaEl, value, options = {}) {
   if (metaEl) metaEl.innerText = suffix ? suffix.replace(/^\s*/, "") : metaEl.innerText;
 }
 
+function formatDelta(v, asCurrency = true) {
+  if (!Number.isFinite(v)) return "--";
+  const sign = v > 0 ? "+" : (v < 0 ? "-" : "=");
+  const abs = Math.abs(v);
+  const val = asCurrency ? fmtUSD(abs) : abs.toFixed(1);
+  return sign + " " + val + " vs last month";
+}
+
+function setDelta(el, value) {
+  if (!el) return;
+  el.classList.remove("up", "down");
+  if (!Number.isFinite(value)) {
+    el.textContent = "--";
+    return;
+  }
+  el.textContent = formatDelta(value, true);
+  if (value > 0) el.classList.add("up");
+  if (value < 0) el.classList.add("down");
+}
+
+function seriesWithLessZeroNoise(arr) {
+  const data = (arr || []).map(v => Number(v || 0));
+  return data.map((v, i) => {
+    if (Math.abs(v) > 0.0001) return v;
+    const prev = i > 0 ? Math.abs(data[i - 1]) : 0;
+    const next = i < data.length - 1 ? Math.abs(data[i + 1]) : 0;
+    return (prev < 0.0001 && next < 0.0001) ? null : v;
+  });
+}
+
 let SALES_MODE = "monthly";
 
 function monthEndFromLabel(label) {
@@ -213,7 +243,18 @@ function monthEndFromLabel(label) {
 function populateDateSelect(data) {
   const select = document.getElementById("overviewDateSelect");
   const labels = data?.charts?.sales_fy?.labels || [];
+  const availableMonths = data?.meta?.available_months || [];
   if (!select || !labels.length) return;
+
+  if (availableMonths.length) {
+    select.innerHTML = availableMonths
+      .map(month => `<option value="${monthEndFromLabel(month)}">${month}</option>`)
+      .join("");
+    const currentMonth = data?.meta?.today ? data.meta.today.slice(0, 7) : null;
+    const idx = currentMonth ? availableMonths.indexOf(currentMonth) : -1;
+    select.selectedIndex = idx >= 0 ? idx : availableMonths.length - 1;
+    return;
+  }
 
   const currentMonth = data?.meta?.today ? data.meta.today.slice(0, 7) : null;
   select.innerHTML = labels
@@ -226,50 +267,215 @@ function populateDateSelect(data) {
 
 function populateFySelect(data) {
   const fySelect = document.getElementById("fySelect");
-  if (!fySelect) return;
+  const liabFySelect = document.getElementById("liabFySelect");
+  if (!fySelect && !liabFySelect) return;
   const fyEnd = data?.meta?.fy_end ? Number(data.meta.fy_end.slice(0, 4)) : null;
-  if (!fyEnd) return;
-  const option = Array.from(fySelect.options).find(o => Number(o.value) === fyEnd);
-  if (option) fySelect.value = option.value;
+  let years = data?.meta?.available_fy_end_years || [];
+  if (!years.length && fyEnd) {
+    years = [fyEnd - 1, fyEnd];
+  }
+  years = Array.from(new Set(years.filter(y => Number.isFinite(Number(y))).map(y => Number(y)))).sort((a, b) => a - b);
+  const renderOptions = (selectEl) => {
+    if (!selectEl) return;
+    if (years.length) {
+      selectEl.innerHTML = years
+        .map(y => `<option value="${y}">FY ${y - 1}-${y}</option>`)
+        .join("");
+    }
+    if (fyEnd) {
+      const option = Array.from(selectEl.options).find(o => Number(o.value) === fyEnd);
+      if (option) selectEl.value = option.value;
+    }
+  };
+  renderOptions(fySelect);
+  renderOptions(liabFySelect);
 }
 
 function renderOverviewCharts(data) {
   const sales = data?.charts?.sales_fy;
   const profit = data?.charts?.profit_fy;
+  const expenses = data?.charts?.expenses_fy;
   if (!sales || !profit) return;
 
   const labels = sales.labels || [];
+  const selectedMonthLabel = (document.getElementById("overviewDateSelect")?.value || "").slice(0, 7)
+    || (data?.meta?.today ? data.meta.today.slice(0, 7) : "");
+  const highlightIndex = labels.indexOf(selectedMonthLabel);
+  const todayLabel = data?.meta?.today ? data.meta.today.slice(0, 7) : "";
+  const cutoffIndex = labels.indexOf(todayLabel);
   const salesActual = SALES_MODE === "cumulative" ? sales.actual_cumulative : sales.actual_monthly;
   const salesProjected = SALES_MODE === "cumulative" ? sales.projected_cumulative : sales.projected_monthly;
 
   XeroCharts.renderChart("salesFy", "salesFyChart", "line", {
     labels,
     datasets: [
-      { label: "Actual", data: salesActual, borderDash: [] },
-      { label: "Projected", data: salesProjected, borderDash: [6, 4] }
+      {
+        label: "Actual",
+        data: seriesWithLessZeroNoise(salesActual),
+        borderDash: [],
+        pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
+        pointHoverRadius: labels.map((_, i) => (i === highlightIndex ? 7 : 4)),
+        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#0f766e")),
+        borderColor: "#0f766e",
+        tension: 0.3,
+        spanGaps: true
+      },
+      {
+        label: "Projected",
+        data: seriesWithLessZeroNoise(salesProjected),
+        borderDash: [6, 4],
+        pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
+        pointHoverRadius: labels.map((_, i) => (i === highlightIndex ? 7 : 4)),
+        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#7c2d12" : "#b45309")),
+        borderColor: "#b45309",
+        tension: 0.3,
+        spanGaps: true
+      }
     ]
-  }, { scales: { y: { beginAtZero: true } } });
-
-  const todayLabel = data?.meta?.today ? data.meta.today.slice(0, 7) : null;
-  let currentIdx = labels.indexOf(todayLabel);
-  if (currentIdx === -1) {
-    currentIdx = -1;
-    for (let i = 0; i < profit.actual_monthly_profit.length; i += 1) {
-      if (Number(profit.actual_monthly_profit[i] || 0) !== 0) currentIdx = i;
+  }, {
+    scales: { y: { beginAtZero: true } },
+    plugins: {
+      monthHighlight: {
+        index: highlightIndex,
+        cutoffIndex,
+        color: "rgba(15, 23, 42, 0.08)"
+      }
     }
-    if (currentIdx === -1) currentIdx = labels.length - 1;
+  });
+
+  if (expenses) {
+    const expenseActual = SALES_MODE === "cumulative" ? expenses.actual_cumulative : expenses.actual_monthly;
+    const expenseProjected = SALES_MODE === "cumulative" ? expenses.projected_cumulative : expenses.projected_monthly;
+    XeroCharts.renderChart("expensesFy", "expensesFyChart", "line", {
+      labels: expenses.labels || labels,
+      datasets: [
+        {
+          label: "Actual expenses",
+          data: seriesWithLessZeroNoise(expenseActual),
+          borderDash: [],
+          pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
+          pointHoverRadius: labels.map((_, i) => (i === highlightIndex ? 7 : 4)),
+          pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#7f1d1d" : "#b91c1c")),
+          borderColor: "#b91c1c",
+          tension: 0.3,
+          spanGaps: true
+        },
+        {
+          label: "Projected expenses",
+          data: seriesWithLessZeroNoise(expenseProjected),
+          borderDash: [6, 4],
+          pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
+          pointHoverRadius: labels.map((_, i) => (i === highlightIndex ? 7 : 4)),
+          pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#9a3412" : "#ea580c")),
+          borderColor: "#ea580c",
+          tension: 0.3,
+          spanGaps: true
+        }
+      ]
+    }, {
+      scales: { y: { beginAtZero: true } },
+      plugins: {
+        monthHighlight: {
+          index: highlightIndex,
+          cutoffIndex,
+          color: "rgba(15, 23, 42, 0.06)"
+        }
+      }
+    });
   }
 
-  const actualBars = profit.actual_monthly_profit.map((v, i) => (i <= currentIdx ? v : null));
-  const forecastBars = profit.projected_monthly_profit.map((v, i) => (i > currentIdx ? v : null));
+  const profitActual = SALES_MODE === "cumulative"
+    ? (profit.actual_monthly_profit || []).reduce((acc, v, i) => {
+        acc.push((acc[i - 1] || 0) + Number(v || 0));
+        return acc;
+      }, [])
+    : profit.actual_monthly_profit;
+  const profitProjected = SALES_MODE === "cumulative"
+    ? (profit.projected_monthly_profit || []).reduce((acc, v, i) => {
+        acc.push((acc[i - 1] || 0) + Number(v || 0));
+        return acc;
+      }, [])
+    : profit.projected_monthly_profit;
 
-  XeroCharts.renderChart("profitFy", "profitFyChart", "bar", {
-    labels,
+  XeroCharts.renderChart("profitFy", "profitFyChart", "line", {
+    labels: profit.labels || labels,
     datasets: [
-      { label: "Actual", data: actualBars, backgroundColor: "#0f766e" },
-      { label: "Forecast", data: forecastBars, backgroundColor: "rgba(15, 118, 110, 0.35)" }
+      {
+        label: "Actual profit",
+        data: seriesWithLessZeroNoise(profitActual || []),
+        borderColor: "#2563eb",
+        pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
+        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#2563eb")),
+        tension: 0.3,
+        spanGaps: true
+      },
+      {
+        label: "Projected profit",
+        data: seriesWithLessZeroNoise(profitProjected || []),
+        borderColor: "#7c3aed",
+        borderDash: [6, 4],
+        pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
+        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#7c3aed")),
+        tension: 0.3,
+        spanGaps: true
+      }
     ]
-  }, { scales: { y: { beginAtZero: true } } });
+  }, {
+    scales: { y: { beginAtZero: false } },
+    plugins: {
+      monthHighlight: {
+        index: highlightIndex,
+        cutoffIndex,
+        color: "rgba(15, 23, 42, 0.06)"
+      }
+    }
+  });
+}
+
+function applyRunwayVisuals(runwayMonths) {
+  const card = document.getElementById("runwayCard");
+  const badge = document.getElementById("runwayRiskBadge");
+  if (!card || !badge) return;
+  card.classList.remove("runway-tone-red", "runway-tone-orange", "runway-tone-yellow", "runway-tone-green");
+  badge.classList.remove("watch");
+  badge.style.display = "none";
+
+  if (!Number.isFinite(runwayMonths)) {
+    card.classList.add("runway-tone-yellow");
+    return;
+  }
+  if (runwayMonths < 3) {
+    card.classList.add("runway-tone-red");
+  } else if (runwayMonths < 6) {
+    card.classList.add("runway-tone-orange");
+  } else if (runwayMonths <= 12) {
+    card.classList.add("runway-tone-yellow");
+  } else {
+    card.classList.add("runway-tone-green");
+  }
+  if (runwayMonths < 3) {
+    badge.style.display = "inline-block";
+    badge.textContent = "HIGH RISK";
+  } else if (runwayMonths <= 6) {
+    badge.style.display = "inline-block";
+    badge.classList.add("watch");
+    badge.textContent = "WATCH";
+  }
+}
+
+function computeProfitDeltas(data) {
+  const labels = data?.charts?.profit_fy?.labels || [];
+  const actual = data?.charts?.profit_fy?.actual_monthly_profit || [];
+  const projected = data?.charts?.profit_fy?.projected_monthly_profit || [];
+  const todayMonth = data?.meta?.today ? data.meta.today.slice(0, 7) : "";
+  let idx = labels.indexOf(todayMonth);
+  if (idx < 1) {
+    idx = actual.reduce((last, v, i) => (Number(v || 0) !== 0 ? i : last), 0);
+  }
+  const prev = Math.max(idx - 1, 0);
+  const profitNowDelta = Number(actual[idx] || 0) - Number(actual[prev] || 0);
+  const futureDelta = Number(projected[idx] || 0) - Number(projected[prev] || 0);
+  return { profitNowDelta, futureDelta };
 }
 
 function renderOverview(data) {
@@ -311,6 +517,32 @@ function renderOverview(data) {
     kpis.spending_this_month,
     { isCurrency: true, warning: true }
   );
+  const salesMeta = document.getElementById("kpiSalesMonthMeta");
+  const spendMeta = document.getElementById("kpiSpendMonthMeta");
+  const liabMeta = document.getElementById("kpiCurLiabOverviewMeta");
+  if (salesMeta) salesMeta.innerText = "This month";
+  if (spendMeta) spendMeta.innerText = "This month";
+  if (liabMeta) liabMeta.innerText = "Current";
+
+  applyRunwayVisuals(Number(kpis.runway_months));
+  const runwaySummary = document.getElementById("runwayBurnSummary");
+  if (runwaySummary) {
+    const cashInput = document.getElementById("cashBalanceInput");
+    const burnInput = document.getElementById("burnMonthsInput");
+    const cashVal = cashInput && cashInput.value !== "" ? Number(cashInput.value) : null;
+    const burnMonths = burnInput ? Number(burnInput.value || 3) : 3;
+    const burnVal = Number(kpis.monthly_burn || 0);
+    const cashText = Number.isFinite(cashVal) ? fmtUSD(cashVal) : "entered cash";
+    const burnText = Number.isFinite(burnVal) && burnVal > 0 ? fmtUSD(burnVal) : "unknown burn";
+    runwaySummary.textContent = `Based on ${cashText} cash and ${burnMonths}-month avg burn (${burnText}/month).`;
+  }
+  const deltas = computeProfitDeltas(data);
+  setDelta(document.getElementById("kpiProfitNowDelta"), deltas.profitNowDelta);
+  setDelta(document.getElementById("kpiFutureProfitDelta"), deltas.futureDelta);
+  const futureRisk = document.getElementById("futureProfitRiskBadge");
+  if (futureRisk) {
+    futureRisk.style.display = Number(kpis.future_profit || 0) < 0 ? "inline-block" : "none";
+  }
 
   renderOverviewCharts(data);
   populateDateSelect(data);
@@ -342,7 +574,7 @@ function classifyLiabilityAccount(accountCode, accountName) {
   if (code.startsWith("830") || name.includes("income tax")) return "INCOME_TAX";
   if (code.startsWith("900") || name.includes("loan")) return "LOAN";
 
-  // Explicit “do not estimate”
+  // Explicit â€œdo not estimateâ€
   if (code.startsWith("840") || name.includes("historical")) return "OTHER";
   if (code.startsWith("850") || name.includes("suspense")) return "OTHER";
   if (code.startsWith("860") || name.includes("rounding")) return "OTHER";
@@ -366,7 +598,7 @@ function addDays(d, days) {
   return x;
 }
 function fmtDate(d) {
-  if (!(d instanceof Date) || isNaN(d.getTime())) return "—";
+  if (!(d instanceof Date) || isNaN(d.getTime())) return "â€”";
   return d.toLocaleDateString();
 }
 function daysUntil(dueDate) {
@@ -387,7 +619,7 @@ function computeLiabilityDueEstimates(lines) {
 
     const bucket = classifyLiabilityAccount(ln.accountCode, ln.accountName);
     const rule = LIABILITY_RULES[bucket];
-    // We still track totals even if rule is null (but due date will be —)
+    // We still track totals even if rule is null (but due date will be â€”)
 
     if (!buckets[bucket]) {
       buckets[bucket] = {
@@ -505,6 +737,126 @@ async function showLiabilities() {
 
 window.showLiabilities = showLiabilities;
 
+function budgetRowHtml(row = {}, idx = 0) {
+  const dateValue = String(row.JOURNAL_DATE || row.journal_date || "").slice(0, 10);
+  const typeValue = String(row.ACCOUNT_TYPE || row.account_type || "EXPENSE").toUpperCase();
+  const nameValue = String(row.ACCOUNT_NAME || row.account_name || "");
+  let amountValue = Number(row.NET_AMOUNT ?? row.net_amount ?? 0);
+  if (typeValue === "REVENUE") amountValue = Math.abs(amountValue);
+
+  return `
+    <tr data-budget-idx="${idx}">
+      <td><input type="date" class="budget-date" value="${dateValue}" style="padding:8px; width:150px;"></td>
+      <td>
+        <select class="budget-type" style="padding:8px; width:130px;">
+          <option value="REVENUE" ${typeValue === "REVENUE" ? "selected" : ""}>REVENUE</option>
+          <option value="EXPENSE" ${typeValue === "EXPENSE" ? "selected" : ""}>EXPENSE</option>
+        </select>
+      </td>
+      <td><input type="text" class="budget-name" value="${nameValue}" placeholder="e.g. Sales" style="padding:8px; width:220px;"></td>
+      <td><input type="number" class="budget-amount" value="${Number.isFinite(amountValue) ? amountValue : 0}" step="0.01" style="padding:8px; width:140px;"></td>
+      <td><button type="button" class="btn-muted" onclick="removeBudgetRow(${idx})">Delete</button></td>
+    </tr>`;
+}
+
+function collectBudgetRowsFromTable() {
+  const body = document.getElementById("budgetBody");
+  if (!body) return [];
+  const trs = Array.from(body.querySelectorAll("tr"));
+  return trs.map(tr => {
+    const accountType = tr.querySelector(".budget-type")?.value || "";
+    const accountName = tr.querySelector(".budget-name")?.value || "";
+    const journalDate = tr.querySelector(".budget-date")?.value || "";
+    const enteredAmount = Number(tr.querySelector(".budget-amount")?.value || 0);
+    const netAmount = accountType === "REVENUE"
+      ? -Math.abs(enteredAmount)
+      : Math.abs(enteredAmount);
+    return {
+      ACCOUNT_TYPE: accountType,
+      ACCOUNT_NAME: accountName,
+      DATA_CATEGORY: "Budget",
+      JOURNAL_DATE: journalDate,
+      NET_AMOUNT: netAmount
+    };
+  }).filter(r => r.ACCOUNT_NAME && r.JOURNAL_DATE);
+}
+
+function renderBudgetRows(rows) {
+  const body = document.getElementById("budgetBody");
+  if (!body) return;
+  if (!rows || !rows.length) {
+    body.innerHTML = budgetRowHtml({}, 0);
+    return;
+  }
+  body.innerHTML = rows.map((row, idx) => budgetRowHtml(row, idx)).join("");
+}
+
+async function loadBudgetRows() {
+  setLoading("Loading budget...");
+  try {
+    const data = await XeroAPI.fetch_json("/api/budget");
+    setRawData(data);
+    const meta = document.getElementById("budgetMeta");
+    if (meta) {
+      meta.innerText = `Mode: ${data.mode || "--"} | Source: ${data.source || "--"}`;
+    }
+    renderBudgetRows(data.rows || []);
+    stopLoading();
+    return data;
+  } catch (e) {
+    stopLoading();
+    showError(e.message);
+    return null;
+  }
+}
+
+async function saveBudgetRows() {
+  const rows = collectBudgetRowsFromTable();
+  setLoading("Saving budget...");
+  try {
+    const data = await XeroAPI.request_json("/api/budget", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows })
+    });
+    setRawData(data);
+    renderBudgetRows(data.rows || []);
+    stopLoading();
+  } catch (e) {
+    stopLoading();
+    showError(e.message);
+  }
+}
+
+function addBudgetRow() {
+  const body = document.getElementById("budgetBody");
+  if (!body) return;
+  const currentRows = Array.from(body.querySelectorAll("tr"));
+  const idx = currentRows.length;
+  body.insertAdjacentHTML("beforeend", budgetRowHtml({}, idx));
+}
+
+function removeBudgetRow(idx) {
+  const body = document.getElementById("budgetBody");
+  if (!body) return;
+  const row = body.querySelector(`tr[data-budget-idx="${idx}"]`);
+  if (row) row.remove();
+  const rows = collectBudgetRowsFromTable();
+  renderBudgetRows(rows);
+}
+
+async function showBudgetInput() {
+  hideAllViews();
+  document.getElementById("budgetContainer").style.display = "block";
+  await loadBudgetRows();
+}
+
+window.showBudgetInput = showBudgetInput;
+window.loadBudgetRows = loadBudgetRows;
+window.saveBudgetRows = saveBudgetRows;
+window.addBudgetRow = addBudgetRow;
+window.removeBudgetRow = removeBudgetRow;
+
 // ---------- Dashboard model from journal lines ----------
 function buildDashboardModel(lines) {
   const months = {}; // { "YYYY-MM": { income, expense, bankIn, bankOut } }
@@ -586,8 +938,8 @@ function renderDashboard(model) {
   document.getElementById("kpiProfit").innerText = fmtUSD(model.kpis.monthly_profit);
 
   // journal-only placeholders
-  document.getElementById("kpiAR").innerText = "—";
-  document.getElementById("kpiAP").innerText = "—";
+  document.getElementById("kpiAR").innerText = "â€”";
+  document.getElementById("kpiAP").innerText = "â€”";
 
   XeroCharts.renderChart("plTrend", "plTrendChart", "line", {
     labels: model.charts.plTrend.labels,
@@ -684,12 +1036,15 @@ async function showDashboard() {
   }
 }
 
-async function fetchOverview(todayStr, fyStartMonth = 7, cashBalance = null) {
+async function fetchOverview(todayStr, fyStartMonth = 7, cashBalance = null, burnMonths = null) {
   const params = new URLSearchParams();
   if (todayStr) params.set("today", todayStr);
   if (fyStartMonth) params.set("fy_start_month", String(fyStartMonth));
   if (cashBalance !== null && cashBalance !== "" && Number.isFinite(Number(cashBalance))) {
     params.set("cash_balance", String(cashBalance));
+  }
+  if (burnMonths !== null && burnMonths !== "" && Number.isFinite(Number(burnMonths))) {
+    params.set("burn_months", String(burnMonths));
   }
   const qs = params.toString() ? `?${params.toString()}` : "";
   const data = await XeroAPI.fetch_json(`/api/dashboard/overview${qs}`);
@@ -705,7 +1060,7 @@ async function showTransactions() {
     const journals = await getJournals();
     JOURNAL_LINES = flattenJournalLines(journals);
 
-    // ✅ ADD THIS LINE
+    // âœ… ADD THIS LINE
     console.log(
       "journals:", journals.length,
       "lines:", JOURNAL_LINES.length,
@@ -739,19 +1094,20 @@ function showRawJson() {
 
   if (showingRaw) {
     raw.style.display = "none";
-    // restore dashboard if visible else transactions
     const dash = document.getElementById("dashboardContainer");
-    const tx = document.getElementById("transactionsContainer");
-    if (dash && dash.style.display === "block") dash.style.display = "block";
-    else if (tx) tx.style.display = "block";
+    if (dash) dash.style.display = "block";
     btn.innerText = "Show Raw JSON";
     showingRaw = false;
   } else {
     // hide views, show raw
     const dash = document.getElementById("dashboardContainer");
     const tx = document.getElementById("transactionsContainer");
+    const liab = document.getElementById("liabilitiesContainer");
+    const budget = document.getElementById("budgetContainer");
     if (dash) dash.style.display = "none";
     if (tx) tx.style.display = "none";
+    if (liab) liab.style.display = "none";
+    if (budget) budget.style.display = "none";
     raw.style.display = "block";
     raw.innerText = JSON.stringify(currentData, null, 2);
     btn.innerText = "Show UI";
@@ -766,7 +1122,10 @@ function authorize() {
   const timer = setInterval(() => {
     if (w.closed) {
       clearInterval(timer);
-      setTimeout(checkHealth, 800);
+      setTimeout(async () => {
+        await loadOrganizations();
+        checkHealth();
+      }, 800);
     }
   }, 800);
 }
@@ -783,13 +1142,56 @@ async function checkHealth() {
 window.authorize = authorize;
 window.checkHealth = checkHealth;
 
+async function loadOrganizations() {
+  const select = document.getElementById("orgSelect");
+  if (!select) return;
+
+  try {
+    const data = await XeroAPI.fetch_json("/connections");
+    const connections = data?.connections || [];
+    const savedTenantId = data?.saved_tenant_id || "";
+
+    if (!connections.length) {
+      select.innerHTML = `<option value="">No organizations</option>`;
+      select.disabled = true;
+      return;
+    }
+
+    select.innerHTML = connections
+      .map(c => {
+        const tenantId = c.tenantId || "";
+        const tenantName = c.tenantName || c.tenantType || tenantId;
+        const selected = tenantId === savedTenantId ? "selected" : "";
+        return `<option value="${tenantId}" ${selected}>${tenantName}</option>`;
+      })
+      .join("");
+    select.disabled = false;
+  } catch (e) {
+    select.innerHTML = `<option value="">Org unavailable</option>`;
+    select.disabled = true;
+  }
+}
+
+async function switchOrganization(tenantId) {
+  if (!tenantId) return;
+  setLoading("Switching organization...");
+  try {
+    await XeroAPI.fetch_json(`/set-tenant?tenantId=${encodeURIComponent(tenantId)}`);
+    await showDashboard();
+    stopLoading();
+  } catch (e) {
+    stopLoading();
+    showError(e.message);
+  }
+}
+
 function setSalesMode(mode) {
   SALES_MODE = mode;
   const monthlyBtn = document.getElementById("salesModeMonthly");
   const cumulativeBtn = document.getElementById("salesModeCumulative");
   if (monthlyBtn && cumulativeBtn) {
-    monthlyBtn.style.background = mode === "monthly" ? "#0f172a" : "#374151";
-    cumulativeBtn.style.background = mode === "cumulative" ? "#0f172a" : "#374151";
+    monthlyBtn.classList.toggle("active", mode === "monthly");
+    cumulativeBtn.classList.toggle("active", mode === "cumulative");
   }
   if (currentData) renderOverviewCharts(currentData);
 }
@@ -807,7 +1209,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const dateSelect = document.getElementById("overviewDateSelect");
   const fySelect = document.getElementById("fySelect");
   const cashInput = document.getElementById("cashBalanceInput");
+  const burnMonthsInput = document.getElementById("burnMonthsInput");
   const liabFySelect = document.getElementById("liabFySelect");
+  const orgSelect = document.getElementById("orgSelect");
   if (monthlyBtn) monthlyBtn.addEventListener("click", () => setSalesMode("monthly"));
   if (cumulativeBtn) cumulativeBtn.addEventListener("click", () => setSalesMode("cumulative"));
   if (dateSelect) {
@@ -816,7 +1220,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!val) return;
       setLoading("Refreshing overview...");
       try {
-        const data = await fetchOverview(val, 7, cashInput?.value);
+        const data = await fetchOverview(val, 7, cashInput?.value, burnMonthsInput?.value);
         stopLoading();
         renderOverview(data);
       } catch (err) {
@@ -832,7 +1236,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!today) return;
       setLoading("Refreshing overview...");
       try {
-        const data = await fetchOverview(today, 7, cashInput?.value);
+        const data = await fetchOverview(today, 7, cashInput?.value, burnMonthsInput?.value);
         stopLoading();
         renderOverview(data);
       } catch (err) {
@@ -846,7 +1250,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const todayOverride = dateSelect?.value || null;
       setLoading("Refreshing overview...");
       try {
-        const data = await fetchOverview(todayOverride, 7, cashInput.value);
+        const data = await fetchOverview(todayOverride, 7, cashInput.value, burnMonthsInput?.value);
         stopLoading();
         renderOverview(data);
       } catch (err) {
@@ -856,6 +1260,21 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     cashInput.addEventListener("change", handler);
     cashInput.addEventListener("blur", handler);
+  }
+  if (burnMonthsInput) {
+    const handler = async () => {
+      const todayOverride = dateSelect?.value || null;
+      setLoading("Refreshing overview...");
+      try {
+        const data = await fetchOverview(todayOverride, 7, cashInput?.value, burnMonthsInput.value);
+        stopLoading();
+        renderOverview(data);
+      } catch (err) {
+        stopLoading();
+        showError(err.message);
+      }
+    };
+    burnMonthsInput.addEventListener("change", handler);
   }
   if (liabFySelect) {
     liabFySelect.addEventListener("change", async () => {
@@ -869,6 +1288,16 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+  if (orgSelect) {
+    orgSelect.addEventListener("change", async (e) => {
+      await switchOrganization(e.target.value);
+    });
+    loadOrganizations();
+  }
   setSalesMode("monthly");
   showDashboard();
 });
+
+
+
+

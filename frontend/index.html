@@ -7,19 +7,20 @@
     @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
 
     :root {
-      --bg: #f4f1ea;
-      --bg-2: #f9f6f1;
-      --ink: #1f2937;
-      --ink-2: #4b5563;
+      --bg: #f3f1ed;
+      --bg-2: #faf9f6;
+      --ink: #172033;
+      --ink-2: #51607a;
       --accent: #0f766e;
       --accent-2: #e11d48;
       --accent-3: #f59e0b;
+      --line: #d7dde8;
       --panel: #ffffff;
-      --shadow: 0 16px 45px rgba(15, 23, 42, 0.12);
-      --shadow-soft: 0 6px 18px rgba(15, 23, 42, 0.08);
-      --radius: 18px;
-      --radius-sm: 12px;
-      --grid-gap: 14px;
+      --shadow: 0 20px 50px rgba(15, 23, 42, 0.14);
+      --shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.09);
+      --radius: 20px;
+      --radius-sm: 14px;
+      --grid-gap: 16px;
     }
 
     * { box-sizing: border-box; }
@@ -27,12 +28,12 @@
     body {
       font-family: "Source Sans 3", sans-serif;
       color: var(--ink);
-      max-width: 1200px;
-      margin: 28px auto;
-      padding: 24px;
+      max-width: 1320px;
+      margin: 22px auto 28px;
+      padding: 26px;
       background:
-        radial-gradient(1200px 400px at 15% -10%, #e7f5f2 0%, transparent 60%),
-        radial-gradient(1000px 380px at 90% 0%, #fff1e6 0%, transparent 65%),
+        radial-gradient(1200px 420px at 12% -10%, #deefe9 0%, transparent 62%),
+        radial-gradient(1050px 400px at 92% 0%, #ffeedd 0%, transparent 66%),
         linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
     }
 
@@ -45,12 +46,13 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
-      margin-bottom: 20px;
-      padding: 14px 16px;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding: 16px 18px;
       background: var(--panel);
       border-radius: var(--radius);
       box-shadow: var(--shadow-soft);
+      border: 1px solid var(--line);
       flex-wrap: wrap;
       animation: rise 400ms ease-out both;
     }
@@ -64,22 +66,24 @@
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+      align-items: center;
     }
 
     button {
       background: #0f172a;
       color: white;
-      border: none;
-      padding: 10px 14px;
+      border: 1px solid rgba(15, 23, 42, 0.25);
+      padding: 10px 15px;
       border-radius: 999px;
       cursor: pointer;
       font-size: 13px;
       font-weight: 600;
-      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
-      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease, border-color 140ms ease;
+      box-shadow: 0 8px 16px rgba(15, 23, 42, 0.16);
     }
-    button:hover { transform: translateY(-1px); }
+    button:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(15, 23, 42, 0.18); }
     button:active { transform: translateY(0); }
+    button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 
     .btn-accent { background: var(--accent); }
     .btn-muted { background: #374151; }
@@ -98,12 +102,46 @@
     .muted { color: var(--ink-2); font-size: 12px; }
     .card {
       background: var(--panel);
-      padding: 16px;
+      padding: 18px;
       border-radius: var(--radius-sm);
       border-left: 5px solid #ddd;
       box-shadow: var(--shadow-soft);
+      border: 1px solid var(--line);
+      min-height: 156px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
     }
-    .big { font-size: 28px; font-weight: 700; margin-top: 6px; }
+    .big { font-size: 31px; font-weight: 700; margin-top: 6px; line-height: 1.08; }
+    .kpi-delta { font-size: 12px; margin-top: 6px; color: var(--ink-2); font-weight: 600; }
+    .kpi-delta.up { color: #047857; }
+    .kpi-delta.down { color: #b91c1c; }
+    .risk-badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .risk-badge.watch {
+      background: #fff7ed;
+      color: #9a3412;
+    }
+    .runway-card {
+      grid-column: span 2;
+      border-left-width: 8px;
+      padding: 22px;
+      min-height: 180px;
+    }
+    .runway-card .big { font-size: 42px; }
+    .runway-tone-red { border-left-color: #dc2626 !important; }
+    .runway-tone-orange { border-left-color: #ea580c !important; }
+    .runway-tone-yellow { border-left-color: #d97706 !important; }
+    .runway-tone-green { border-left-color: #059669 !important; }
 
     .table-container { overflow-x: auto; margin-top: 12px; }
     table {
@@ -114,6 +152,7 @@
       border-radius: var(--radius-sm);
       overflow: hidden;
       box-shadow: var(--shadow-soft);
+      border: 1px solid var(--line);
     }
     th, td {
       padding: 12px 12px;
@@ -125,13 +164,123 @@
 
     .panel {
       background: var(--panel);
-      padding: 18px;
+      padding: 18px 20px;
       border-radius: var(--radius);
       box-shadow: var(--shadow);
+      border: 1px solid var(--line);
       animation: fadeUp 420ms ease both;
     }
 
-    #dashboardContainer, #transactionsContainer, #liabilitiesContainer {
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      gap: var(--grid-gap);
+      margin-bottom: 20px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .segmented {
+      display: inline-flex;
+      background: #e6ebf4;
+      border-radius: 999px;
+      padding: 4px;
+      border: 1px solid #d0d9e8;
+      gap: 4px;
+    }
+    .segmented button {
+      box-shadow: none;
+      border: 1px solid transparent;
+      background: transparent;
+      color: #253248;
+      padding: 8px 14px;
+      min-width: 96px;
+      width: auto;
+    }
+    .segmented button.active {
+      background: #0f172a;
+      color: #fff;
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.2);
+    }
+    .financial-block {
+      margin-top: 6px;
+      margin-bottom: 18px;
+    }
+    .financial-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .financial-sub {
+      color: var(--ink-2);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    details.kpi-tools {
+      margin-top: 10px;
+      border: 1px solid #d7dde8;
+      border-radius: 12px;
+      background: #f8fafc;
+      padding: 8px 10px;
+    }
+    details.kpi-tools summary {
+      cursor: pointer;
+      color: #334155;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .runway-summary {
+      margin-top: 6px;
+      color: #5b6a82;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .tools-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .tools-row label {
+      color: #475569;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .secondary-card .big { font-size: 34px; }
+    .tertiary-card .big { font-size: 25px; }
+    .tertiary-card .muted { font-size: 11px; }
+    .tertiary-context {
+      margin-top: 4px;
+      color: #66758f;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .input-pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+      min-height: 40px;
+    }
+
+    #orgSelect { min-width: 220px; }
+    #overviewDateSelect { margin-left: auto; }
+
+    #dashboardContainer, #transactionsContainer, #liabilitiesContainer, #budgetContainer {
       animation: fadeUp 420ms ease both;
     }
 
@@ -144,11 +293,22 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    @media (max-width: 980px) {
+      .kpi-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+      .runway-card { grid-column: span 2; }
+    }
+
     @media (max-width: 900px) {
       body { margin: 10px; padding: 16px; }
       .header { flex-direction: column; align-items: flex-start; }
       .header .actions { width: 100%; }
       button { width: 100%; }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .runway-card { grid-column: span 1; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      #overviewDateSelect { margin-left: 0; }
+      .segmented { width: 100%; }
+      .segmented button { width: 50%; min-width: 0; }
     }
   </style>
 </head>
@@ -159,9 +319,13 @@
       <div class="muted">Profit, runway, and next‑step clarity in seconds.</div>
     </div>
     <div class="actions">
+      <select id="orgSelect" title="Organization" class="input-pill">
+        <option value="">Organization</option>
+      </select>
       <button onclick="showDashboard()">Overview</button>
       <button onclick="showTransactions()">All transactions</button>
       <button onclick="showLiabilities()">Upcoming risks</button>
+      <button onclick="showBudgetInput()">Budget input</button>
       <button onclick="authorize()" class="btn-accent">Authorize</button>
       <button onclick="checkHealth()" class="btn-muted">Status</button>
       <button onclick="showRawJson()" id="rawJsonBtn" class="btn-warm">Show Raw JSON</button>
@@ -174,57 +338,91 @@
   <!-- DASHBOARD -->
   <div id="dashboardContainer" style="display:none;">
     <!-- KPI tiles -->
-    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px;">
-      <div class="card" style="border-left-color:#10b981;">
+    <div class="kpi-grid">
+      <div class="card runway-card runway-tone-yellow" id="runwayCard">
+        <div class="muted">Runway</div>
+        <div id="kpiRunway" class="big">&mdash;</div>
+        <div id="kpiRunwayMeta" class="muted">months at current burn</div>
+        <div id="runwayRiskBadge" style="display:none;" class="risk-badge">Risk</div>
+        <div id="runwayBurnSummary" class="runway-summary">Based on cash and trailing burn.</div>
+        <details class="kpi-tools">
+          <summary>Adjust burn rate</summary>
+          <div class="tools-row">
+            <label for="cashBalanceInput">Cash balance</label>
+            <input id="cashBalanceInput" type="number" inputmode="decimal" placeholder="Cash balance" class="input-pill" style="width:160px;">
+            <label for="burnMonthsInput">Burn months</label>
+            <select id="burnMonthsInput" class="input-pill" style="width:120px;">
+              <option value="1">1 month</option>
+              <option value="2">2 months</option>
+              <option value="3" selected>3 months</option>
+              <option value="4">4 months</option>
+              <option value="6">6 months</option>
+            </select>
+          </div>
+        </details>
+      </div>
+      <div class="card secondary-card" style="border-left-color:#10b981;">
         <div class="muted">Profit Now (FY-to-date)</div>
         <div id="kpiProfitNow" class="big">&mdash;</div>
         <div id="kpiProfitNowMeta" class="muted">FY to date</div>
+        <div id="kpiProfitNowDelta" class="kpi-delta">--</div>
       </div>
-      <div class="card" style="border-left-color:#10b981;">
+      <div class="card secondary-card" style="border-left-color:#10b981;">
         <div class="muted">Future Profit</div>
         <div id="kpiFutureProfit" class="big">&mdash;</div>
         <div id="kpiFutureProfitMeta" class="muted">Projected to FY end</div>
+        <div id="kpiFutureProfitDelta" class="kpi-delta">--</div>
+        <div id="futureProfitRiskBadge" style="display:none;" class="risk-badge">Projected Loss</div>
       </div>
-      <div class="card" style="border-left-color:#f59e0b;">
-        <div class="muted">Runway</div>
-        <div id="kpiRunway" class="big">&mdash;</div>
-        <div id="kpiRunwayMeta" class="muted">months</div>
-      </div>
-      <div class="card" style="border-left-color:#10b981;">
+      <div class="card tertiary-card" style="border-left-color:#10b981;">
         <div class="muted">Sales this month</div>
         <div id="kpiSalesMonth" class="big">&mdash;</div>
         <div id="kpiSalesMonthMeta" class="muted"></div>
+        <div class="tertiary-context">This month</div>
       </div>
-      <div class="card" style="border-left-color:#ef4444;">
+      <div class="card tertiary-card" style="border-left-color:#ef4444;">
         <div class="muted">Spending this month</div>
         <div id="kpiSpendMonth" class="big">&mdash;</div>
         <div id="kpiSpendMonthMeta" class="muted"></div>
+        <div class="tertiary-context">This month</div>
       </div>
-      <div class="card" style="border-left-color:#ef4444;">
+      <div class="card tertiary-card" style="border-left-color:#ef4444;">
         <div class="muted">Current liabilities</div>
         <div id="kpiCurLiabOverview" class="big">&mdash;</div>
         <div id="kpiCurLiabOverviewMeta" class="muted"></div>
+        <div class="tertiary-context">Current</div>
       </div>
     </div>
 
-    <h2 style="margin:0 0 10px 0;">Sales: actual vs projected (financial year)</h2>
+    <div class="financial-block">
+      <div class="financial-title">
+        <h2 style="margin:0;">Financial Performance</h2>
+        <div class="financial-sub">Actual vs projected across the full financial year</div>
+      </div>
+    </div>
+    <h3 style="margin:0 0 10px 0;">Sales</h3>
     <div class="panel" style="margin-bottom: 18px;">
-      <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
-        <button id="salesModeMonthly" class="btn-muted">Monthly</button>
-        <button id="salesModeCumulative" class="btn-muted">Cumulative</button>
-        <select id="overviewDateSelect" style="margin-left:auto; padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#0f172a;"></select>
-        <select id="fySelect" style="padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#0f172a;">
+      <div class="toolbar">
+        <div class="segmented">
+          <button id="salesModeMonthly" class="active">Monthly</button>
+          <button id="salesModeCumulative">Cumulative</button>
+        </div>
+        <select id="overviewDateSelect" class="input-pill"></select>
+        <select id="fySelect" class="input-pill">
           <option value="2024">FY 2023–2024</option>
           <option value="2025">FY 2024–2025</option>
         </select>
-        <input id="cashBalanceInput" type="number" inputmode="decimal" placeholder="Cash balance" style="padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#0f172a; width:160px;">
       </div>
       <div style="height:320px;">
         <canvas id="salesFyChart"></canvas>
       </div>
     </div>
 
-    <h2 style="margin:0 0 10px 0;">Profit trend (FY)</h2>
+    <h3 style="margin:18px 0 10px 0;">Expenses</h3>
+    <div class="panel" style="height:320px;">
+      <canvas id="expensesFyChart"></canvas>
+    </div>
+    <h3 style="margin:18px 0 10px 0;">Profit</h3>
     <div class="panel" style="height:320px;">
       <canvas id="profitFyChart"></canvas>
     </div>
@@ -302,6 +500,35 @@
   </div>
 </div>
   
+  <!-- BUDGET INPUT -->
+  <div id="budgetContainer" style="display:none;">
+    <h2 style="margin:0 0 10px 0;">Budget input</h2>
+    <div class="muted" id="budgetMeta" style="margin-bottom:10px;">
+      Add monthly budget rows used for projected metrics in Xero mode (enter revenue as positive; system stores accounting sign).
+    </div>
+
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+      <button onclick="addBudgetRow()" class="btn-accent">Add row</button>
+      <button onclick="loadBudgetRows()" class="btn-muted">Reload</button>
+      <button onclick="saveBudgetRows()">Save budget</button>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Type</th>
+            <th>Account name</th>
+            <th>Net amount</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="budgetBody"></tbody>
+      </table>
+    </div>
+  </div>
+
 
   <pre id="rawOutput" style="display:none; background:#f5f5f5; padding:15px; border-radius:6px; overflow-x:auto;"></pre>
 

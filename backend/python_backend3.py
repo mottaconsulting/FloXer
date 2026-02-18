@@ -33,6 +33,7 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", os.path.join(BASE_DIR, "exports")))
 BUDGET_FILE = os.getenv("BUDGET_FILE", str(EXPORTS_DIR / "budget.csv.xlsx"))
+MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(EXPORTS_DIR / "manual_budget.csv")))
 
 def resolve_data_mode() -> str:
     """Pick csv when available if DATA_MODE not explicitly set."""
@@ -105,6 +106,33 @@ def get_tenant_id() -> str | None:
     return tokens.get("tenant_id") or TENANT_ID_ENV
 
 
+def get_active_tenant_id(access_token: str) -> str:
+    """Ensure we use a tenant id that is in current /connections list."""
+    saved = get_tenant_id()
+    resp = requests.get(
+        XERO_CONNECTIONS_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    resp.raise_for_status()
+    connections = resp.json() or []
+    tenant_ids = [c.get("tenantId") for c in connections if c.get("tenantId")]
+
+    if not tenant_ids:
+        raise Exception(
+            "No active Xero organization connections found. Re-authorize at /auth and choose an organization."
+        )
+
+    if saved in tenant_ids:
+        return saved
+
+    # Saved tenant is stale/missing: switch to the first active tenant.
+    active = tenant_ids[0]
+    tokens = load_tokens()
+    tokens["tenant_id"] = active
+    save_tokens(tokens)
+    return active
+
+
 def token_is_valid(tokens: dict) -> bool:
     now = int(time.time())
     return bool(tokens.get("access_token")) and now < int(tokens.get("expires_at", 0))
@@ -158,14 +186,8 @@ def get_access_token() -> str:
 
 
 def xero_headers() -> dict:
-    tenant_id = get_tenant_id()
-    if not tenant_id:
-        raise Exception(
-            "No tenant id set. Go to http://localhost:5000/connections and choose a tenant, "
-            "or set XERO_TENANT_ID in your .env."
-        )
-
     access_token = get_access_token()
+    tenant_id = get_active_tenant_id(access_token)
     return {
         "Authorization": f"Bearer {access_token}",
         "Xero-tenant-id": tenant_id,
@@ -249,6 +271,14 @@ def _read_budget_excel(filepath: str) -> pd.DataFrame:
         raise FileNotFoundError(f"Budget file not found: {fp}")
     df = pd.read_excel(fp, sheet_name=0)
     df.columns = [_normalize_col(c) for c in df.columns]
+    return df
+
+def _empty_canonical_df() -> pd.DataFrame:
+    df = pd.DataFrame(
+        columns=["ACCOUNT_TYPE", "ACCOUNT_NAME", "ACCOUNT_CODE", "DATA_CATEGORY", "JOURNAL_DATE", "NET_AMOUNT"]
+    )
+    df["JOURNAL_DATE"] = pd.to_datetime(df["JOURNAL_DATE"], errors="coerce")
+    df["NET_AMOUNT"] = pd.to_numeric(df["NET_AMOUNT"], errors="coerce")
     return df
 
 def _pick_col(normalized_cols: dict, candidates: list[str]) -> str | None:
@@ -382,6 +412,77 @@ def _load_budget_df() -> pd.DataFrame:
     budget = _enforce_sign_convention(budget)
     return budget
 
+def _load_budget_df_manual() -> pd.DataFrame:
+    if not MANUAL_BUDGET_FILE.exists():
+        return _empty_canonical_df()
+    df = pd.read_csv(MANUAL_BUDGET_FILE)
+    df.columns = [_normalize_col(c) for c in df.columns]
+    budget = _normalize_schema(df)
+    budget = _enforce_sign_convention(budget)
+    if "DATA_CATEGORY" in budget.columns:
+        budget["DATA_CATEGORY"] = budget["DATA_CATEGORY"].replace("", "Budget")
+    return budget
+
+def _save_budget_rows_manual(rows: list[dict]) -> pd.DataFrame:
+    incoming = pd.DataFrame(rows or [])
+    if incoming.empty:
+        clean = _empty_canonical_df()
+    else:
+        incoming.columns = [_normalize_col(c) for c in incoming.columns]
+        clean = _normalize_schema(incoming)
+        clean = _enforce_sign_convention(clean)
+        if "DATA_CATEGORY" in clean.columns:
+            clean["DATA_CATEGORY"] = clean["DATA_CATEGORY"].replace("", "Budget")
+        else:
+            clean["DATA_CATEGORY"] = "Budget"
+
+    MANUAL_BUDGET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    out = clean.copy()
+    if "JOURNAL_DATE" in out.columns:
+        out["JOURNAL_DATE"] = pd.to_datetime(out["JOURNAL_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
+    out.to_csv(MANUAL_BUDGET_FILE, index=False)
+    return clean
+
+def _load_actuals_df_xero() -> pd.DataFrame:
+    journals = fetch_journals()
+    rows = []
+    for j in journals:
+        jdate = parse_xero_date(j.get("JournalDate") or j.get("JournalDateString"))
+        if not jdate:
+            continue
+        lines = j.get("JournalLines", []) or []
+        for line in lines:
+            rows.append(
+                {
+                    "ACCOUNT_TYPE": str(line.get("AccountType") or "").strip().upper(),
+                    "ACCOUNT_NAME": str(line.get("AccountName") or "").strip(),
+                    "ACCOUNT_CODE": str(line.get("AccountCode") or "").strip(),
+                    "DATA_CATEGORY": "Actual",
+                    "JOURNAL_DATE": jdate,
+                    "NET_AMOUNT": float(line.get("NetAmount") or line.get("GrossAmount") or 0.0),
+                }
+            )
+    if not rows:
+        return _empty_canonical_df()
+    df = pd.DataFrame(rows)
+    df["JOURNAL_DATE"] = pd.to_datetime(df["JOURNAL_DATE"], errors="coerce")
+    df["NET_AMOUNT"] = pd.to_numeric(df["NET_AMOUNT"], errors="coerce")
+    df = df.dropna(subset=["JOURNAL_DATE"])
+    return _enforce_sign_convention(df)
+
+def _load_actuals_df_by_mode() -> pd.DataFrame:
+    if DATA_MODE == "csv":
+        return _load_actuals_df()
+    return _load_actuals_df_xero()
+
+def _load_budget_df_by_mode() -> pd.DataFrame:
+    try:
+        if DATA_MODE == "csv":
+            return _load_budget_df()
+        return _load_budget_df_manual()
+    except Exception:
+        return _empty_canonical_df()
+
 
 def _load_liability_lines_df() -> pd.DataFrame:
     journals_df = _read_exports_csv("journals.csv")
@@ -411,6 +512,21 @@ def _load_liability_lines_df() -> pd.DataFrame:
     df["ACCOUNT_CODE"] = df["ACCOUNT_CODE"].astype(str).str.strip()
     df = df[df["ACCOUNT_TYPE"] == "CURRLIAB"]
     return df
+
+def _load_liability_lines_df_xero() -> pd.DataFrame:
+    actuals = _load_actuals_df_xero()
+    if actuals.empty:
+        return actuals
+    if "ACCOUNT_CODE" not in actuals.columns:
+        actuals["ACCOUNT_CODE"] = ""
+    if "ACCOUNT_NAME" not in actuals.columns:
+        actuals["ACCOUNT_NAME"] = ""
+    return actuals[actuals["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
+
+def _load_liability_lines_df_by_mode() -> pd.DataFrame:
+    if DATA_MODE == "csv":
+        return _load_liability_lines_df()
+    return _load_liability_lines_df_xero()
 
 
 def fetch_accounts_csv() -> list[dict]:
@@ -671,12 +787,8 @@ def build_forecast_payload(
 ) -> dict:
     if today is None:
         today = datetime.today()
-
-    if DATA_MODE != "csv":
-        raise ValueError("Forecast requires CSV exports (DATA_MODE=csv).")
-
-    actuals = _load_actuals_df()
-    budget = _load_budget_df()
+    actuals = _load_actuals_df_by_mode()
+    budget = _load_budget_df_by_mode()
 
     fy_start, fy_end = _fy_bounds(today, fy_start_month)
     actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
@@ -710,6 +822,14 @@ def build_forecast_payload(
         for m, a, b in zip(months, actual_profit, budget_profit)
     ]
     future_profit = float(np.sum(projected_profit))
+
+    # Expenses come from actual journal lines (actuals_fy) and budget for future months.
+    actual_expense = _monthly_series(actuals_fy, months, "EXPENSE")
+    budget_expense = _monthly_series(budget_completed, months, "EXPENSE")
+    projected_expense = [
+        a if m <= current_month else b
+        for m, a, b in zip(months, actual_expense, budget_expense)
+    ]
 
     expense_series = _monthly_series(actuals_fy, months, "EXPENSE")
     past_expenses = [v for m, v in zip(months, expense_series) if m <= current_month]
@@ -759,12 +879,8 @@ def build_overview_payload(
 ) -> dict:
     if today is None:
         today = datetime.today()
-
-    if DATA_MODE != "csv":
-        raise ValueError("Overview requires CSV exports (DATA_MODE=csv).")
-
-    actuals = _load_actuals_df()
-    budget = _load_budget_df()
+    actuals = _load_actuals_df_by_mode()
+    budget = _load_budget_df_by_mode()
 
     fy_start, fy_end = _fy_bounds(today, fy_start_month)
     actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
@@ -777,6 +893,16 @@ def build_overview_payload(
             fy_start, fy_end = _fy_bounds(today, fy_start_month)
             actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
             budget_fy = budget[(budget["JOURNAL_DATE"] >= fy_start) & (budget["JOURNAL_DATE"] <= fy_end)]
+
+    # In Xero mode, if caller passes a date beyond the latest actual in this FY
+    # (e.g. FY-end picker), keep FY fixed but clamp "today" to latest actual so
+    # projected months still use budget after the real cutoff.
+    if DATA_MODE == "xero" and len(actuals_fy):
+        latest_actual_fy = actuals_fy["JOURNAL_DATE"].max()
+        if pd.notna(latest_actual_fy):
+            latest_actual_dt = latest_actual_fy.to_pydatetime() if hasattr(latest_actual_fy, "to_pydatetime") else latest_actual_fy
+            if today > latest_actual_dt:
+                today = latest_actual_dt
 
     budget_completed, filled_count = complete_budget_to_fy(budget_fy, fy_start, fy_end)
 
@@ -808,7 +934,34 @@ def build_overview_payload(
     ]
     future_profit = float(np.sum(projected_profit))
 
+    actual_expense = _monthly_series(actuals_fy, months, "EXPENSE")
+    budget_expense = _monthly_series(budget_completed, months, "EXPENSE")
+    projected_expense = [
+        a if m <= current_month else b
+        for m, a, b in zip(months, actual_expense, budget_expense)
+    ]
+
     sales_series = _build_sales_series(actuals_fy, budget_completed, fy_start, fy_end, today)
+    available_months = []
+    if "JOURNAL_DATE" in actuals_fy.columns and len(actuals_fy):
+        months_set = {
+            datetime(d.year, d.month, 1)
+            for d in pd.to_datetime(actuals_fy["JOURNAL_DATE"], errors="coerce").dropna().tolist()
+        }
+        available_months = [f"{m.year}-{m.month:02d}" for m in sorted(months_set)]
+
+    available_fy_end_years = []
+    date_pool = []
+    if "JOURNAL_DATE" in actuals.columns and len(actuals):
+        date_pool.extend(pd.to_datetime(actuals["JOURNAL_DATE"], errors="coerce").dropna().tolist())
+    if "JOURNAL_DATE" in budget.columns and len(budget):
+        date_pool.extend(pd.to_datetime(budget["JOURNAL_DATE"], errors="coerce").dropna().tolist())
+    if date_pool:
+        fy_years = {
+            (d.year + 1) if d.month >= fy_start_month else d.year
+            for d in date_pool
+        }
+        available_fy_end_years = sorted(fy_years)
 
     month_actuals = actuals_fy[
         (actuals_fy["JOURNAL_DATE"] >= current_month) & (actuals_fy["JOURNAL_DATE"] < next_month)
@@ -837,6 +990,8 @@ def build_overview_payload(
 
     if filled_count:
         warnings.append(f"Budget missing months; filled {filled_count} rows using recent averages.")
+    if DATA_MODE == "xero" and budget.empty:
+        warnings.append("No manual budget yet. Add budget rows in Budget input page for projections.")
 
     current_liabilities = None
     if "ACCOUNT_TYPE" in actuals_fy.columns and "NET_AMOUNT" in actuals_fy.columns:
@@ -849,6 +1004,13 @@ def build_overview_payload(
         "actual_monthly_profit": [round(v, 2) for v in actual_profit],
         "projected_monthly_profit": [round(v, 2) for v in projected_profit],
     }
+    expenses_fy = {
+        "labels": sales_series["labels"],
+        "actual_monthly": [round(v, 2) for v in actual_expense],
+        "projected_monthly": [round(v, 2) for v in projected_expense],
+        "actual_cumulative": [round(v, 2) for v in list(np.cumsum(actual_expense).astype(float))],
+        "projected_cumulative": [round(v, 2) for v in list(np.cumsum(projected_expense).astype(float))],
+    }
 
     payload = {
         "meta": {
@@ -856,11 +1018,14 @@ def build_overview_payload(
             "fy_start": fy_start.date().isoformat(),
             "fy_end": fy_end.date().isoformat(),
             "currency": currency,
+            "available_months": available_months,
+            "available_fy_end_years": available_fy_end_years,
         },
         "kpis": {
             "profit_now": round(float(profit_now), 2),
             "future_profit": round(float(future_profit), 2),
             "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
+            "monthly_burn": round(float(monthly_burn), 2) if monthly_burn is not None else None,
             "sales_this_month": round(float(month_rev), 2) if month_rev is not None else None,
             "spending_this_month": round(float(month_exp), 2) if month_exp is not None else None,
             "current_liabilities": round(float(current_liabilities), 2) if current_liabilities is not None else None,
@@ -869,6 +1034,7 @@ def build_overview_payload(
         "charts": {
             "sales_fy": sales_series,
             "profit_fy": profit_fy,
+            "expenses_fy": expenses_fy,
         },
     }
 
@@ -884,7 +1050,7 @@ def build_liabilities_payload(
     if today is None:
         today = datetime.today()
 
-    lines = _load_liability_lines_df()
+    lines = _load_liability_lines_df_by_mode()
     if lines.empty:
         return {
             "meta": {
@@ -1164,6 +1330,11 @@ def index():
     return app.send_static_file("index.html")
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return ("", 204)
+
+
 
 
 @app.route("/setup")
@@ -1256,6 +1427,43 @@ def api_journal_lines():
         if DATA_MODE == "csv":
             return jsonify({"JournalLines": fetch_journal_lines_csv()})
         return jsonify({"error": "JournalLines not implemented in Xero mode in this endpoint"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/budget", methods=["GET", "POST"])
+def api_budget():
+    try:
+        if request.method == "GET":
+            budget_df = _load_budget_df_by_mode()
+            rows = budget_df.copy()
+            if "JOURNAL_DATE" in rows.columns:
+                rows["JOURNAL_DATE"] = pd.to_datetime(rows["JOURNAL_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
+            return jsonify(
+                {
+                    "mode": DATA_MODE,
+                    "source": str(MANUAL_BUDGET_FILE if DATA_MODE == "xero" else BUDGET_FILE),
+                    "rows": _clean_nan_values(rows.to_dict(orient="records")),
+                }
+            )
+
+        body = request.get_json(silent=True) or {}
+        rows = body.get("rows", [])
+        if not isinstance(rows, list):
+            return jsonify({"error": "rows must be a list"}), 400
+
+        clean = _save_budget_rows_manual(rows)
+        out = clean.copy()
+        if "JOURNAL_DATE" in out.columns:
+            out["JOURNAL_DATE"] = pd.to_datetime(out["JOURNAL_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
+        return jsonify(
+            {
+                "ok": True,
+                "saved_rows": int(len(out)),
+                "source": str(MANUAL_BUDGET_FILE),
+                "rows": _clean_nan_values(out.to_dict(orient="records")),
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1563,6 +1771,9 @@ def dashboard_forecast():
             burn_months=burn_months,
         )
         return jsonify(payload)
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        return jsonify({"error": f"Xero API error: {status}", "details": str(e)}), status
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1585,6 +1796,9 @@ def dashboard_overview():
             burn_months=burn_months,
         )
         return jsonify(payload)
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        return jsonify({"error": f"Xero API error: {status}", "details": str(e)}), status
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1605,6 +1819,9 @@ def dashboard_liabilities():
             gst_frequency=gst_frequency,
         )
         return jsonify(payload)
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        return jsonify({"error": f"Xero API error: {status}", "details": str(e)}), status
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
