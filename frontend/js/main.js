@@ -499,6 +499,8 @@ function renderOverview(data) {
     kpis.runway_months,
     { isCurrency: false, suffix: " months", warning: true }
   );
+  const runwayMeta = document.getElementById("kpiRunwayMeta");
+  if (runwayMeta) runwayMeta.innerText = "";
   setKpiValue(
     document.getElementById("kpiCurLiabOverview"),
     document.getElementById("kpiCurLiabOverviewMeta"),
