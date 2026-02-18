@@ -33,23 +33,8 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", os.path.join(BASE_DIR, "exports")))
 BUDGET_FILE = os.getenv("BUDGET_FILE", str(EXPORTS_DIR / "budget.csv.xlsx"))
-MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(EXPORTS_DIR / "manual_budget.csv")))
-
-def resolve_data_mode() -> str:
-    """Pick csv when available if DATA_MODE not explicitly set."""
-    env_mode = os.getenv("DATA_MODE")
-    if env_mode:
-        return env_mode.lower()
-
-    expected_exports = {"account.csv", "journal lines.csv", "journals.csv"}
-    if EXPORTS_DIR.exists():
-        available = {p.name.lower() for p in EXPORTS_DIR.iterdir() if p.is_file()}
-        if expected_exports.issubset(available):
-            return "csv"
-
-    return "xero"
-
-DATA_MODE = resolve_data_mode()  # "xero" or "csv"
+MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(Path(BASE_DIR) / "data" / "manual_budget.csv")))
+DATA_MODE = "xero"
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
@@ -219,7 +204,7 @@ def parse_xero_date(xero_date_str: str | None) -> datetime | None:
         return None
 
 # ----------------------------
-# CSV mode helpers
+# Legacy CSV helpers (no longer used in runtime mode)
 # ----------------------------
 def _clean_nan_values(obj):
     """Replace NaN/NaT/Infinity with None so JSON is valid for browsers."""
@@ -471,14 +456,10 @@ def _load_actuals_df_xero() -> pd.DataFrame:
     return _enforce_sign_convention(df)
 
 def _load_actuals_df_by_mode() -> pd.DataFrame:
-    if DATA_MODE == "csv":
-        return _load_actuals_df()
     return _load_actuals_df_xero()
 
 def _load_budget_df_by_mode() -> pd.DataFrame:
     try:
-        if DATA_MODE == "csv":
-            return _load_budget_df()
         return _load_budget_df_manual()
     except Exception:
         return _empty_canonical_df()
@@ -524,8 +505,6 @@ def _load_liability_lines_df_xero() -> pd.DataFrame:
     return actuals[actuals["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
 
 def _load_liability_lines_df_by_mode() -> pd.DataFrame:
-    if DATA_MODE == "csv":
-        return _load_liability_lines_df()
     return _load_liability_lines_df_xero()
 
 
@@ -1180,26 +1159,13 @@ def _run_tests() -> None:
 
 @app.route("/api/debug/csv")
 def debug_csv():
-    """Quick sanity check for CSV inputs."""
-    try:
-        accounts_df = _read_exports_csv("Account.csv")
-        journals_df = _read_exports_csv("Journals.csv")
-        lines_df = _read_exports_csv("Journal Lines.csv")
-
-        return jsonify(
-            {
-                "exports_dir": str(EXPORTS_DIR),
-                "account_rows": int(len(accounts_df)),
-                "journal_rows": int(len(journals_df)),
-                "journal_line_rows": int(len(lines_df)),
-                "journal_columns": list(journals_df.columns),
-                "journal_line_columns": list(lines_df.columns),
-                "sample_journal_ids": list(journals_df["JOURNAL_ID"].head(5).astype(str)),
-                "sample_line_journal_ids": list(lines_df["JOURNAL_ID"].head(5).astype(str)),
-            }
-        )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify(
+        {
+            "mode": DATA_MODE,
+            "note": "CSV mode is disabled. This API now runs in Xero mode only.",
+            "manual_budget_file": str(MANUAL_BUDGET_FILE),
+        }
+    )
 
 # ----------------------------
 # OAuth
@@ -1359,7 +1325,7 @@ def health():
             "token_expires_in": int(tokens.get("expires_at", 0)) - now,
             "note": "If token expired and no refresh_token, go to /auth to re-authorize",
             "data_mode": DATA_MODE,
-            "exports_dir": str(EXPORTS_DIR),
+            "manual_budget_file": str(MANUAL_BUDGET_FILE),
         }
     )
 
@@ -1392,9 +1358,6 @@ def api_contacts():
 @app.route("/api/accounts")
 def api_accounts():
     try:
-        if DATA_MODE == "csv":
-            return jsonify({"Accounts": fetch_accounts_csv()})
-
         resp = requests.get(f"{XERO_API_BASE}/Accounts", headers=xero_headers())
         if resp.status_code != 200:
             return jsonify({"error": f"Xero API error: {resp.status_code}", "details": resp.text}), resp.status_code
@@ -1405,9 +1368,6 @@ def api_accounts():
 @app.route("/api/journals")
 def api_journals():
     try:
-        if DATA_MODE == "csv":
-            return jsonify({ "Journals": fetch_journals_csv_nested() })
-
         resp = requests.get(
             f"{XERO_API_BASE}/Journals",
             headers=xero_headers(),
@@ -1424,9 +1384,7 @@ def api_journals():
 @app.route("/api/journal-lines")
 def api_journal_lines():
     try:
-        if DATA_MODE == "csv":
-            return jsonify({"JournalLines": fetch_journal_lines_csv()})
-        return jsonify({"error": "JournalLines not implemented in Xero mode in this endpoint"}), 400
+        return jsonify({"error": "JournalLines passthrough is not supported in Xero mode; use /api/journals"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1441,8 +1399,8 @@ def api_budget():
                 rows["JOURNAL_DATE"] = pd.to_datetime(rows["JOURNAL_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
             return jsonify(
                 {
-                    "mode": DATA_MODE,
-                    "source": str(MANUAL_BUDGET_FILE if DATA_MODE == "xero" else BUDGET_FILE),
+                    "mode": "xero",
+                    "source": str(MANUAL_BUDGET_FILE),
                     "rows": _clean_nan_values(rows.to_dict(orient="records")),
                 }
             )
@@ -1471,11 +1429,6 @@ def api_budget():
 # Dashboard endpoints (the main recommendation)
 # ----------------------------
 def fetch_invoices() -> list[dict]:
-    if DATA_MODE == "csv":
-        # You don't have invoices CSV yet, so return empty.
-        # (Dashboard endpoints that rely on invoices will show empty charts.)
-        return []
-
     resp = requests.get(f"{XERO_API_BASE}/Invoices", headers=xero_headers())
     resp.raise_for_status()
     return resp.json().get("Invoices", [])
@@ -1483,9 +1436,6 @@ def fetch_invoices() -> list[dict]:
 
 
 def fetch_journals() -> list[dict]:
-    if DATA_MODE == "csv":
-        return fetch_journals_csv_nested()
-
     resp = requests.get(
         f"{XERO_API_BASE}/Journals",
         headers=xero_headers(),
@@ -1852,7 +1802,7 @@ if __name__ == "__main__":
             print(json.dumps(payload, indent=2))
         else:
             print("ENV PORT =", os.getenv("PORT"))
-            print("ENV DATA_MODE =", os.getenv("DATA_MODE"))
+            print("MODE =", DATA_MODE)
 
             port = int(os.getenv("PORT", "5000"))
             host = os.getenv("HOST", "127.0.0.1")
