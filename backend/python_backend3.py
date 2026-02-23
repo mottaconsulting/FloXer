@@ -1,17 +1,25 @@
-from flask import Flask, jsonify, send_from_directory, request, redirect
+from flask import Flask, jsonify, send_from_directory, request, redirect, session, has_request_context, abort
 from flask_cors import CORS
 import requests
 import json
 import os
 import time
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import pandas as pd
 from pathlib import Path
 import math
 import argparse
 import numpy as np
+from functools import wraps
+from uuid import uuid4
+import secrets
+import sqlite3
+from collections import defaultdict, deque
+from threading import Lock
+from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 # ----------------------------
@@ -36,12 +44,81 @@ BUDGET_FILE = os.getenv("BUDGET_FILE", str(EXPORTS_DIR / "budget.csv.xlsx"))
 MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(Path(BASE_DIR) / "data" / "manual_budget.csv")))
 DATA_MODE = "xero"
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
+IS_PRODUCTION = APP_ENV == "production"
+REDIRECT_URI = os.getenv("XERO_REDIRECT_URI", "http://localhost:5000/callback")
+
+
+def _origin_from_url(url: str) -> str:
+    parsed = urllib.parse.urlparse((url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}".rstrip("/")
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
-CORS(app)
 print("RUNNING FILE:", __file__)
 print("FRONTEND_DIR:", FRONTEND_DIR)
 print("INDEX EXISTS:", os.path.exists(os.path.join(FRONTEND_DIR, "index.html")))
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
+_allowed_origins = [o.strip() for o in ALLOWED_ORIGINS if o.strip()]
+CSP_EXTRA_CONNECT_SRC = os.getenv("CSP_EXTRA_CONNECT_SRC", "").split(",")
+_csp_extra_connect_src = [s.strip() for s in CSP_EXTRA_CONNECT_SRC if s.strip()]
+backend_origin = _origin_from_url(os.getenv("APP_ORIGIN", "") or REDIRECT_URI)
+has_cross_site_frontend = bool(_allowed_origins) and any(
+    _origin_from_url(origin) != backend_origin for origin in _allowed_origins
+)
+if _allowed_origins:
+    CORS(
+        app,
+        resources={
+            r"/api/*": {
+                "origins": _allowed_origins,
+                "supports_credentials": True,
+            }
+        },
+    )
+elif IS_PRODUCTION:
+    print("WARNING: ALLOWED_ORIGINS is empty in production. CORS is disabled.")
+# Production note: ALLOWED_ORIGINS must be explicitly set for cross-origin API access.
+
+
+def _normalize_csp_source(value: str) -> str:
+    origin = _origin_from_url(value)
+    return origin or value.strip()
+
+
+connect_src_values = ["'self'"]
+for origin in _allowed_origins:
+    src = _normalize_csp_source(origin)
+    if src and src not in connect_src_values:
+        connect_src_values.append(src)
+for src_value in _csp_extra_connect_src:
+    src = _normalize_csp_source(src_value)
+    if src and src not in connect_src_values:
+        connect_src_values.append(src)
+_CSP_CONNECT_SRC = " ".join(connect_src_values)
+
+secret_key = os.getenv("FLASK_SECRET_KEY")
+if not secret_key or len(secret_key) < 32:
+    raise RuntimeError("FLASK_SECRET_KEY must be set and at least 32 characters long.")
+cookie_samesite = os.getenv("SESSION_COOKIE_SAMESITE", "Lax").strip()
+if cookie_samesite not in {"Lax", "Strict", "None"}:
+    cookie_samesite = "Lax"
+if IS_PRODUCTION and has_cross_site_frontend:
+    cookie_samesite = "None"
+app.config["SECRET_KEY"] = secret_key
+app.config["SESSION_COOKIE_NAME"] = "xero_dash_session"
+app.config["SESSION_COOKIE_SECURE"] = IS_PRODUCTION
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = cookie_samesite if IS_PRODUCTION else "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
+app.config["PROPAGATE_EXCEPTIONS"] = False
+app.config["TRAP_HTTP_EXCEPTIONS"] = False
+app.config["DEBUG"] = False
+if IS_PRODUCTION:
+    # In production behind Cloudflare Tunnel/reverse proxy, trust one proxy hop
+    # so Flask/Werkzeug derive remote/proto/host from validated proxy headers.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
 
@@ -50,13 +127,11 @@ print("INDEX EXISTS:", os.path.exists(os.path.join(FRONTEND_DIR, "index.html")))
 # ----------------------------
 CLIENT_ID = os.getenv("XERO_CLIENT_ID")
 CLIENT_SECRET = os.getenv("XERO_CLIENT_SECRET")
+if not CLIENT_ID or not CLIENT_SECRET:
+    raise RuntimeError("XERO_CLIENT_ID and XERO_CLIENT_SECRET must be set in environment.")
 
-# Optional: you can still hardcode tenant id in .env while learning.
-# Better: we auto-save tenant_id into tokens.json after /connections.
+# Optional tenant fallback from env.
 TENANT_ID_ENV = os.getenv("XERO_TENANT_ID")
-
-TOKENS_FILE = os.getenv("TOKENS_FILE", "tokens.json")
-REDIRECT_URI = os.getenv("XERO_REDIRECT_URI", "http://localhost:5000/callback")
 
 # Keep scopes simple: only request what you use.
 SCOPES = os.getenv(
@@ -68,32 +143,185 @@ XERO_AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
 XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 XERO_CONNECTIONS_URL = "https://api.xero.com/connections"
 XERO_API_BASE = "https://api.xero.com/api.xro/2.0"
+DB_FILE = os.getenv("DB_FILE", str(Path(BASE_DIR) / "data" / "app.db"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"))
+
+_RATE_LIMIT_BUCKETS: dict[str, deque] = defaultdict(deque)
+_RATE_LIMIT_LOCK = Lock()
+_USER_REFRESH_LOCKS: dict[str, Lock] = defaultdict(Lock)
+
+
+def login_required(view_func):
+    @wraps(view_func)
+    def _wrapped(*args, **kwargs):
+        if not session.get("user_id"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Unauthorized", "message": "Login required"}), 401
+            return redirect("/auth/start")
+        return view_func(*args, **kwargs)
+
+    return _wrapped
+
+
+@app.before_request
+def enforce_rate_limit():
+    path = request.path or "/"
+    if path.startswith("/static/") or path == "/favicon.ico":
+        return None
+
+    # Cloudflare Tunnel forwards the original client IP in CF-Connecting-IP.
+    # Fallback to remote_addr (which is corrected by ProxyFix in production).
+    client_ip = request.headers.get("CF-Connecting-IP") or request.remote_addr or "unknown"
+    now = time.time()
+
+    with _RATE_LIMIT_LOCK:
+        bucket = _RATE_LIMIT_BUCKETS[client_ip]
+        cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+            if path.startswith("/api/"):
+                return jsonify({"error": "Too Many Requests"}), 429
+            return ("Too Many Requests", 429)
+        bucket.append(now)
+    return None
+
+
+@app.before_request
+def csrf_protect_forms():
+    session.permanent = True
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_urlsafe(32)
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+
+    # CSRF requirement applies to browser form submissions.
+    if request.mimetype not in {"application/x-www-form-urlencoded", "multipart/form-data"}:
+        return None
+
+    sent = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token")
+    if not sent or sent != session.get("csrf_token"):
+        abort(403)
+    return None
+
+
+@app.after_request
+def add_secure_headers(resp):
+    # TODO: remove 'unsafe-inline' from script-src once inline scripts are fully eliminated.
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        f"connect-src {_CSP_CONNECT_SRC}; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
 
 
 # ----------------------------
-# Token + tenant helpers
+# DB + token helpers
 # ----------------------------
-def load_tokens() -> dict:
-    if os.path.exists(TOKENS_FILE):
-        with open(TOKENS_FILE, "r") as f:
-            return json.load(f)
-    return {}
+def _db_conn() -> sqlite3.Connection:
+    Path(DB_FILE).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
-def save_tokens(tokens: dict) -> None:
-    with open(TOKENS_FILE, "w") as f:
-        json.dump(tokens, f, indent=2)
+def init_db() -> None:
+    with _db_conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS xero_tokens (
+                user_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL,
+                refresh_token TEXT,
+                access_token TEXT,
+                expires_at INTEGER,
+                scope TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, tenant_id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+        )
 
 
-def get_tenant_id() -> str | None:
-    """Prefer tenant_id saved in tokens.json; fall back to .env."""
-    tokens = load_tokens()
-    return tokens.get("tenant_id") or TENANT_ID_ENV
+def _utc_now_iso() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
-def get_active_tenant_id(access_token: str) -> str:
-    """Ensure we use a tenant id that is in current /connections list."""
-    saved = get_tenant_id()
+def ensure_user(user_id: str) -> None:
+    with _db_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (id, created_at) VALUES (?, ?)",
+            (user_id, _utc_now_iso()),
+        )
+
+
+def _persist_tokens_for_tenant(user_id: str, tenant_id: str, tokens: dict) -> None:
+    ensure_user(user_id)
+    with _db_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO xero_tokens (user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, tenant_id) DO UPDATE SET
+                refresh_token=excluded.refresh_token,
+                access_token=excluded.access_token,
+                expires_at=excluded.expires_at,
+                scope=excluded.scope,
+                updated_at=excluded.updated_at
+            """,
+            (
+                user_id,
+                tenant_id,
+                tokens.get("refresh_token"),
+                tokens.get("access_token"),
+                int(tokens.get("expires_at") or 0),
+                tokens.get("scope"),
+                _utc_now_iso(),
+            ),
+        )
+
+
+def _persist_tokens_for_tenants(user_id: str, tenant_ids: list[str], tokens: dict) -> None:
+    for tenant_id in tenant_ids:
+        _persist_tokens_for_tenant(user_id, tenant_id, tokens)
+
+
+def _selected_tenant() -> str | None:
+    if has_request_context():
+        return request.args.get("tenant_id") or session.get("tenant_id")
+    return None
+
+
+def _get_user_tenant_ids(user_id: str) -> list[str]:
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT tenant_id FROM xero_tokens WHERE user_id = ? ORDER BY updated_at DESC",
+            (user_id,),
+        ).fetchall()
+    return [r["tenant_id"] for r in rows if r["tenant_id"]]
+
+
+def _fetch_and_store_connections(access_token: str, user_id: str, tokens: dict) -> list[str]:
     resp = requests.get(
         XERO_CONNECTIONS_URL,
         headers={"Authorization": f"Bearer {access_token}"},
@@ -101,21 +329,99 @@ def get_active_tenant_id(access_token: str) -> str:
     resp.raise_for_status()
     connections = resp.json() or []
     tenant_ids = [c.get("tenantId") for c in connections if c.get("tenantId")]
+    if tenant_ids:
+        _persist_tokens_for_tenants(user_id, tenant_ids, tokens)
+    return tenant_ids
 
+
+def require_tenant_id(access_token: str | None = None) -> str:
+    """Return current tenant_id or raise a clear action-oriented error."""
+    if not has_request_context() or not session.get("user_id"):
+        raise Exception("No authenticated user session. Start OAuth at /auth/start")
+
+    user_id = session["user_id"]
+    selected = _selected_tenant()
+    tenant_ids = _get_user_tenant_ids(user_id)
+
+    # Fast path: use selected tenant directly from session/request.
+    if selected and selected in tenant_ids:
+        session["tenant_id"] = selected
+        return selected
+    if selected and not tenant_ids:
+        # tenant missing in DB; fall through to connection refresh
+        pass
+    elif selected and tenant_ids:
+        # selected is stale; use the most recent known tenant without extra network calls.
+        session["tenant_id"] = tenant_ids[0]
+        return tenant_ids[0]
+
+    # Only call /connections when tenant is missing in session/request OR DB has no tenant rows.
+    if not access_token:
+        raise Exception("No tenant selected. Open /connections to choose an organization or re-authorize at /auth/start.")
+    token_snapshot = load_tokens() or {}
+    token_snapshot["access_token"] = access_token
+    tenant_ids = _fetch_and_store_connections(access_token, user_id, token_snapshot)
     if not tenant_ids:
-        raise Exception(
-            "No active Xero organization connections found. Re-authorize at /auth and choose an organization."
-        )
+        raise Exception("No tenant available. Open /connections to connect an organization or re-authorize at /auth/start.")
+    session["tenant_id"] = tenant_ids[0]
+    return tenant_ids[0]
 
-    if saved in tenant_ids:
-        return saved
 
-    # Saved tenant is stale/missing: switch to the first active tenant.
-    active = tenant_ids[0]
-    tokens = load_tokens()
-    tokens["tenant_id"] = active
-    save_tokens(tokens)
-    return active
+def _get_user_token_row(user_id: str, tenant_id: str | None = None) -> dict:
+    with _db_conn() as conn:
+        if tenant_id:
+            row = conn.execute(
+                """
+                SELECT user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at
+                FROM xero_tokens
+                WHERE user_id = ? AND tenant_id = ?
+                """,
+                (user_id, tenant_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at
+                FROM xero_tokens
+                WHERE user_id = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+    return dict(row) if row else {}
+
+
+def load_tokens() -> dict:
+    if not has_request_context():
+        return {}
+    user_id = session.get("user_id")
+    if not user_id:
+        return {}
+    return _get_user_token_row(user_id, _selected_tenant())
+
+
+def save_tokens(tokens: dict) -> None:
+    if not has_request_context():
+        return
+    user_id = session.get("user_id")
+    if not user_id:
+        return
+    tenant_id = tokens.get("tenant_id") or _selected_tenant()
+    if not tenant_id:
+        return
+    _persist_tokens_for_tenant(user_id, tenant_id, tokens)
+
+
+def get_tenant_id() -> str | None:
+    selected = _selected_tenant()
+    if selected:
+        return selected
+    return TENANT_ID_ENV
+
+
+def get_active_tenant_id(access_token: str) -> str:
+    return require_tenant_id(access_token)
 
 
 def token_is_valid(tokens: dict) -> bool:
@@ -129,40 +435,57 @@ def refresh_access_token(tokens: dict) -> dict:
     Important: Xero may rotate refresh tokens.
     If the response includes a new refresh_token, you must save it.
     """
-    if not tokens.get("refresh_token"):
-        raise Exception(
-            "Access token expired and no refresh token available. Please re-authorize at http://localhost:5000/auth"
+    user_id = session.get("user_id") if has_request_context() else "__no_session__"
+    lock = _USER_REFRESH_LOCKS[user_id]
+    with lock:
+        if not tokens.get("refresh_token"):
+            raise Exception(
+                "Access token expired and no refresh token available. Please re-authorize at /auth/start"
+            )
+
+        resp = requests.post(
+            XERO_TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": tokens["refresh_token"],
+            },
+            auth=(CLIENT_ID, CLIENT_SECRET),
         )
+        resp.raise_for_status()
 
-    resp = requests.post(
-        XERO_TOKEN_URL,
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": tokens["refresh_token"],
-        },
-        auth=(CLIENT_ID, CLIENT_SECRET),
-    )
-    resp.raise_for_status()
+        new_tokens = resp.json()
 
-    new_tokens = resp.json()
+        # keep refresh_token if API doesn't return a new one
+        if "refresh_token" not in new_tokens and "refresh_token" in tokens:
+            new_tokens["refresh_token"] = tokens["refresh_token"]
 
-    # keep refresh_token if API doesn't return a new one
-    if "refresh_token" not in new_tokens and "refresh_token" in tokens:
-        new_tokens["refresh_token"] = tokens["refresh_token"]
+        now = int(time.time())
+        new_tokens["expires_at"] = now + int(new_tokens["expires_in"]) - 30
 
-    now = int(time.time())
-    new_tokens["expires_at"] = now + int(new_tokens["expires_in"]) - 30
+        # preserve basic fields
+        if tokens.get("scope") and not new_tokens.get("scope"):
+            new_tokens["scope"] = tokens["scope"]
+        if has_request_context():
+            user_id = session.get("user_id")
+            if user_id:
+                with _db_conn() as conn:
+                    tenant_rows = conn.execute(
+                        "SELECT tenant_id FROM xero_tokens WHERE user_id = ?",
+                        (user_id,),
+                    ).fetchall()
+                tenant_ids = [r["tenant_id"] for r in tenant_rows]
+                new_tokens["expires_at"] = new_tokens["expires_at"]
+                _persist_tokens_for_tenants(user_id, tenant_ids, new_tokens)
 
-    # keep tenant_id if we already saved it
-    if tokens.get("tenant_id"):
-        new_tokens["tenant_id"] = tokens["tenant_id"]
-
-    save_tokens(new_tokens)
-    return new_tokens
+        return new_tokens
 
 
 def get_access_token() -> str:
+    if not has_request_context() or not session.get("user_id"):
+        raise Exception("Unauthorized: no active session user")
     tokens = load_tokens()
+    if not tokens:
+        raise Exception("No stored tokens for session user/tenant. Re-authorize at /auth/start")
     if token_is_valid(tokens):
         return tokens["access_token"]
     # refresh
@@ -172,7 +495,7 @@ def get_access_token() -> str:
 
 def xero_headers() -> dict:
     access_token = get_access_token()
-    tenant_id = get_active_tenant_id(access_token)
+    tenant_id = require_tenant_id(access_token)
     return {
         "Authorization": f"Bearer {access_token}",
         "Xero-tenant-id": tenant_id,
@@ -202,6 +525,9 @@ def parse_xero_date(xero_date_str: str | None) -> datetime | None:
         return datetime.fromisoformat(xero_date_str.replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+init_db()
 
 # ----------------------------
 # Legacy CSV helpers (no longer used in runtime mode)
@@ -619,6 +945,7 @@ def _period_bounds(date: datetime, period: str, fy_start_month: int) -> tuple[da
 
 
 def _next_business_day_if_weekend(d: datetime) -> datetime:
+    # TODO: extend with AU public holiday calendar support.
     if d.weekday() == 5:
         return d + pd.Timedelta(days=2)
     if d.weekday() == 6:
@@ -640,25 +967,54 @@ def _liability_type(account_code: str, account_name: str) -> str:
     return "OTHER"
 
 
+def _normalize_frequency(value: str | None, default: str) -> str:
+    v = str(value or default).strip().lower()
+    return v if v in {"monthly", "quarterly"} else default
+
+
+def _liability_frequency_config(
+    gst_frequency: str | None = None,
+    payg_frequency: str | None = None,
+    super_frequency: str | None = None,
+) -> dict:
+    return {
+        "GST": _normalize_frequency(gst_frequency, _normalize_frequency(os.getenv("GST_FREQUENCY"), "monthly")),
+        "PAYG": _normalize_frequency(payg_frequency, _normalize_frequency(os.getenv("PAYG_FREQUENCY"), "monthly")),
+        "SUPER": _normalize_frequency(super_frequency, _normalize_frequency(os.getenv("SUPER_FREQUENCY"), "quarterly")),
+        "WAGES": "payrun",
+    }
+
+
 def _expected_due_date(
     liability_type: str,
     period_end: datetime,
     frequency_map: dict,
-) -> datetime | None:
+) -> tuple[datetime | None, str | None]:
+    payg_monthly_due_day = int(os.getenv("PAYG_MONTHLY_DUE_DAY", "21"))
     if liability_type == "GST":
         freq = frequency_map.get("GST", "monthly")
         if freq == "monthly":
             next_month = pd.Timestamp(period_end) + pd.DateOffset(months=1)
             due = datetime(next_month.year, next_month.month, 21)
+            return _next_business_day_if_weekend(due), "GST monthly: 21st next month"
         else:
             due = period_end + pd.Timedelta(days=28)
-        return _next_business_day_if_weekend(due)
+            return _next_business_day_if_weekend(due), "GST quarterly: 28 days after quarter end"
 
-    if liability_type in {"SUPER", "PAYG"}:
+    if liability_type == "SUPER":
         due = period_end + pd.Timedelta(days=28)
-        return _next_business_day_if_weekend(due)
+        return _next_business_day_if_weekend(due), "SG: 28 days after quarter end"
 
-    return None
+    if liability_type == "PAYG":
+        freq = frequency_map.get("PAYG", "monthly")
+        if freq == "quarterly":
+            due = period_end + pd.Timedelta(days=28)
+            return _next_business_day_if_weekend(due), "PAYG quarterly: 28 days after quarter end"
+        next_month = pd.Timestamp(period_end) + pd.DateOffset(months=1)
+        due = datetime(next_month.year, next_month.month, payg_monthly_due_day)
+        return _next_business_day_if_weekend(due), f"PAYG monthly: {payg_monthly_due_day}th next month"
+
+    return None, None
 
 
 def complete_budget_to_fy(
@@ -1025,16 +1381,29 @@ def build_liabilities_payload(
     period: str = "month",
     fy_start_month: int = 7,
     gst_frequency: str = "monthly",
+    payg_frequency: str | None = None,
+    super_frequency: str | None = None,
 ) -> dict:
     if today is None:
         today = datetime.today()
 
     lines = _load_liability_lines_df_by_mode()
+    freq_map = _liability_frequency_config(
+        gst_frequency=gst_frequency,
+        payg_frequency=payg_frequency,
+        super_frequency=super_frequency,
+    )
     if lines.empty:
         return {
             "meta": {
                 "today": today.date().isoformat(),
                 "period": period,
+                "configuration_used": {
+                    "GST_FREQUENCY": freq_map.get("GST"),
+                    "PAYG_FREQUENCY": freq_map.get("PAYG"),
+                    "SUPER_FREQUENCY": freq_map.get("SUPER"),
+                },
+                "note": "Agent extensions not included.",
             },
             "rows": [],
         }
@@ -1048,30 +1417,30 @@ def build_liabilities_payload(
             period_start, period_end = _period_bounds(today, period, fy_start_month)
             period_lines = lines[(lines["JOURNAL_DATE"] >= period_start) & (lines["JOURNAL_DATE"] <= period_end)]
 
-    freq_map = {"GST": gst_frequency, "PAYG": "quarterly", "SUPER": "quarterly", "WAGES": "payrun"}
-
     rows = []
     for (code, name), grp in period_lines.groupby(["ACCOUNT_CODE", "ACCOUNT_NAME"]):
         net = pd.to_numeric(grp["NET_AMOUNT"], errors="coerce").fillna(0.0)
         neg = net[net < 0]
         pos = net[net > 0]
 
-        obligation_created = float((-neg).sum())
+        obligation_created = float(neg.abs().sum())
         amount_paid = float(pos.sum())
-        outstanding = float(net.sum())
+        net_position = float(net.sum())
+        outstanding_owed = float(abs(net_position)) if net_position < 0 else 0.0
+        credit_balance = float(net_position) if net_position > 0 else 0.0
 
         first_accrual = grp.loc[net < 0, "JOURNAL_DATE"].min()
         last_activity = grp["JOURNAL_DATE"].max()
         last_payment = grp.loc[net > 0, "JOURNAL_DATE"].max()
 
         ltype = _liability_type(code, name)
-        expected_due = _expected_due_date(ltype, period_end, freq_map)
+        expected_due, basis_rule = _expected_due_date(ltype, period_end, freq_map)
         days_to_due = (expected_due.date() - today.date()).days if expected_due else None
 
-        if outstanding == 0:
-            status = "Paid"
-        elif outstanding > 0:
+        if credit_balance > 0:
             status = "Credit/Overpaid"
+        elif outstanding_owed == 0:
+            status = "Paid"
         elif expected_due and today.date() > expected_due.date():
             status = "Overdue"
         elif expected_due and days_to_due is not None and days_to_due <= 14:
@@ -1085,14 +1454,23 @@ def build_liabilities_payload(
                 "account_name": name,
                 "obligation_created": round(obligation_created, 2),
                 "amount_paid": round(amount_paid, 2),
-                "outstanding": round(abs(outstanding), 2),
-                "outstanding_sign": "credit" if outstanding > 0 else "owed",
+                "outstanding_owed": round(outstanding_owed, 2),
+                "credit_balance": round(credit_balance, 2),
+                "net_position": round(net_position, 2),
+                "outstanding": round(max(outstanding_owed, credit_balance), 2),
+                "outstanding_sign": "credit" if credit_balance > 0 else "owed",
                 "first_accrual_date": first_accrual.date().isoformat() if pd.notna(first_accrual) else None,
                 "last_payment_date": last_payment.date().isoformat() if pd.notna(last_payment) else None,
                 "last_activity_date": last_activity.date().isoformat() if pd.notna(last_activity) else None,
                 "expected_due_date": expected_due.date().isoformat() if expected_due else None,
+                "basis_rule": basis_rule,
                 "days_to_due": days_to_due,
                 "status": status,
+                "configuration_used": {
+                    "GST_FREQUENCY": freq_map.get("GST"),
+                    "PAYG_FREQUENCY": freq_map.get("PAYG"),
+                    "SUPER_FREQUENCY": freq_map.get("SUPER"),
+                },
             }
         )
 
@@ -1103,7 +1481,12 @@ def build_liabilities_payload(
                 "period": period,
                 "period_start": period_start.date().isoformat(),
                 "period_end": period_end.date().isoformat(),
-                "gst_frequency": gst_frequency,
+                "configuration_used": {
+                    "GST_FREQUENCY": freq_map.get("GST"),
+                    "PAYG_FREQUENCY": freq_map.get("PAYG"),
+                    "SUPER_FREQUENCY": freq_map.get("SUPER"),
+                },
+                "note": "Agent extensions not included.",
             },
             "rows": rows,
         }
@@ -1170,26 +1553,37 @@ def debug_csv():
 # ----------------------------
 # OAuth
 # ----------------------------
-@app.route("/auth")
-def auth():
-    """Redirect user to Xero consent screen."""
+@app.route("/auth/start")
+def auth_start():
+    """Start OAuth: set CSRF state in session, then redirect to Xero authorize."""
     if not CLIENT_ID or not CLIENT_SECRET:
         return jsonify({"error": "Missing XERO_CLIENT_ID or XERO_CLIENT_SECRET in .env"}), 500
 
-    auth_url = (
-        f"{XERO_AUTHORIZE_URL}?"
-        "response_type=code&"
-        f"client_id={CLIENT_ID}&"
-        f"redirect_uri={urllib.parse.quote(REDIRECT_URI)}&"
-        f"scope={urllib.parse.quote(SCOPES)}&"
-        "prompt=login"
-    )
+    # Only OAuth state is set here. User identity is created after successful callback.
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
+    auth_url = f"{XERO_AUTHORIZE_URL}?{urllib.parse.urlencode({'client_id': CLIENT_ID, 'redirect_uri': REDIRECT_URI, 'response_type': 'code', 'scope': SCOPES, 'state': state, 'prompt': 'login'})}"
     return redirect(auth_url)
+
+@app.route("/auth")
+def auth():
+    return redirect("/auth/start")
 
 
 @app.route("/callback")
 def callback():
-    """Exchange auth code for tokens and save them."""
+    """Complete OAuth: validate state, exchange code, then create session identity."""
+    expected_state = session.get("oauth_state")
+    callback_state = request.args.get("state")
+    if not expected_state or not callback_state or expected_state != callback_state:
+        abort(403)
+    # State validated successfully; discard one-time value to prevent replay.
+    session.pop("oauth_state", None)
+
+    oauth_error = request.args.get("error")
+    if oauth_error:
+        return jsonify({"error": "OAuth authorization failed", "details": oauth_error}), 400
+
     code = request.args.get("code")
     if not code:
         return jsonify({"error": "No authorization code received"}), 400
@@ -1207,41 +1601,54 @@ def callback():
     if token_resp.status_code != 200:
         return jsonify({"error": "Failed to get tokens", "details": token_resp.text}), 400
 
-    tokens = token_resp.json()
-    tokens["expires_at"] = int(time.time()) + int(tokens["expires_in"]) - 30
-    save_tokens(tokens)
+    raw_tokens = token_resp.json()
+    expires_in = int(raw_tokens.get("expires_in", 0))
+    tokens = {
+        "access_token": raw_tokens.get("access_token"),
+        "refresh_token": raw_tokens.get("refresh_token"),
+        "expires_in": expires_in,
+        "scope": raw_tokens.get("scope"),
+        "token_type": raw_tokens.get("token_type"),
+        "expires_at": int(time.time()) + expires_in - 30,
+    }
 
-    # Try to auto-save tenant_id if possible
-    try:
-        conns = requests.get(
-            XERO_CONNECTIONS_URL,
-            headers={"Authorization": f"Bearer {tokens['access_token']}"},
-        )
-        if conns.status_code == 200:
-            connections = conns.json()
-            if len(connections) == 1:
-                tokens["tenant_id"] = connections[0].get("tenantId")
-                save_tokens(tokens)
-    except Exception:
-        pass
+    conns_resp = requests.get(
+        XERO_CONNECTIONS_URL,
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    if conns_resp.status_code != 200:
+        return jsonify({"error": "Failed to fetch Xero connections", "details": conns_resp.text}), 400
 
-    # Close window UX (your original behavior)
-    return """
-<!DOCTYPE html>
-<html>
-  <head><title>Authorization Successful</title></head>
-  <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-    <h2>✓ Authorization Successful</h2>
-    <p>You can close this tab.</p>
-    <script>
-      setTimeout(() => window.close(), 1500);
-    </script>
-  </body>
-</html>
-"""
+    connections = conns_resp.json() or []
+    tenant_ids = [c.get("tenantId") for c in connections if c.get("tenantId")]
+    if not tenant_ids:
+        return jsonify({"error": "No tenant_id found in Xero connections"}), 400
+
+    # Create logical user identity only after OAuth callback succeeds.
+    user_id = str(uuid4())
+    session["user_id"] = user_id
+    session["tenant_id"] = tenant_ids[0]
+
+    # Persist user and tokens only after successful OAuth + tenant resolution.
+    ensure_user(user_id)
+    _persist_tokens_for_tenants(user_id, tenant_ids, tokens)
+    return redirect("/dashboard")
+
+
+@app.route("/auth/logout")
+def auth_logout():
+    clear_tokens = str(request.args.get("clear_tokens", "false")).lower() in {"1", "true", "yes"}
+    user_id = session.get("user_id")
+    session.clear()
+    if clear_tokens and user_id:
+        with _db_conn() as conn:
+            conn.execute("DELETE FROM xero_tokens WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return jsonify({"ok": True, "session_cleared": True, "tokens_deleted": bool(clear_tokens and user_id)})
 
 
 @app.route("/connections")
+@login_required
 def connections():
     """List orgs (tenants) the user connected.
 
@@ -1265,24 +1672,37 @@ def connections():
         return jsonify({"error": "Failed to get connections", "details": resp.text}), resp.status_code
 
     connections = resp.json()
+    user_id = session.get("user_id")
+    tenant_ids = [c.get("tenantId") for c in connections if c.get("tenantId")]
+    if user_id and tenant_ids and tokens:
+        _persist_tokens_for_tenants(user_id, tenant_ids, tokens)
+        if session.get("tenant_id") not in tenant_ids:
+            session["tenant_id"] = tenant_ids[0]
     return jsonify(
         {
             "connections": connections,
-            "saved_tenant_id": load_tokens().get("tenant_id"),
+            "saved_tenant_id": session.get("tenant_id"),
             "tip": "If you have more than one, call /set-tenant?tenantId=<id> to save it.",
         }
     )
 
 
 @app.route("/set-tenant")
+@login_required
 def set_tenant():
     tenant_id = request.args.get("tenantId")
     if not tenant_id:
         return jsonify({"error": "Missing tenantId"}), 400
 
-    tokens = load_tokens()
-    tokens["tenant_id"] = tenant_id
-    save_tokens(tokens)
+    user_id = session.get("user_id")
+    with _db_conn() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM xero_tokens WHERE user_id = ? AND tenant_id = ?",
+            (user_id, tenant_id),
+        ).fetchone()
+    if not exists:
+        return jsonify({"error": "Tenant not found for current user"}), 404
+    session["tenant_id"] = tenant_id
     return jsonify({"ok": True, "tenant_id": tenant_id})
 
 
@@ -1296,9 +1716,29 @@ def index():
     return app.send_static_file("index.html")
 
 
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    return app.send_static_file("index.html")
+
+
 @app.route("/favicon.ico")
 def favicon():
     return ("", 204)
+
+
+@app.errorhandler(HTTPException)
+def handle_http_exception(err: HTTPException):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": err.name}), err.code
+    return (err.name, err.code)
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(_err: Exception):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal Server Error"}), 500
+    return ("Internal Server Error", 500)
 
 
 
@@ -1318,7 +1758,7 @@ def health():
             "has_client_id": bool(CLIENT_ID),
             "has_client_secret": bool(CLIENT_SECRET),
             "tenant_id": get_tenant_id(),
-            "tokens_file_exists": os.path.exists(TOKENS_FILE),
+            "db_file": DB_FILE,
             "has_access_token": bool(tokens.get("access_token")),
             "has_refresh_token": bool(tokens.get("refresh_token")),
             "token_valid": token_is_valid(tokens),
@@ -1334,6 +1774,7 @@ def health():
 # Raw Xero passthrough endpoints (unchanged idea)
 # ----------------------------
 @app.route("/api/invoices")
+@login_required
 def api_invoices():
     try:
         resp = requests.get(f"{XERO_API_BASE}/Invoices", headers=xero_headers())
@@ -1345,6 +1786,7 @@ def api_invoices():
 
 
 @app.route("/api/contacts")
+@login_required
 def api_contacts():
     try:
         resp = requests.get(f"{XERO_API_BASE}/Contacts", headers=xero_headers())
@@ -1356,6 +1798,7 @@ def api_contacts():
 
 
 @app.route("/api/accounts")
+@login_required
 def api_accounts():
     try:
         resp = requests.get(f"{XERO_API_BASE}/Accounts", headers=xero_headers())
@@ -1366,6 +1809,7 @@ def api_accounts():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/journals")
+@login_required
 def api_journals():
     try:
         resp = requests.get(
@@ -1382,6 +1826,7 @@ def api_journals():
 
 
 @app.route("/api/journal-lines")
+@login_required
 def api_journal_lines():
     try:
         return jsonify({"error": "JournalLines passthrough is not supported in Xero mode; use /api/journals"}), 400
@@ -1389,7 +1834,36 @@ def api_journal_lines():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/refresh", methods=["POST", "GET"])
+@login_required
+def api_refresh_token():
+    try:
+        tokens = load_tokens()
+        if not tokens:
+            return jsonify({"error": "No stored token for this session user/tenant"}), 401
+        refreshed = refresh_access_token(tokens)
+        return jsonify(
+            {
+                "ok": True,
+                "tenant_id": get_tenant_id(),
+                "expires_at": int(refreshed.get("expires_at", 0)),
+            }
+        )
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        return jsonify({"error": f"Token refresh failed: {status}", "details": str(e)}), status
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/liabilities")
+@login_required
+def api_liabilities_alias():
+    return dashboard_liabilities()
+
+
 @app.route("/api/budget", methods=["GET", "POST"])
+@login_required
 def api_budget():
     try:
         if request.method == "GET":
@@ -1445,6 +1919,7 @@ def fetch_journals() -> list[dict]:
     return resp.json().get("Journals", [])
 
 @app.route("/api/dashboard/summary")
+@login_required
 def dashboard_summary():
     """Returns simple totals used in your Summary UI."""
     try:
@@ -1493,7 +1968,35 @@ def dashboard_summary():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/dashboard")
+@login_required
+def dashboard_root():
+    """Session-scoped dashboard bootstrap endpoint."""
+    try:
+        today_str = request.args.get("today")
+        fy_start_month = int(request.args.get("fy_start_month", "7"))
+        cash_balance = request.args.get("cash_balance")
+        burn_months = int(request.args.get("burn_months", "3"))
+
+        today = datetime.fromisoformat(today_str) if today_str else None
+        cash_val = float(cash_balance) if cash_balance is not None else None
+
+        payload = build_overview_payload(
+            today=today,
+            fy_start_month=fy_start_month,
+            cash_balance=cash_val,
+            burn_months=burn_months,
+        )
+        return jsonify(payload)
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        return jsonify({"error": f"Xero API error: {status}", "details": str(e)}), status
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/dashboard/sales-by-month")
+@login_required
 def dashboard_sales_by_month():
     """Chart.js-ready data: labels + datasets."""
     try:
@@ -1521,6 +2024,7 @@ def dashboard_sales_by_month():
 
 
 @app.route("/api/dashboard/top-customers")
+@login_required
 def dashboard_top_customers():
     try:
         limit = int(request.args.get("limit", "10"))
@@ -1546,6 +2050,7 @@ def dashboard_top_customers():
 
 
 @app.route("/api/dashboard/sales-by-status")
+@login_required
 def dashboard_sales_by_status():
     try:
         invoices = fetch_invoices()
@@ -1573,6 +2078,7 @@ def dashboard_sales_by_status():
 
 
 @app.route("/api/dashboard/invoice-count-by-status")
+@login_required
 def dashboard_invoice_count_by_status():
     try:
         invoices = fetch_invoices()
@@ -1599,6 +2105,7 @@ def dashboard_invoice_count_by_status():
 
 
 @app.route("/api/dashboard/budget-monthly")
+@login_required
 def dashboard_budget_monthly():
     """Returns the same monthly structure your frontend built, but computed server-side."""
     try:
@@ -1664,6 +2171,7 @@ def dashboard_budget_monthly():
 
 
 @app.route("/api/dashboard/budget-chart")
+@login_required
 def dashboard_budget_chart():
     """Chart.js bar chart data: Income vs Expenses by month."""
     try:
@@ -1686,6 +2194,7 @@ def dashboard_budget_chart():
 
 
 @app.route("/api/dashboard/profit-chart")
+@login_required
 def dashboard_profit_chart():
     """Chart.js line chart data: profit/loss over time."""
     try:
@@ -1704,6 +2213,7 @@ def dashboard_profit_chart():
 
 
 @app.route("/api/dashboard/forecast")
+@login_required
 def dashboard_forecast():
     try:
         today_str = request.args.get("today")
@@ -1729,6 +2239,7 @@ def dashboard_forecast():
 
 
 @app.route("/api/dashboard/overview")
+@login_required
 def dashboard_overview():
     try:
         today_str = request.args.get("today")
@@ -1754,12 +2265,15 @@ def dashboard_overview():
 
 
 @app.route("/api/dashboard/liabilities")
+@login_required
 def dashboard_liabilities():
     try:
         today_str = request.args.get("today")
         period = request.args.get("period", "month")
         fy_start_month = int(request.args.get("fy_start_month", "7"))
         gst_frequency = request.args.get("gst_frequency", "monthly")
+        payg_frequency = request.args.get("payg_frequency")
+        super_frequency = request.args.get("super_frequency")
 
         today = datetime.fromisoformat(today_str) if today_str else None
         payload = build_liabilities_payload(
@@ -1767,6 +2281,8 @@ def dashboard_liabilities():
             period=period,
             fy_start_month=fy_start_month,
             gst_frequency=gst_frequency,
+            payg_frequency=payg_frequency,
+            super_frequency=super_frequency,
         )
         return jsonify(payload)
     except requests.HTTPError as e:
@@ -1801,10 +2317,14 @@ if __name__ == "__main__":
             )
             print(json.dumps(payload, indent=2))
         else:
-            print("ENV PORT =", os.getenv("PORT"))
+            # Default host is localhost for local dev and Cloudflare Tunnel.
+            # For platforms like Render/Fly in production, set APP_HOST=0.0.0.0.
+            HOST = os.getenv("APP_HOST", "127.0.0.1")
+            PORT = int(os.getenv("PORT", "5000"))
+            print(
+                f"Startup config: APP_ENV={APP_ENV}, APP_HOST={HOST}, PORT={PORT}, "
+                f"ALLOWED_ORIGINS_COUNT={len(_allowed_origins)}"
+            )
             print("MODE =", DATA_MODE)
-
-            port = int(os.getenv("PORT", "5000"))
-            host = os.getenv("HOST", "127.0.0.1")
-            app.run(debug=True, host=host, port=port)
+            app.run(debug=False, host=HOST, port=PORT)
 
