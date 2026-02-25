@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = "http://127.0.0.1:5000";
+const DEFAULT_API_BASE = "";
 
 const API_BASE = (() => {
   if (window.API_BASE) return window.API_BASE;
@@ -34,6 +34,7 @@ async function request_json(path, options = {}) {
   const primary = await tryFetch(API_BASE);
   if (
     API_BASE === "" &&
+    DEFAULT_API_BASE !== "" &&
     (primary.data === null || (typeof primary.data === "object" && Object.keys(primary.data).length === 0))
   ) {
     try {
@@ -57,7 +58,8 @@ async function fetch_json(path) {
 }
 
 function open_auth_popup() {
-  return window.open("/auth", "_blank", "width=600,height=700");
+  window.location.href = "/auth/start";
+  return null;
 }
 
 window.XeroAPI = { fetch_json, request_json, open_auth_popup };

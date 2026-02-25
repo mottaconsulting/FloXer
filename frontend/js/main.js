@@ -1119,14 +1119,27 @@ function showRawJson() {
 window.showRawJson = showRawJson;
 
 // ---------- Auth + health ----------
+async function logoutSession() {
+  try {
+    await XeroAPI.fetch_json("/auth/logout");
+  } catch (_) {
+    // Even if API call fails, force navigation to login screen.
+  }
+  window.location.href = "/";
+}
+
 function authorize() {
   const w = XeroAPI.open_auth_popup();
+  if (!w) {
+    // Auth now runs in same tab (/auth/start), so no popup is expected.
+    return;
+  }
   const timer = setInterval(() => {
     if (w.closed) {
       clearInterval(timer);
       setTimeout(async () => {
         await loadOrganizations();
-        checkHealth();
+        await showDashboard();
       }, 800);
     }
   }, 800);
@@ -1142,7 +1155,15 @@ async function checkHealth() {
 }
 
 window.authorize = authorize;
+window.logoutSession = logoutSession;
 window.checkHealth = checkHealth;
+
+window.addEventListener("message", async (event) => {
+  if (event.origin !== window.location.origin) return;
+  if (event.data?.type !== "xero-auth-success") return;
+  await loadOrganizations();
+  await showDashboard();
+});
 
 async function loadOrganizations() {
   const select = document.getElementById("orgSelect");

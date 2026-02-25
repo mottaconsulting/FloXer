@@ -6,7 +6,7 @@ import os
 import time
 import urllib.parse
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import pandas as pd
 from pathlib import Path
 import math
@@ -33,12 +33,16 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # - Backend (this file) should *fetch + compute*.
 # - Frontend (index.html) should *render*.
 
-load_dotenv()
+# Load environment variables from common locations.
+# Priority: existing process env > repo .env > XERO_API/.env
+load_dotenv(find_dotenv(usecwd=True), override=False)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"), override=False)
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, "XERO_API", ".env"), override=False)
 
 # app = Flask(__name__)
 # CORS(app)
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", os.path.join(BASE_DIR, "exports")))
 BUDGET_FILE = os.getenv("BUDGET_FILE", str(EXPORTS_DIR / "budget.csv.xlsx"))
 MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(Path(BASE_DIR) / "data" / "manual_budget.csv")))
@@ -61,8 +65,17 @@ print("FRONTEND_DIR:", FRONTEND_DIR)
 print("INDEX EXISTS:", os.path.exists(os.path.join(FRONTEND_DIR, "index.html")))
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
 _allowed_origins = [o.strip() for o in ALLOWED_ORIGINS if o.strip()]
-CSP_EXTRA_CONNECT_SRC = os.getenv("CSP_EXTRA_CONNECT_SRC", "").split(",")
-_csp_extra_connect_src = [s.strip() for s in CSP_EXTRA_CONNECT_SRC if s.strip()]
+def _csv_env(name: str, default_csv: str = "") -> list[str]:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        raw = default_csv
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+_csp_extra_connect_src = _csv_env("CSP_EXTRA_CONNECT_SRC", "")
+_csp_extra_script_src = _csv_env("CSP_EXTRA_SCRIPT_SRC", "https://cdn.jsdelivr.net")
+_csp_extra_style_src = _csv_env("CSP_EXTRA_STYLE_SRC", "https://fonts.googleapis.com")
+_csp_extra_font_src = _csv_env("CSP_EXTRA_FONT_SRC", "https://fonts.gstatic.com")
 backend_origin = _origin_from_url(os.getenv("APP_ORIGIN", "") or REDIRECT_URI)
 has_cross_site_frontend = bool(_allowed_origins) and any(
     _origin_from_url(origin) != backend_origin for origin in _allowed_origins
@@ -97,6 +110,9 @@ for src_value in _csp_extra_connect_src:
     if src and src not in connect_src_values:
         connect_src_values.append(src)
 _CSP_CONNECT_SRC = " ".join(connect_src_values)
+_CSP_SCRIPT_SRC = " ".join(["'self'", "'unsafe-inline'"] + _csp_extra_script_src)
+_CSP_STYLE_SRC = " ".join(["'self'", "'unsafe-inline'"] + _csp_extra_style_src)
+_CSP_FONT_SRC = " ".join(["'self'", "data:"] + _csp_extra_font_src)
 
 secret_key = os.getenv("FLASK_SECRET_KEY")
 if not secret_key or len(secret_key) < 32:
@@ -158,7 +174,7 @@ def login_required(view_func):
         if not session.get("user_id"):
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Unauthorized", "message": "Login required"}), 401
-            return redirect("/auth/start")
+            return redirect("/login")
         return view_func(*args, **kwargs)
 
     return _wrapped
@@ -212,8 +228,9 @@ def add_secure_headers(resp):
     resp.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "img-src 'self' data:; "
-        "style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; "
+        f"style-src {_CSP_STYLE_SRC}; "
+        f"script-src {_CSP_SCRIPT_SRC}; "
+        f"font-src {_CSP_FONT_SRC}; "
         f"connect-src {_CSP_CONNECT_SRC}; "
         "object-src 'none'; "
         "frame-ancestors 'none'; "
@@ -1632,7 +1649,26 @@ def callback():
     # Persist user and tokens only after successful OAuth + tenant resolution.
     ensure_user(user_id)
     _persist_tokens_for_tenants(user_id, tenant_ids, tokens)
-    return redirect("/dashboard")
+    return """
+<!DOCTYPE html>
+<html>
+  <head><title>Authorization complete</title></head>
+  <body>
+    <script>
+      (function () {
+        try {
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage({ type: "xero-auth-success" }, window.location.origin);
+            window.close();
+            return;
+          }
+        } catch (e) {}
+        window.location.href = "/dashboard";
+      })();
+    </script>
+  </body>
+</html>
+"""
 
 
 @app.route("/auth/logout")
@@ -1713,7 +1749,14 @@ def set_tenant():
 
 @app.route("/")
 def index():
+    if not session.get("user_id"):
+        return redirect("/login")
     return app.send_static_file("index.html")
+
+
+@app.route("/login")
+def login_page():
+    return app.send_static_file("login.html")
 
 
 @app.route("/dashboard")
