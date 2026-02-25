@@ -6,11 +6,10 @@ import os
 import time
 import urllib.parse
 from datetime import datetime, timedelta
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 import pandas as pd
 from pathlib import Path
 import math
-import argparse
 import numpy as np
 from functools import wraps
 from uuid import uuid4
@@ -20,6 +19,8 @@ from collections import defaultdict, deque
 from threading import Lock
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
+
+load_dotenv()
 
 
 # ----------------------------
@@ -33,12 +34,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # - Backend (this file) should *fetch + compute*.
 # - Frontend (index.html) should *render*.
 
-# Load environment variables from common locations.
-# Priority: existing process env > repo .env > XERO_API/.env
-load_dotenv(find_dotenv(usecwd=True), override=False)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"), override=False)
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, "XERO_API", ".env"), override=False)
 
 # app = Flask(__name__)
 # CORS(app)
@@ -50,7 +46,7 @@ DATA_MODE = "xero"
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
-REDIRECT_URI = os.getenv("XERO_REDIRECT_URI", "http://localhost:5000/callback")
+REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
 
 
 def _origin_from_url(url: str) -> str:
@@ -60,9 +56,6 @@ def _origin_from_url(url: str) -> str:
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}".rstrip("/")
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
-print("RUNNING FILE:", __file__)
-print("FRONTEND_DIR:", FRONTEND_DIR)
-print("INDEX EXISTS:", os.path.exists(os.path.join(FRONTEND_DIR, "index.html")))
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
 _allowed_origins = [o.strip() for o in ALLOWED_ORIGINS if o.strip()]
 def _csv_env(name: str, default_csv: str = "") -> list[str]:
@@ -124,7 +117,7 @@ if IS_PRODUCTION and has_cross_site_frontend:
     cookie_samesite = "None"
 app.config["SECRET_KEY"] = secret_key
 app.config["SESSION_COOKIE_NAME"] = "xero_dash_session"
-app.config["SESSION_COOKIE_SECURE"] = IS_PRODUCTION
+app.config["SESSION_COOKIE_SECURE"] = (os.getenv("APP_ENV", "development") == "production")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = cookie_samesite if IS_PRODUCTION else "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
@@ -159,7 +152,7 @@ XERO_AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
 XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 XERO_CONNECTIONS_URL = "https://api.xero.com/connections"
 XERO_API_BASE = "https://api.xero.com/api.xro/2.0"
-DB_FILE = os.getenv("DB_FILE", str(Path(BASE_DIR) / "data" / "app.db"))
+DB_FILE = os.getenv("DB_FILE", "app.db")
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"))
 
@@ -1575,6 +1568,8 @@ def auth_start():
     """Start OAuth: set CSRF state in session, then redirect to Xero authorize."""
     if not CLIENT_ID or not CLIENT_SECRET:
         return jsonify({"error": "Missing XERO_CLIENT_ID or XERO_CLIENT_SECRET in .env"}), 500
+    if not REDIRECT_URI:
+        return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
 
     # Only OAuth state is set here. User identity is created after successful callback.
     state = secrets.token_urlsafe(32)
@@ -1590,6 +1585,8 @@ def auth():
 @app.route("/callback")
 def callback():
     """Complete OAuth: validate state, exchange code, then create session identity."""
+    if not REDIRECT_URI:
+        return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
     expected_state = session.get("oauth_state")
     callback_state = request.args.get("state")
     if not expected_state or not callback_state or expected_state != callback_state:
@@ -2336,38 +2333,13 @@ def dashboard_liabilities():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--today", type=str, default=None)
-    parser.add_argument("--fy-start-month", type=int, default=None)
-    parser.add_argument("--cash-balance", type=float, default=None)
-    parser.add_argument("--burn-months", type=int, default=3)
-    parser.add_argument("--run-tests", action="store_true")
-    parser.add_argument("--serve", action="store_true")
-    args = parser.parse_args()
-
-    if args.run_tests:
-        _run_tests()
-    else:
-        wants_cli = args.today or args.fy_start_month is not None or args.cash_balance is not None
-        if wants_cli and not args.serve:
-            today = datetime.fromisoformat(args.today) if args.today else None
-            fy_start_month = args.fy_start_month if args.fy_start_month is not None else 1
-            payload = build_forecast_payload(
-                today=today,
-                fy_start_month=fy_start_month,
-                cash_balance=args.cash_balance,
-                burn_months=args.burn_months,
-            )
-            print(json.dumps(payload, indent=2))
-        else:
-            # Default host is localhost for local dev and Cloudflare Tunnel.
-            # For platforms like Render/Fly in production, set APP_HOST=0.0.0.0.
-            HOST = os.getenv("APP_HOST", "127.0.0.1")
-            PORT = int(os.getenv("PORT", "5000"))
-            print(
-                f"Startup config: APP_ENV={APP_ENV}, APP_HOST={HOST}, PORT={PORT}, "
-                f"ALLOWED_ORIGINS_COUNT={len(_allowed_origins)}"
-            )
-            print("MODE =", DATA_MODE)
-            app.run(debug=False, host=HOST, port=PORT)
+    print("Starting MMXeroAPI backend...")
+    print("Environment:", os.getenv("APP_ENV", "development"))
+    print("Port:", os.getenv("PORT", "5000"))
+    port = int(os.getenv("PORT", 5000))
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False
+    )
 
