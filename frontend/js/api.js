@@ -9,6 +9,7 @@ async function request_json(path, options = {}) {
   const tryFetch = async (base) => {
     const url = `${base}${path}`;
     const res = await fetch(url, {
+      credentials: "include",
       headers: { Accept: "application/json", ...(options.headers || {}) },
       cache: "no-store",
       ...options

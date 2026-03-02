@@ -1,5 +1,4 @@
 from flask import Flask, jsonify, send_from_directory, request, redirect, session, has_request_context, abort
-from flask_cors import CORS
 import requests
 import json
 import os
@@ -36,9 +35,6 @@ load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# app = Flask(__name__)
-# CORS(app)
-
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", os.path.join(BASE_DIR, "exports")))
 BUDGET_FILE = os.getenv("BUDGET_FILE", str(EXPORTS_DIR / "budget.csv.xlsx"))
 MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(Path(BASE_DIR) / "data" / "manual_budget.csv")))
@@ -47,6 +43,8 @@ FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
 REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
+if not REDIRECT_URI:
+    raise RuntimeError("XERO_REDIRECT_URI must be set (Render env var).")
 
 
 def _origin_from_url(url: str) -> str:
@@ -70,22 +68,8 @@ _csp_extra_script_src = _csv_env("CSP_EXTRA_SCRIPT_SRC", "https://cdn.jsdelivr.n
 _csp_extra_style_src = _csv_env("CSP_EXTRA_STYLE_SRC", "https://fonts.googleapis.com")
 _csp_extra_font_src = _csv_env("CSP_EXTRA_FONT_SRC", "https://fonts.gstatic.com")
 backend_origin = _origin_from_url(os.getenv("APP_ORIGIN", "") or REDIRECT_URI)
-has_cross_site_frontend = bool(_allowed_origins) and any(
-    _origin_from_url(origin) != backend_origin for origin in _allowed_origins
-)
-if _allowed_origins:
-    CORS(
-        app,
-        resources={
-            r"/api/*": {
-                "origins": _allowed_origins,
-                "supports_credentials": True,
-            }
-        },
-    )
-elif IS_PRODUCTION:
-    print("WARNING: ALLOWED_ORIGINS is empty in production. CORS is disabled.")
-# Production note: ALLOWED_ORIGINS must be explicitly set for cross-origin API access.
+# Frontend is served by Flask on the same origin in the Render deployment,
+# so runtime CORS is intentionally disabled.
 
 
 def _normalize_csp_source(value: str) -> str:
@@ -110,16 +94,12 @@ _CSP_FONT_SRC = " ".join(["'self'", "data:"] + _csp_extra_font_src)
 secret_key = os.getenv("FLASK_SECRET_KEY")
 if not secret_key or len(secret_key) < 32:
     raise RuntimeError("FLASK_SECRET_KEY must be set and at least 32 characters long.")
-cookie_samesite = os.getenv("SESSION_COOKIE_SAMESITE", "Lax").strip()
-if cookie_samesite not in {"Lax", "Strict", "None"}:
-    cookie_samesite = "Lax"
-if IS_PRODUCTION and has_cross_site_frontend:
-    cookie_samesite = "None"
+is_prod = os.getenv("APP_ENV", "development") == "production"
 app.config["SECRET_KEY"] = secret_key
 app.config["SESSION_COOKIE_NAME"] = "xero_dash_session"
-app.config["SESSION_COOKIE_SECURE"] = (os.getenv("APP_ENV", "development") == "production")
+app.config["SESSION_COOKIE_SECURE"] = is_prod
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = cookie_samesite if IS_PRODUCTION else "Lax"
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 app.config["PROPAGATE_EXCEPTIONS"] = False
 app.config["TRAP_HTTP_EXCEPTIONS"] = False
@@ -1563,18 +1543,29 @@ def debug_csv():
 # ----------------------------
 # OAuth
 # ----------------------------
+
 @app.route("/auth/start")
 def auth_start():
-    """Start OAuth: set CSRF state in session, then redirect to Xero authorize."""
     if not CLIENT_ID or not CLIENT_SECRET:
-        return jsonify({"error": "Missing XERO_CLIENT_ID or XERO_CLIENT_SECRET in .env"}), 500
+        return jsonify({"error": "Missing XERO_CLIENT_ID or XERO_CLIENT_SECRET"}), 500
     if not REDIRECT_URI:
         return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
 
-    # Only OAuth state is set here. User identity is created after successful callback.
+    # Ensure a stable user id exists BEFORE redirecting away
+    if not session.get("user_id"):
+        session["user_id"] = str(uuid4())
+
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
-    auth_url = f"{XERO_AUTHORIZE_URL}?{urllib.parse.urlencode({'client_id': CLIENT_ID, 'redirect_uri': REDIRECT_URI, 'response_type': 'code', 'scope': SCOPES, 'state': state, 'prompt': 'login'})}"
+
+    auth_url = f"{XERO_AUTHORIZE_URL}?{urllib.parse.urlencode({
+        'client_id': CLIENT_ID,
+        'redirect_uri': REDIRECT_URI,
+        'response_type': 'code',
+        'scope': SCOPES,
+        'state': state,
+        'prompt': 'login'
+    })}"
     return redirect(auth_url)
 
 @app.route("/auth")
