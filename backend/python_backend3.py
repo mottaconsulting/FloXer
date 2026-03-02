@@ -1756,26 +1756,7 @@ def callback():
     # Persist user and tokens only after successful OAuth + tenant resolution.
     ensure_user(user_id)
     _persist_tokens_for_tenants(user_id, tenant_ids, tokens)
-    return """
-<!DOCTYPE html>
-<html>
-  <head><title>Authorization complete</title></head>
-  <body>
-    <script>
-      (function () {
-        try {
-          if (window.opener && !window.opener.closed) {
-            window.opener.postMessage({ type: "xero-auth-success" }, window.location.origin);
-            window.close();
-            return;
-          }
-        } catch (e) {}
-        window.location.href = "/dashboard";
-      })();
-    </script>
-  </body>
-</html>
-"""
+    return redirect("/dashboard")
 
 
 @app.route("/auth/logout")
