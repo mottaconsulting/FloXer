@@ -265,6 +265,18 @@ def ensure_user(user_id: str) -> None:
         )
 
 
+def _find_existing_user_id_for_tenants(tenant_ids: list[str]) -> str | None:
+    if not tenant_ids:
+        return None
+    placeholders = ", ".join("?" for _ in tenant_ids)
+    with _db_conn() as conn:
+        row = conn.execute(
+            f"SELECT user_id FROM xero_tokens WHERE tenant_id IN ({placeholders}) ORDER BY updated_at DESC LIMIT 1",
+            tuple(tenant_ids),
+        ).fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
 def _persist_tokens_for_tenant(user_id: str, tenant_id: str, tokens: dict) -> None:
     ensure_user(user_id)
     with _db_conn() as conn:
@@ -1668,13 +1680,13 @@ def callback():
     if not tenant_ids:
         return jsonify({"error": "No tenant_id found in Xero connections"}), 400
 
-    # Create logical user identity only after OAuth callback succeeds.
-    user_id = str(uuid4())
-    session["user_id"] = user_id
+    # Reuse any existing logical user mapped to these tenants so budgets and tokens remain stable across logins.
+    user_id = session.get("user_id") or _find_existing_user_id_for_tenants(tenant_ids) or str(uuid4())
+    session["user_id"] = str(user_id)
     session["tenant_id"] = tenant_ids[0]
 
     # Persist user and tokens only after successful OAuth + tenant resolution.
-    ensure_user(user_id)
+    ensure_user(str(user_id))
     _persist_tokens_for_tenants(user_id, tenant_ids, tokens)
     return redirect("/dashboard")
 
