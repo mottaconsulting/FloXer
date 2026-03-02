@@ -6,13 +6,14 @@
   <title>Business Pulse - Connect Xero</title>
   <style>
     :root {
-      --bg: #f4f3ef;
-      --card: #ffffff;
-      --ink: #1f2937;
-      --muted: #6b7280;
+      --bg: #f6f3ec;
+      --card: rgba(255, 255, 255, 0.92);
+      --ink: #18212f;
+      --muted: #5f6b7a;
       --accent: #0f766e;
       --accent-ink: #ffffff;
-      --line: #e5e7eb;
+      --line: rgba(148, 163, 184, 0.24);
+      --shadow: rgba(15, 23, 42, 0.1);
     }
     * { box-sizing: border-box; }
     body {
@@ -20,29 +21,56 @@
       min-height: 100vh;
       display: grid;
       place-items: center;
-      background: radial-gradient(circle at 15% 20%, #ebe9e1 0%, var(--bg) 45%, #efede8 100%);
+      background:
+        radial-gradient(circle at 15% 20%, rgba(15, 118, 110, 0.08) 0%, transparent 28%),
+        radial-gradient(circle at 85% 18%, rgba(180, 83, 9, 0.08) 0%, transparent 24%),
+        linear-gradient(135deg, #f8f6f0 0%, var(--bg) 46%, #ece8df 100%);
       color: var(--ink);
       font-family: "Segoe UI", Tahoma, sans-serif;
       padding: 24px;
     }
     .card {
-      width: min(520px, 100%);
+      width: min(560px, 100%);
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 20px;
-      padding: 28px;
-      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+      border-radius: 24px;
+      padding: 34px;
+      box-shadow: 0 18px 40px var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(15, 118, 110, 0.08);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
     }
     h1 {
-      margin: 0 0 8px;
-      font-size: 34px;
-      line-height: 1.1;
+      margin: 0 0 10px;
+      font-size: 38px;
+      line-height: 1.05;
       letter-spacing: -0.02em;
     }
     p {
-      margin: 0 0 22px;
+      margin: 0 0 24px;
       color: var(--muted);
       font-size: 16px;
+      line-height: 1.6;
+    }
+    .callout {
+      margin: 0 0 24px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.04);
+      color: var(--ink);
+      font-size: 14px;
       line-height: 1.5;
     }
     .btn {
@@ -59,31 +87,42 @@
       color: var(--accent-ink);
       cursor: pointer;
       text-decoration: none;
+      box-shadow: 0 12px 24px rgba(15, 118, 110, 0.18);
+      transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
     }
-    .btn:hover { filter: brightness(0.95); }
-    .fallback {
-      display: block;
-      margin-top: 14px;
-      text-align: center;
-      color: var(--accent);
-      font-weight: 600;
-      text-decoration: none;
+    .btn:hover {
+      filter: brightness(0.97);
+      transform: translateY(-1px);
+      box-shadow: 0 14px 28px rgba(15, 118, 110, 0.22);
     }
     .small {
-      margin-top: 14px;
+      margin-top: 16px;
       font-size: 13px;
       color: var(--muted);
+      text-align: center;
+    }
+    @media (max-width: 640px) {
+      .card {
+        padding: 26px;
+        border-radius: 20px;
+      }
+      h1 {
+        font-size: 32px;
+      }
     }
   </style>
 </head>
 <body>
   <main class="card">
+    <div class="eyebrow">Secure sign-in</div>
     <h1>Business Pulse</h1>
-    <p>Connect your Xero organization to open the dashboard.</p>
+    <p>Connect your Xero organization to open the dashboard and sync the latest financial data.</p>
+    <div class="callout">
+      You will sign in with Xero first, then return here automatically with your session ready.
+    </div>
     <form action="/auth/start" method="get">
       <button class="btn" type="submit">Connect Xero</button>
     </form>
-    <a class="fallback" href="/auth/start">If the button does not respond, continue here</a>
     <div class="small">You will be redirected back automatically after login.</div>
   </main>
 </body>
