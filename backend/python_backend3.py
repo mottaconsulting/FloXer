@@ -36,11 +36,8 @@ load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", os.path.join(BASE_DIR, "exports")))
-BUDGET_FILE = os.getenv("BUDGET_FILE", str(EXPORTS_DIR / "budget.csv.xlsx"))
 MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(Path(BASE_DIR) / "data" / "manual_budget.csv")))
 BUDGET_BACKEND = os.getenv("BUDGET_BACKEND", "csv").strip().lower()
-DATA_MODE = "xero"
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
@@ -557,26 +554,6 @@ def _normalize_col(name: str) -> str:
         s = s.replace("__", "_")
     return s.upper()
 
-def _read_exports_csv(filename: str) -> pd.DataFrame:
-    fp = EXPORTS_DIR / filename
-    if not fp.exists():
-        matches = list(EXPORTS_DIR.glob(filename)) + list(EXPORTS_DIR.glob(filename.lower()))
-        if not matches:
-            raise FileNotFoundError(f"CSV file not found: {fp}")
-        fp = matches[0]        
-    df = pd.read_csv(fp)
-
-    df.columns = [_normalize_col(c) for c in df.columns]
-    return df
-
-def _read_budget_excel(filepath: str) -> pd.DataFrame:
-    fp = Path(filepath)
-    if not fp.exists():
-        raise FileNotFoundError(f"Budget file not found: {fp}")
-    df = pd.read_excel(fp, sheet_name=0)
-    df.columns = [_normalize_col(c) for c in df.columns]
-    return df
-
 def _empty_canonical_df() -> pd.DataFrame:
     df = pd.DataFrame(
         columns=["ACCOUNT_TYPE", "ACCOUNT_NAME", "ACCOUNT_CODE", "DATA_CATEGORY", "JOURNAL_DATE", "NET_AMOUNT"]
@@ -676,45 +653,6 @@ def _enforce_sign_convention(df: pd.DataFrame) -> pd.DataFrame:
         if (exp <= 0).all():
             df.loc[is_expense, "NET_AMOUNT"] = exp.abs()
     return df
-
-def _load_actuals_df() -> pd.DataFrame:
-    journals_df = _read_exports_csv("journals.csv")
-    lines_df = _read_exports_csv("Journal Lines.csv")
-
-    if "JOURNAL_ID" not in journals_df.columns or "JOURNAL_ID" not in lines_df.columns:
-        raise ValueError("JOURNAL_ID missing from journals or journal lines")
-    if "JOURNAL_DATE" not in journals_df.columns:
-        raise ValueError("JOURNAL_DATE missing from journals.csv")
-
-    merged = lines_df.merge(
-        journals_df[["JOURNAL_ID", "JOURNAL_DATE"]],
-        on="JOURNAL_ID",
-        how="left",
-    )
-
-    base = pd.DataFrame(
-        {
-            "ACCOUNT_TYPE": merged.get("ACCOUNT_TYPE"),
-            "ACCOUNT_NAME": merged.get("ACCOUNT_NAME"),
-            "ACCOUNT_CODE": merged.get("ACCOUNT_CODE") if "ACCOUNT_CODE" in merged.columns else "",
-            "DATA_CATEGORY": merged.get("DATA_CATEGORY") if "DATA_CATEGORY" in merged.columns else "",
-            "JOURNAL_DATE": merged.get("JOURNAL_DATE"),
-            "NET_AMOUNT": merged.get("NET_AMOUNT"),
-        }
-    )
-    base = _normalize_schema(base)
-    base = _enforce_sign_convention(base)
-    return base
-
-def _load_budget_df() -> pd.DataFrame:
-    budget_raw = _read_budget_excel(BUDGET_FILE)
-    budget = _normalize_schema(budget_raw)
-    if "ACCOUNT_TYPE" in budget.columns and "DATA_CATEGORY" in budget.columns:
-        missing_types = budget["ACCOUNT_TYPE"].isna() | (budget["ACCOUNT_TYPE"].astype(str).str.strip() == "")
-        if missing_types.any():
-            budget.loc[missing_types, "ACCOUNT_TYPE"] = budget.loc[missing_types, "DATA_CATEGORY"]
-    budget = _enforce_sign_convention(budget)
-    return budget
 
 def _load_budget_df_manual() -> pd.DataFrame:
     if not MANUAL_BUDGET_FILE.exists():
@@ -887,46 +825,13 @@ def _load_actuals_df_xero() -> pd.DataFrame:
     df = df.dropna(subset=["JOURNAL_DATE"])
     return _enforce_sign_convention(df)
 
-def _load_actuals_df_by_mode() -> pd.DataFrame:
-    return _load_actuals_df_xero()
-
-def _load_budget_df_by_mode() -> pd.DataFrame:
+def _load_budget_df_active() -> pd.DataFrame:
     try:
         if BUDGET_BACKEND == "supabase":
             return _load_budget_df_supabase()
         return _load_budget_df_manual()
     except Exception:
         return _empty_canonical_df()
-
-
-def _load_liability_lines_df() -> pd.DataFrame:
-    journals_df = _read_exports_csv("journals.csv")
-    lines_df = _read_exports_csv("Journal Lines.csv")
-
-    if "JOURNAL_ID" not in journals_df.columns or "JOURNAL_ID" not in lines_df.columns:
-        raise ValueError("JOURNAL_ID missing from journals or journal lines")
-    if "JOURNAL_DATE" not in journals_df.columns:
-        raise ValueError("JOURNAL_DATE missing from journals.csv")
-
-    merged = lines_df.merge(
-        journals_df[["JOURNAL_ID", "JOURNAL_DATE"]],
-        on="JOURNAL_ID",
-        how="left",
-    )
-
-    df = pd.DataFrame(
-        {
-            "ACCOUNT_TYPE": merged.get("ACCOUNT_TYPE"),
-            "ACCOUNT_NAME": merged.get("ACCOUNT_NAME"),
-            "ACCOUNT_CODE": merged.get("ACCOUNT_CODE") if "ACCOUNT_CODE" in merged.columns else "",
-            "JOURNAL_DATE": merged.get("JOURNAL_DATE"),
-            "NET_AMOUNT": merged.get("NET_AMOUNT"),
-        }
-    )
-    df = _normalize_schema(df)
-    df["ACCOUNT_CODE"] = df["ACCOUNT_CODE"].astype(str).str.strip()
-    df = df[df["ACCOUNT_TYPE"] == "CURRLIAB"]
-    return df
 
 def _load_liability_lines_df_xero() -> pd.DataFrame:
     actuals = _load_actuals_df_xero()
@@ -938,79 +843,6 @@ def _load_liability_lines_df_xero() -> pd.DataFrame:
         actuals["ACCOUNT_NAME"] = ""
     return actuals[actuals["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
 
-def _load_liability_lines_df_by_mode() -> pd.DataFrame:
-    return _load_liability_lines_df_xero()
-
-
-def fetch_accounts_csv() -> list[dict]:
-    df = _read_exports_csv("Account.csv")
-    # return raw rows as dicts (frontend tables can use directly)
-    return _clean_nan_values(df.to_dict(orient="records"))
-
-
-
-def fetch_journals_csv_nested() -> list[dict]:
-    """
-    Build Xero-like Journal objects from CSV exports so the frontend works unchanged.
-    """
-
-    journals_df = _read_exports_csv("Journals.csv")
-    lines_df = _read_exports_csv("Journal Lines.csv")
-
-    # Parse journal dates
-    if "JOURNAL_DATE" in journals_df.columns:
-        journals_df["JOURNAL_DATE"] = pd.to_datetime(journals_df["JOURNAL_DATE"], errors="coerce")
-
-    # Group journal lines by JOURNAL_ID
-    lines_by_journal = {}
-
-    for _, row in lines_df.iterrows():
-        jid = row.get("JOURNAL_ID")
-        if not jid:
-            continue
-
-        line = {
-            # CRITICAL: frontend relies on exact values here
-            "AccountType": str(row.get("ACCOUNT_TYPE") or "").strip().upper(),
-            "AccountCode": str(row.get("ACCOUNT_CODE") or "").strip(),
-            "AccountName": str(row.get("ACCOUNT_NAME") or "").strip(),
-            "Description": str(row.get("DESCRIPTION") or "").strip(),
-
-            "NetAmount": float(row.get("NET_AMOUNT") or 0),
-            "GrossAmount": float(row.get("GROSS_AMOUNT") or row.get("NET_AMOUNT") or 0),
-            "TaxAmount": float(row.get("TAX_AMOUNT") or 0),
-
-            "JournalID": jid,
-        }
-
-        lines_by_journal.setdefault(jid, []).append(line)
-
-    # Build nested journals
-    journals = []
-    for _, j in journals_df.iterrows():
-        jid = j.get("JOURNAL_ID")
-        jdate = j.get("JOURNAL_DATE")
-
-        journals.append({
-            "JournalID": jid,
-            "JournalNumber": j.get("JOURNAL_NUMBER"),
-            "JournalDate": (
-                jdate.isoformat()
-                if hasattr(jdate, "isoformat") and pd.notna(jdate)
-                else j.get("JOURNAL_DATE")
-            ),
-            "Reference": j.get("REFERENCE"),
-            "SourceID": j.get("SOURCE_ID"),
-            "SourceType": j.get("SOURCE_TYPE"),
-            "JournalLines": lines_by_journal.get(jid, []),
-        })
-
-    return _clean_nan_values(journals)
-
-
-def fetch_journal_lines_csv() -> list[dict]:
-    df = _read_exports_csv("Journal Lines.csv")
-    return _clean_nan_values(df.to_dict(orient="records"))
 
 
 # ----------------------------
@@ -1230,8 +1062,8 @@ def build_forecast_payload(
 ) -> dict:
     if today is None:
         today = datetime.today()
-    actuals = _load_actuals_df_by_mode()
-    budget = _load_budget_df_by_mode()
+    actuals = _load_actuals_df_xero()
+    budget = _load_budget_df_active()
 
     fy_start, fy_end = _fy_bounds(today, fy_start_month)
     actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
@@ -1322,8 +1154,8 @@ def build_overview_payload(
 ) -> dict:
     if today is None:
         today = datetime.today()
-    actuals = _load_actuals_df_by_mode()
-    budget = _load_budget_df_by_mode()
+    actuals = _load_actuals_df_xero()
+    budget = _load_budget_df_active()
 
     fy_start, fy_end = _fy_bounds(today, fy_start_month)
     actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
@@ -1340,7 +1172,7 @@ def build_overview_payload(
     # In Xero mode, if caller passes a date beyond the latest actual in this FY
     # (e.g. FY-end picker), keep FY fixed but clamp "today" to latest actual so
     # projected months still use budget after the real cutoff.
-    if DATA_MODE == "xero" and len(actuals_fy):
+    if len(actuals_fy):
         latest_actual_fy = actuals_fy["JOURNAL_DATE"].max()
         if pd.notna(latest_actual_fy):
             latest_actual_dt = latest_actual_fy.to_pydatetime() if hasattr(latest_actual_fy, "to_pydatetime") else latest_actual_fy
@@ -1433,7 +1265,7 @@ def build_overview_payload(
 
     if filled_count:
         warnings.append(f"Budget missing months; filled {filled_count} rows using recent averages.")
-    if DATA_MODE == "xero" and budget.empty:
+    if budget.empty:
         warnings.append("No manual budget yet. Add budget rows in Budget input page for projections.")
 
     current_liabilities = None
@@ -1495,7 +1327,7 @@ def build_liabilities_payload(
     if today is None:
         today = datetime.today()
 
-    lines = _load_liability_lines_df_by_mode()
+    lines = _load_liability_lines_df_xero()
     freq_map = _liability_frequency_config(
         gst_frequency=gst_frequency,
         payg_frequency=payg_frequency,
@@ -1652,8 +1484,8 @@ def _run_tests() -> None:
 def debug_csv():
     return jsonify(
         {
-            "mode": DATA_MODE,
-            "note": "CSV mode is disabled. This API now runs in Xero mode only.",
+            "mode": "xero",
+            "note": "This API runs in Xero-only mode.",
             "budget_backend": BUDGET_BACKEND,
             "manual_budget_file": str(MANUAL_BUDGET_FILE),
         }
@@ -1893,7 +1725,7 @@ def health():
             "token_valid": token_is_valid(tokens),
             "token_expires_in": int(tokens.get("expires_at", 0)) - now,
             "note": "If token expired and no refresh_token, go to /auth to re-authorize",
-            "data_mode": DATA_MODE,
+            "data_mode": "xero",
             "budget_backend": BUDGET_BACKEND,
             "manual_budget_file": str(MANUAL_BUDGET_FILE),
         }
@@ -1998,7 +1830,7 @@ def api_budget():
     try:
         budget_source = "supabase:manual_budget" if BUDGET_BACKEND == "supabase" else str(MANUAL_BUDGET_FILE)
         if request.method == "GET":
-            budget_df = _load_budget_df_by_mode()
+            budget_df = _load_budget_df_active()
             rows = budget_df.copy()
             if "JOURNAL_DATE" in rows.columns:
                 rows["JOURNAL_DATE"] = pd.to_datetime(rows["JOURNAL_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
