@@ -766,9 +766,16 @@ const BUDGET_ACCOUNT_OPTIONS = {
   REVENUE: ["Sales", "Services", "Other income", "Custom"],
   EXPENSE: ["Wages", "Rent", "Marketing", "Software", "Travel", "Other", "Custom"]
 };
+let BUDGET_ROW_SEQ = 1;
 
 function budgetAccountOptions(type) {
   return BUDGET_ACCOUNT_OPTIONS[String(type || "EXPENSE").toUpperCase()] || BUDGET_ACCOUNT_OPTIONS.EXPENSE;
+}
+
+function nextBudgetRowId() {
+  const id = `budget-row-${BUDGET_ROW_SEQ}`;
+  BUDGET_ROW_SEQ += 1;
+  return id;
 }
 
 function escapeAttr(value) {
@@ -788,7 +795,10 @@ function budgetRowHtml(row = {}, idx = 0) {
   const dateValue = String(row.JOURNAL_DATE || row.journal_date || "").slice(0, 10);
   const typeValue = String(row.ACCOUNT_TYPE || row.account_type || "EXPENSE").toUpperCase();
   const nameValue = String(row.ACCOUNT_NAME || row.account_name || "");
-  let amountValue = Number(row.NET_AMOUNT ?? row.net_amount ?? 0);
+  const rowId = String(row.ROW_ID || row.row_id || nextBudgetRowId());
+  const generatedFrom = String(row.GENERATED_FROM || row.generated_from || "");
+  const repeatValue = String(row.REPEAT || row.repeat || "ONE_OFF").toUpperCase();
+  let amountValue = Number(row.DISPLAY_AMOUNT ?? row.display_amount ?? row.NET_AMOUNT ?? row.net_amount ?? 0);
   if (typeValue === "REVENUE") amountValue = Math.abs(amountValue);
   const options = budgetAccountOptions(typeValue);
   const matchesPreset = options.some(option => option.toLowerCase() === nameValue.toLowerCase() && option !== "Custom");
@@ -801,7 +811,7 @@ function budgetRowHtml(row = {}, idx = 0) {
   });
 
   return `
-    <tr data-budget-idx="${idx}">
+    <tr data-budget-idx="${idx}" data-row-id="${escapeAttr(rowId)}" data-generated-from="${escapeAttr(generatedFrom)}">
       <td><input type="date" class="budget-date budget-input" value="${dateValue}"></td>
       <td>
         <select class="budget-type budget-select" onchange="updateBudgetRowUi(${idx})">
@@ -816,9 +826,23 @@ function budgetRowHtml(row = {}, idx = 0) {
         <input type="text" class="budget-name budget-input budget-custom-name" value="${customVisible ? escapeAttr(nameValue) : ""}" placeholder="Custom account name" style="${customVisible ? "" : "display:none;"}">
       </td>
       <td><input type="number" class="budget-amount budget-input" value="${Number.isFinite(amountValue) ? amountValue : 0}" step="0.01" oninput="updateBudgetRowUi(${idx})"></td>
+      <td>
+        <select class="budget-repeat budget-select" onchange="updateBudgetRowUi(${idx})">
+          <option value="ONE_OFF" ${repeatValue === "ONE_OFF" ? "selected" : ""}>One-off</option>
+          <option value="MONTHLY" ${repeatValue === "MONTHLY" ? "selected" : ""}>Monthly</option>
+          <option value="QUARTERLY" ${repeatValue === "QUARTERLY" ? "selected" : ""}>Quarterly</option>
+        </select>
+      </td>
+      <td><div class="budget-metric"><small>End</small><span>This FY</span></div></td>
       <td><div class="budget-metric budget-gst"><small>GST (10%)</small><span class="budget-gst-value">${derived.isTaxableSale ? fmtUSD(derived.gstAmount) : "—"}</span></div></td>
       <td><div class="budget-metric budget-gross"><small>Total</small><span class="budget-gross-value">${Number.isFinite(amountValue) ? fmtUSD(derived.grossAmount) : "—"}</span></div></td>
-      <td><button type="button" class="btn-muted" onclick="removeBudgetRow(${idx})">Delete</button></td>
+      <td>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn-muted" onclick="copyBudgetFromPrevious(${idx})">Use previous month</button>
+          <button type="button" class="btn-muted" onclick="applyBudgetRepeat(${idx})">Apply repeat</button>
+          <button type="button" class="btn-muted" onclick="removeBudgetRow(${idx})">Delete</button>
+        </div>
+      </td>
     </tr>`;
 }
 
@@ -831,15 +855,35 @@ function budgetRowStateFromElement(tr) {
     : selectedName;
   const journalDate = tr.querySelector(".budget-date")?.value || "";
   const enteredAmount = Math.abs(Number(tr.querySelector(".budget-amount")?.value || 0));
-  return { accountType, accountName, journalDate, enteredAmount, selectedName };
+  const repeat = tr.querySelector(".budget-repeat")?.value || "ONE_OFF";
+  const rowId = tr.dataset.rowId || nextBudgetRowId();
+  const generatedFrom = tr.dataset.generatedFrom || "";
+  return { accountType, accountName, journalDate, enteredAmount, selectedName, repeat, rowId, generatedFrom };
+}
+
+function collectBudgetUiRowsFromTable() {
+  const body = document.getElementById("budgetBody");
+  if (!body) return [];
+  return Array.from(body.querySelectorAll("tr")).map(tr => {
+    const state = budgetRowStateFromElement(tr);
+    return {
+      ROW_ID: state.rowId,
+      GENERATED_FROM: state.generatedFrom,
+      REPEAT: state.repeat,
+      ACCOUNT_TYPE: state.accountType,
+      ACCOUNT_NAME: state.accountName,
+      JOURNAL_DATE: state.journalDate,
+      DISPLAY_AMOUNT: state.enteredAmount
+    };
+  });
 }
 
 function collectBudgetRowsFromTable() {
-  const body = document.getElementById("budgetBody");
-  if (!body) return [];
-  const trs = Array.from(body.querySelectorAll("tr"));
-  return trs.map(tr => {
-    const { accountType, accountName, journalDate, enteredAmount } = budgetRowStateFromElement(tr);
+  return collectBudgetUiRowsFromTable().map(row => {
+    const accountType = row.ACCOUNT_TYPE || "";
+    const accountName = row.ACCOUNT_NAME || "";
+    const journalDate = row.JOURNAL_DATE || "";
+    const enteredAmount = Number(row.DISPLAY_AMOUNT || 0);
     const netAmount = accountType === "REVENUE"
       ? -Math.abs(enteredAmount)
       : Math.abs(enteredAmount);
@@ -851,6 +895,24 @@ function collectBudgetRowsFromTable() {
       NET_AMOUNT: netAmount
     };
   }).filter(r => r.ACCOUNT_NAME && r.JOURNAL_DATE);
+}
+
+function budgetFyEndDate(dateStr) {
+  if (!dateStr) return null;
+  const dt = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return null;
+  const fyEndYear = dt.getMonth() >= 6 ? dt.getFullYear() + 1 : dt.getFullYear();
+  return new Date(fyEndYear, 5, 30);
+}
+
+function shiftDateString(dateStr, monthsToAdd) {
+  if (!dateStr) return "";
+  const dt = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return "";
+  const shifted = new Date(dt.getFullYear(), dt.getMonth() + monthsToAdd, 1);
+  const mm = String(shifted.getMonth() + 1).padStart(2, "0");
+  const dd = String(Math.min(dt.getDate(), new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate())).padStart(2, "0");
+  return `${shifted.getFullYear()}-${mm}-${dd}`;
 }
 
 function updateBudgetSummary() {
@@ -916,6 +978,60 @@ function syncBudgetRowsUi() {
   });
 }
 
+function copyBudgetFromPrevious(idx) {
+  const rows = collectBudgetUiRowsFromTable();
+  if (idx <= 0 || idx >= rows.length) return;
+  const prev = rows[idx - 1];
+  const current = rows[idx];
+  rows[idx] = {
+    ...current,
+    ACCOUNT_TYPE: prev.ACCOUNT_TYPE,
+    ACCOUNT_NAME: prev.ACCOUNT_NAME,
+    DISPLAY_AMOUNT: prev.DISPLAY_AMOUNT,
+    REPEAT: prev.REPEAT,
+    JOURNAL_DATE: current.JOURNAL_DATE || shiftDateString(prev.JOURNAL_DATE, 1)
+  };
+  renderBudgetRows(rows);
+}
+
+function applyBudgetRepeat(idx) {
+  const rows = collectBudgetUiRowsFromTable();
+  const source = rows[idx];
+  if (!source) return;
+  if (!source.JOURNAL_DATE || !source.ACCOUNT_NAME) {
+    showError("Add a month and account name before applying repeat.");
+    return;
+  }
+  const step = source.REPEAT === "QUARTERLY" ? 3 : source.REPEAT === "MONTHLY" ? 1 : 0;
+  if (!step) return;
+
+  const sourceId = source.ROW_ID || nextBudgetRowId();
+  source.ROW_ID = sourceId;
+  const remaining = rows.filter(row => row.GENERATED_FROM !== sourceId);
+  const fyEnd = budgetFyEndDate(source.JOURNAL_DATE);
+  if (!fyEnd) {
+    renderBudgetRows(remaining);
+    return;
+  }
+
+  let nextDate = shiftDateString(source.JOURNAL_DATE, step);
+  while (nextDate) {
+    const nextDt = new Date(`${nextDate}T00:00:00`);
+    if (Number.isNaN(nextDt.getTime()) || nextDt > fyEnd) break;
+    remaining.push({
+      ROW_ID: nextBudgetRowId(),
+      GENERATED_FROM: sourceId,
+      REPEAT: "ONE_OFF",
+      ACCOUNT_TYPE: source.ACCOUNT_TYPE,
+      ACCOUNT_NAME: source.ACCOUNT_NAME,
+      JOURNAL_DATE: nextDate,
+      DISPLAY_AMOUNT: source.DISPLAY_AMOUNT
+    });
+    nextDate = shiftDateString(nextDate, step);
+  }
+  renderBudgetRows(remaining);
+}
+
 function renderBudgetRows(rows) {
   const body = document.getElementById("budgetBody");
   if (!body) return;
@@ -966,21 +1082,21 @@ async function saveBudgetRows() {
 }
 
 function addBudgetRow() {
-  const body = document.getElementById("budgetBody");
-  if (!body) return;
-  const currentRows = Array.from(body.querySelectorAll("tr"));
-  const idx = currentRows.length;
-  body.insertAdjacentHTML("beforeend", budgetRowHtml({}, idx));
-  syncBudgetRowsUi();
+  const rows = collectBudgetUiRowsFromTable();
+  rows.push({ ROW_ID: nextBudgetRowId(), REPEAT: "ONE_OFF" });
+  renderBudgetRows(rows);
 }
 
 function removeBudgetRow(idx) {
-  const body = document.getElementById("budgetBody");
-  if (!body) return;
-  const row = body.querySelector(`tr[data-budget-idx="${idx}"]`);
-  if (row) row.remove();
-  const rows = collectBudgetRowsFromTable();
-  renderBudgetRows(rows);
+  const rows = collectBudgetUiRowsFromTable();
+  const target = rows[idx];
+  if (!target) return;
+  const remaining = rows.filter((row, rowIdx) => {
+    if (rowIdx === idx) return false;
+    if (target.ROW_ID && row.GENERATED_FROM === target.ROW_ID) return false;
+    return true;
+  });
+  renderBudgetRows(remaining);
 }
 
 async function showBudgetInput() {
@@ -995,6 +1111,8 @@ window.saveBudgetRows = saveBudgetRows;
 window.addBudgetRow = addBudgetRow;
 window.removeBudgetRow = removeBudgetRow;
 window.updateBudgetRowUi = updateBudgetRowUi;
+window.copyBudgetFromPrevious = copyBudgetFromPrevious;
+window.applyBudgetRepeat = applyBudgetRepeat;
 
 // ---------- Dashboard model from journal lines ----------
 function buildDashboardModel(lines) {
