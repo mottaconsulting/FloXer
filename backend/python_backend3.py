@@ -1837,15 +1837,11 @@ def set_tenant():
 
 @app.route("/")
 def index():
-    if not session.get("user_id"):
-        return redirect("/login")
-    return app.send_static_file("index.html")
+    return redirect("/login")
 
 
 @app.route("/login")
 def login_page():
-    if session.get("user_id"):
-        return redirect("/dashboard")
     return app.send_static_file("login.html")
 
 

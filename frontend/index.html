@@ -223,6 +223,18 @@
       font-size: 13px;
       font-weight: 600;
     }
+    .data-month-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.05);
+      color: var(--ink-2);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
     details.kpi-tools {
       margin-top: 10px;
       border: 1px solid #d7dde8;
@@ -398,8 +410,9 @@
     <div class="financial-block">
       <div class="financial-title">
         <h2 style="margin:0;">Financial Performance</h2>
-        <div class="financial-sub">Actual vs projected across the full financial year</div>
+        <div id="overviewDataMonth" class="data-month-badge">Current data month: &mdash;</div>
       </div>
+        <div class="financial-sub">Actual vs projected across the full financial year</div>
     </div>
     <h3 style="margin:0 0 10px 0;">Sales</h3>
     <div class="panel" style="margin-bottom: 18px;">

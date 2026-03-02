@@ -204,6 +204,16 @@ function formatDelta(v, asCurrency = true) {
   return sign + " " + val + " vs last month";
 }
 
+function formatMonthLabel(monthKey) {
+  const parts = String(monthKey || "").split("-");
+  if (parts.length !== 2) return "--";
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  if (!year || !month) return "--";
+  const dt = new Date(year, month - 1, 1);
+  return dt.toLocaleString(undefined, { month: "long", year: "numeric" });
+}
+
 function setDelta(el, value) {
   if (!el) return;
   el.classList.remove("up", "down");
@@ -480,6 +490,11 @@ function computeProfitDeltas(data) {
 
 function renderOverview(data) {
   const kpis = data?.kpis || {};
+  const currentDataMonth = data?.meta?.today ? data.meta.today.slice(0, 7) : "";
+  const dataMonthEl = document.getElementById("overviewDataMonth");
+  if (dataMonthEl) {
+    dataMonthEl.textContent = `Current data month: ${formatMonthLabel(currentDataMonth)}`;
+  }
 
   setKpiValue(
     document.getElementById("kpiProfitNow"),
