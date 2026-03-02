@@ -10,17 +10,21 @@
       --bg: #f3f1ed;
       --bg-2: #faf9f6;
       --ink: #172033;
-      --ink-2: #51607a;
-      --accent: #0f766e;
-      --accent-2: #e11d48;
-      --accent-3: #f59e0b;
-      --line: #d7dde8;
+      --ink-2: #66758f;
+      --accent: #1f7a6d;
+      --accent-2: #b45309;
+      --accent-3: #d97706;
+      --line: #e3e8ef;
       --panel: #ffffff;
-      --shadow: 0 20px 50px rgba(15, 23, 42, 0.14);
-      --shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.09);
+      --shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+      --shadow-soft: 0 8px 18px rgba(15, 23, 42, 0.06);
       --radius: 20px;
-      --radius-sm: 14px;
-      --grid-gap: 16px;
+      --radius-sm: 16px;
+      --grid-gap: 24px;
+      --space-section: 48px;
+      --space-row: 24px;
+      --space-card: 24px;
+      --space-text: 10px;
     }
 
     * { box-sizing: border-box; }
@@ -59,7 +63,8 @@
 
     .header h1 {
       margin: 0;
-      font-size: 26px;
+      font-size: 30px;
+      font-weight: 700;
     }
 
     .header .actions {
@@ -211,45 +216,81 @@
     .muted { color: var(--ink-2); font-size: 12px; }
     .card {
       background: var(--panel);
-      padding: 18px;
+      padding: var(--space-card);
       border-radius: var(--radius-sm);
-      border-left: 5px solid #ddd;
+      border-left: 0;
       box-shadow: var(--shadow-soft);
-      border: 1px solid var(--line);
+      border: 1px solid rgba(227, 232, 239, 0.78);
       min-height: 156px;
       display: flex;
       flex-direction: column;
       justify-content: flex-start;
+      gap: var(--space-text);
+      height: 100%;
     }
-    .big { font-size: 31px; font-weight: 700; margin-top: 6px; line-height: 1.08; }
-    .kpi-delta { font-size: 12px; margin-top: 6px; color: var(--ink-2); font-weight: 600; }
-    .kpi-delta.up { color: #047857; }
-    .kpi-delta.down { color: #b91c1c; }
+    .overview-group .card > .muted {
+      font-size: 15px;
+      font-weight: 600;
+      color: #708197;
+      line-height: 1.3;
+    }
+    .big { font-size: 32px; font-weight: 600; margin-top: 0; line-height: 1.06; }
+    .kpi-delta { font-size: 11px; margin-top: 0; color: #7b8798; font-weight: 600; }
+    .kpi-delta.up { color: #2f6e5f; }
+    .kpi-delta.down { color: #a85536; }
     .risk-badge {
       display: inline-block;
-      margin-top: 8px;
+      margin-top: 2px;
       padding: 3px 9px;
       border-radius: 999px;
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.02em;
-      background: #fee2e2;
-      color: #991b1b;
+      background: #fbe4e2;
+      color: #9a3412;
     }
     .risk-badge.watch {
       background: #fff7ed;
       color: #9a3412;
     }
     .runway-card {
-      border-left-width: 8px;
-      padding: 22px;
-      min-height: 180px;
+      min-height: 178px;
+      gap: 8px;
     }
-    .runway-card .big { font-size: 42px; }
-    .runway-tone-red { border-left-color: #dc2626 !important; }
-    .runway-tone-orange { border-left-color: #ea580c !important; }
-    .runway-tone-yellow { border-left-color: #d97706 !important; }
-    .runway-tone-green { border-left-color: #059669 !important; }
+    .runway-card .big { font-size: 38px; }
+    .runway-card .empty-state {
+      color: #708197;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .runway-meter {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: #edf1f6;
+      overflow: hidden;
+    }
+    .runway-meter-fill {
+      height: 100%;
+      width: 0;
+      border-radius: 999px;
+      background: #8aa89f;
+      transition: width 220ms ease, background 220ms ease;
+    }
+    .runway-tone-red .runway-meter-fill { background: #c66b52; }
+    .runway-tone-orange .runway-meter-fill { background: #d08a47; }
+    .runway-tone-yellow .runway-meter-fill { background: #d1a24d; }
+    .runway-tone-green .runway-meter-fill { background: #6f9d8c; }
+    .runway-tone-red {
+      box-shadow: 0 10px 22px rgba(154, 52, 18, 0.10);
+      border-color: rgba(251, 146, 60, 0.28);
+    }
+    .runway-tone-orange,
+    .runway-tone-yellow,
+    .runway-tone-green {
+      border-color: rgba(227, 232, 239, 0.78);
+    }
 
     .table-container { overflow-x: auto; margin-top: 12px; }
     #transactionsContainer .table-container {
@@ -287,15 +328,16 @@
     }
 
     .hero-card {
-      min-height: 196px;
-      padding: 22px;
+      min-height: 204px;
+      padding: 28px;
+      box-shadow: 0 16px 32px rgba(15, 23, 42, 0.10);
     }
     .hero-card .big {
-      font-size: 40px;
+      font-size: 44px;
       line-height: 1;
     }
     .compact-card {
-      min-height: 142px;
+      min-height: 148px;
     }
     .compact-card .big {
       font-size: 28px;
@@ -304,7 +346,7 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(160px, 1fr));
       gap: 12px;
-      margin-bottom: 18px;
+      margin-bottom: var(--space-row);
     }
     .context-chip {
       display: flex;
@@ -331,7 +373,7 @@
     .overview-top-grid {
       display: grid;
       grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
-      gap: 18px;
+      gap: var(--space-row);
       align-items: start;
     }
     .overview-group {
@@ -340,7 +382,7 @@
     }
     .section-kicker {
       color: #475569;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 800;
       letter-spacing: 0.09em;
       text-transform: uppercase;
@@ -348,6 +390,7 @@
     .group-grid {
       display: grid;
       gap: 12px;
+      align-items: stretch;
     }
     .performance-grid {
       grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
@@ -439,36 +482,39 @@
 
     .toolbar {
       display: flex;
-      gap: 10px;
-      margin-bottom: 12px;
+      gap: 12px;
+      margin-bottom: var(--space-row);
       flex-wrap: wrap;
       align-items: center;
     }
     .segmented {
       display: inline-flex;
-      background: #e6ebf4;
+      background: #eef2f7;
       border-radius: 999px;
-      padding: 4px;
-      border: 1px solid #d0d9e8;
+      padding: 3px;
+      border: 1px solid #dbe2ea;
       gap: 4px;
+      transition: background 180ms ease, border-color 180ms ease;
     }
     .segmented button {
       box-shadow: none;
       border: 1px solid transparent;
       background: transparent;
-      color: #253248;
-      padding: 8px 14px;
+      color: #5b6678;
+      padding: 7px 14px;
       min-width: 96px;
       width: auto;
+      transition: background 180ms ease, color 180ms ease;
     }
     .segmented button.active {
-      background: #0f172a;
+      background: #ffffff;
       color: #fff;
-      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.2);
+      color: #172033;
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
     }
     .financial-block {
       margin-top: 6px;
-      margin-bottom: 18px;
+      margin-bottom: var(--space-row);
     }
     .financial-title {
       display: flex;
@@ -481,6 +527,7 @@
       color: var(--ink-2);
       font-size: 13px;
       font-weight: 600;
+      margin-bottom: 10px;
     }
     .data-month-badge {
       display: inline-flex;
@@ -993,6 +1040,9 @@
           <div id="kpiRunway" class="big">&mdash;</div>
           <div id="kpiRunwayMeta" class="muted"></div>
           <div id="runwayRiskBadge" style="display:none;" class="risk-badge">Risk</div>
+          <div class="runway-meter" aria-hidden="true">
+            <div id="runwayMeterFill" class="runway-meter-fill"></div>
+          </div>
           <div id="runwayBurnSummary" class="runway-summary">Based on cash and trailing bank burn.</div>
           <details class="kpi-tools">
             <summary>Adjust assumptions</summary>
@@ -1024,7 +1074,7 @@
       </section>
     </div>
 
-    <div class="panel performance-panel" style="margin-top: 18px;">
+    <div class="panel performance-panel" style="margin-top: 48px;">
       <div class="financial-title" style="margin-bottom: 12px;">
         <h3 style="margin:0;">Monthly performance across the financial year</h3>
         <div class="data-month-badge">Sales, expenses, and net profit</div>

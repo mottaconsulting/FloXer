@@ -202,7 +202,7 @@ function setKpiValue(valueEl, metaEl, value, options = {}) {
   valueEl.innerText = isCurrency ? fmtUSD(num) : `${num.toFixed(1)}${suffix}`;
 
   if (colorize) {
-    valueEl.style.color = num >= 0 ? "#0f766e" : "#e11d48";
+    valueEl.style.color = num >= 0 ? "#2f6e5f" : "#a85536";
   }
   if (metaEl) metaEl.innerText = suffix ? suffix.replace(/^\s*/, "") : metaEl.innerText;
 }
@@ -392,15 +392,19 @@ function renderOverviewCharts(data) {
 function applyRunwayVisuals(runwayMonths) {
   const card = document.getElementById("runwayCard");
   const badge = document.getElementById("runwayRiskBadge");
-  if (!card || !badge) return;
+  const fill = document.getElementById("runwayMeterFill");
+  if (!card || !badge || !fill) return;
   card.classList.remove("runway-tone-red", "runway-tone-orange", "runway-tone-yellow", "runway-tone-green");
   badge.classList.remove("watch");
   badge.style.display = "none";
+  fill.style.width = "0%";
 
   if (!Number.isFinite(runwayMonths)) {
     card.classList.add("runway-tone-yellow");
     return;
   }
+  const meterWidth = Math.max(8, Math.min(100, (runwayMonths / 12) * 100));
+  fill.style.width = `${meterWidth}%`;
   if (runwayMonths < 3) {
     card.classList.add("runway-tone-red");
   } else if (runwayMonths < 6) {
@@ -520,6 +524,8 @@ function renderOverview(data) {
     const burnMonths = burnInput ? Number(burnInput.value || 3) : 3;
     const burnVal = Number(kpis.monthly_burn || 0);
     if (!Number.isFinite(Number(kpis.runway_months))) {
+      const runwayEl = document.getElementById("kpiRunway");
+      if (runwayEl) runwayEl.innerText = "Enter cash on hand";
       runwaySummary.textContent = cashVal === null
         ? "Enter a cash balance to calculate runway for the selected financial year."
         : "Runway is unavailable until there is enough bank movement history in the selected financial year.";
