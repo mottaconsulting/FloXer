@@ -359,6 +359,83 @@
     .performance-panel {
       margin-bottom: 4px;
     }
+    .budget-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .budget-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .budget-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .budget-summary-card {
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: var(--shadow-soft);
+    }
+    .budget-summary-card .label {
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .budget-summary-card .value {
+      color: #0f172a;
+      font-size: 24px;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+    .budget-table-wrap {
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(255, 255, 255, 0.84);
+      padding: 10px;
+      box-shadow: var(--shadow-soft);
+    }
+    .budget-table-wrap table {
+      margin-top: 0;
+      box-shadow: none;
+      border: none;
+      background: transparent;
+    }
+    .budget-input,
+    .budget-select {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .budget-custom-name {
+      margin-top: 8px;
+    }
+    .budget-metric {
+      color: #334155;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .budget-metric small {
+      display: block;
+      color: #64748b;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
 
     .toolbar {
       display: flex;
@@ -764,6 +841,7 @@
       .more-panel { position: static; margin-top: 8px; }
       .toolbar { flex-direction: column; align-items: stretch; }
       .overview-context-strip { grid-template-columns: 1fr; }
+      .budget-summary-grid { grid-template-columns: 1fr; }
       .hero-card .big,
       .runway-card .big { font-size: 34px; }
       .tx-filter-group,
@@ -1082,30 +1160,53 @@
   
   <!-- BUDGET INPUT -->
   <div id="budgetContainer" style="display:none;">
-    <h2 style="margin:0 0 10px 0;">Budget input</h2>
-    <div class="muted" id="budgetMeta" style="margin-bottom:10px;">
-      Add monthly budget rows used for projected metrics in Xero mode (enter revenue as positive; system stores accounting sign).
-    </div>
+    <div class="budget-shell">
+      <div>
+        <h2 style="margin:0 0 10px 0;">Budget input</h2>
+        <div class="muted" id="budgetMeta" style="margin-bottom:10px;">
+          Add monthly budget rows used for projected metrics in Xero mode. Revenue stays net of GST; revenue rows show a 10% GST preview.
+        </div>
+      </div>
 
-    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
-      <button onclick="addBudgetRow()" class="btn-accent">Add row</button>
-      <button onclick="loadBudgetRows()" class="btn-muted">Reload</button>
-      <button onclick="saveBudgetRows()">Save budget</button>
-    </div>
+      <div class="budget-summary-grid">
+        <div class="budget-summary-card">
+          <div class="label">Rows</div>
+          <div class="value" id="budgetRowsCount">0</div>
+        </div>
+        <div class="budget-summary-card">
+          <div class="label">Revenue (net)</div>
+          <div class="value" id="budgetRevenueTotal">&mdash;</div>
+        </div>
+        <div class="budget-summary-card">
+          <div class="label">GST on sales</div>
+          <div class="value" id="budgetGstTotal">&mdash;</div>
+        </div>
+      </div>
 
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Month</th>
-            <th>Type</th>
-            <th>Account name</th>
-            <th>Net amount</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="budgetBody"></tbody>
-      </table>
+      <div class="budget-toolbar">
+        <button onclick="addBudgetRow()" class="btn-accent">Add row</button>
+        <button onclick="loadBudgetRows()" class="btn-muted">Reload</button>
+        <button onclick="saveBudgetRows()">Save budget</button>
+      </div>
+
+      <div class="budget-table-wrap">
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Type</th>
+                <th>Account name</th>
+                <th>Net amount</th>
+                <th>GST</th>
+                <th>Total incl. GST</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="budgetBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 

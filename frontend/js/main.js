@@ -762,26 +762,76 @@ async function showLiabilities() {
 
 window.showLiabilities = showLiabilities;
 
+const BUDGET_ACCOUNT_OPTIONS = {
+  REVENUE: ["Sales", "Services", "Other income", "Custom"],
+  EXPENSE: ["Wages", "Rent", "Marketing", "Software", "Travel", "Other", "Custom"]
+};
+
+function budgetAccountOptions(type) {
+  return BUDGET_ACCOUNT_OPTIONS[String(type || "EXPENSE").toUpperCase()] || BUDGET_ACCOUNT_OPTIONS.EXPENSE;
+}
+
+function escapeAttr(value) {
+  return escapeHtmlText(value).replaceAll("`", "&#096;");
+}
+
+function budgetRowDerivedValues(rowOrState) {
+  const accountType = String(rowOrState.accountType || "").toUpperCase();
+  const enteredAmount = Math.abs(Number(rowOrState.enteredAmount || 0));
+  const isTaxableSale = accountType === "REVENUE";
+  const gstAmount = isTaxableSale ? round2(enteredAmount * 0.1) : 0;
+  const grossAmount = round2(enteredAmount + gstAmount);
+  return { gstAmount, grossAmount, isTaxableSale };
+}
+
 function budgetRowHtml(row = {}, idx = 0) {
   const dateValue = String(row.JOURNAL_DATE || row.journal_date || "").slice(0, 10);
   const typeValue = String(row.ACCOUNT_TYPE || row.account_type || "EXPENSE").toUpperCase();
   const nameValue = String(row.ACCOUNT_NAME || row.account_name || "");
   let amountValue = Number(row.NET_AMOUNT ?? row.net_amount ?? 0);
   if (typeValue === "REVENUE") amountValue = Math.abs(amountValue);
+  const options = budgetAccountOptions(typeValue);
+  const matchesPreset = options.some(option => option.toLowerCase() === nameValue.toLowerCase() && option !== "Custom");
+  const selectedName = matchesPreset ? options.find(option => option.toLowerCase() === nameValue.toLowerCase()) : (nameValue ? "Custom" : options[0]);
+  const customVisible = selectedName === "Custom";
+  const derived = budgetRowDerivedValues({
+    accountType: typeValue,
+    accountName: customVisible ? nameValue : selectedName,
+    enteredAmount: amountValue
+  });
 
   return `
     <tr data-budget-idx="${idx}">
-      <td><input type="date" class="budget-date" value="${dateValue}" style="padding:8px; width:150px;"></td>
+      <td><input type="date" class="budget-date budget-input" value="${dateValue}"></td>
       <td>
-        <select class="budget-type" style="padding:8px; width:130px;">
+        <select class="budget-type budget-select" onchange="updateBudgetRowUi(${idx})">
           <option value="REVENUE" ${typeValue === "REVENUE" ? "selected" : ""}>REVENUE</option>
           <option value="EXPENSE" ${typeValue === "EXPENSE" ? "selected" : ""}>EXPENSE</option>
         </select>
       </td>
-      <td><input type="text" class="budget-name" value="${nameValue}" placeholder="e.g. Sales" style="padding:8px; width:220px;"></td>
-      <td><input type="number" class="budget-amount" value="${Number.isFinite(amountValue) ? amountValue : 0}" step="0.01" style="padding:8px; width:140px;"></td>
+      <td>
+        <select class="budget-name-select budget-select" onchange="updateBudgetRowUi(${idx})">
+          ${options.map(option => `<option value="${escapeAttr(option)}" ${option === selectedName ? "selected" : ""}>${escapeHtmlText(option)}</option>`).join("")}
+        </select>
+        <input type="text" class="budget-name budget-input budget-custom-name" value="${customVisible ? escapeAttr(nameValue) : ""}" placeholder="Custom account name" style="${customVisible ? "" : "display:none;"}">
+      </td>
+      <td><input type="number" class="budget-amount budget-input" value="${Number.isFinite(amountValue) ? amountValue : 0}" step="0.01" oninput="updateBudgetRowUi(${idx})"></td>
+      <td><div class="budget-metric budget-gst"><small>GST (10%)</small><span class="budget-gst-value">${derived.isTaxableSale ? fmtUSD(derived.gstAmount) : "—"}</span></div></td>
+      <td><div class="budget-metric budget-gross"><small>Total</small><span class="budget-gross-value">${Number.isFinite(amountValue) ? fmtUSD(derived.grossAmount) : "—"}</span></div></td>
       <td><button type="button" class="btn-muted" onclick="removeBudgetRow(${idx})">Delete</button></td>
     </tr>`;
+}
+
+function budgetRowStateFromElement(tr) {
+  const accountType = tr.querySelector(".budget-type")?.value || "";
+  const selectedName = tr.querySelector(".budget-name-select")?.value || "";
+  const customInput = tr.querySelector(".budget-name");
+  const accountName = selectedName === "Custom"
+    ? (customInput?.value || "").trim()
+    : selectedName;
+  const journalDate = tr.querySelector(".budget-date")?.value || "";
+  const enteredAmount = Math.abs(Number(tr.querySelector(".budget-amount")?.value || 0));
+  return { accountType, accountName, journalDate, enteredAmount, selectedName };
 }
 
 function collectBudgetRowsFromTable() {
@@ -789,10 +839,7 @@ function collectBudgetRowsFromTable() {
   if (!body) return [];
   const trs = Array.from(body.querySelectorAll("tr"));
   return trs.map(tr => {
-    const accountType = tr.querySelector(".budget-type")?.value || "";
-    const accountName = tr.querySelector(".budget-name")?.value || "";
-    const journalDate = tr.querySelector(".budget-date")?.value || "";
-    const enteredAmount = Number(tr.querySelector(".budget-amount")?.value || 0);
+    const { accountType, accountName, journalDate, enteredAmount } = budgetRowStateFromElement(tr);
     const netAmount = accountType === "REVENUE"
       ? -Math.abs(enteredAmount)
       : Math.abs(enteredAmount);
@@ -806,14 +853,79 @@ function collectBudgetRowsFromTable() {
   }).filter(r => r.ACCOUNT_NAME && r.JOURNAL_DATE);
 }
 
+function updateBudgetSummary() {
+  const rows = collectBudgetRowsFromTable();
+  const rowCountEl = document.getElementById("budgetRowsCount");
+  const revenueEl = document.getElementById("budgetRevenueTotal");
+  const gstEl = document.getElementById("budgetGstTotal");
+  const revenueRows = rows.filter(row => row.ACCOUNT_TYPE === "REVENUE");
+  const revenueTotal = revenueRows.reduce((sum, row) => sum + Math.abs(Number(row.NET_AMOUNT || 0)), 0);
+  const gstTotal = revenueRows.reduce((sum, row) => {
+    return sum + (Math.abs(Number(row.NET_AMOUNT || 0)) * 0.1);
+  }, 0);
+  if (rowCountEl) rowCountEl.innerText = String(rows.length);
+  if (revenueEl) revenueEl.innerText = fmtUSD(revenueTotal);
+  if (gstEl) gstEl.innerText = fmtUSD(gstTotal);
+}
+
+function updateBudgetRowUi(idx) {
+  const body = document.getElementById("budgetBody");
+  if (!body) return;
+  const tr = body.querySelector(`tr[data-budget-idx="${idx}"]`);
+  if (!tr) return;
+
+  const typeEl = tr.querySelector(".budget-type");
+  const selectEl = tr.querySelector(".budget-name-select");
+  const customInput = tr.querySelector(".budget-name");
+  const currentType = typeEl?.value || "EXPENSE";
+  const options = budgetAccountOptions(currentType);
+  const currentSelected = selectEl?.value || "";
+  const currentCustom = customInput?.value || "";
+  const keepExisting = options.includes(currentSelected) ? currentSelected : "Custom";
+
+  if (selectEl) {
+    selectEl.innerHTML = options
+      .map(option => `<option value="${escapeAttr(option)}" ${option === keepExisting ? "selected" : ""}>${escapeHtmlText(option)}</option>`)
+      .join("");
+  }
+  if (customInput) {
+    customInput.style.display = keepExisting === "Custom" ? "" : "none";
+    if (keepExisting !== "Custom") customInput.value = "";
+    else customInput.value = currentCustom;
+  }
+
+  const state = budgetRowStateFromElement(tr);
+  const derived = budgetRowDerivedValues(state);
+  const gstValue = tr.querySelector(".budget-gst-value");
+  const grossValue = tr.querySelector(".budget-gross-value");
+  if (gstValue) gstValue.textContent = derived.isTaxableSale ? fmtUSD(derived.gstAmount) : "—";
+  if (grossValue) grossValue.textContent = fmtUSD(derived.grossAmount);
+  updateBudgetSummary();
+}
+
+function syncBudgetRowsUi() {
+  const body = document.getElementById("budgetBody");
+  if (!body) return;
+  Array.from(body.querySelectorAll("tr")).forEach((tr, idx) => {
+    tr.dataset.budgetIdx = String(idx);
+    const customInput = tr.querySelector(".budget-name");
+    if (customInput) {
+      customInput.oninput = () => updateBudgetRowUi(idx);
+    }
+    updateBudgetRowUi(idx);
+  });
+}
+
 function renderBudgetRows(rows) {
   const body = document.getElementById("budgetBody");
   if (!body) return;
   if (!rows || !rows.length) {
     body.innerHTML = budgetRowHtml({}, 0);
+    syncBudgetRowsUi();
     return;
   }
   body.innerHTML = rows.map((row, idx) => budgetRowHtml(row, idx)).join("");
+  syncBudgetRowsUi();
 }
 
 async function loadBudgetRows() {
@@ -823,7 +935,7 @@ async function loadBudgetRows() {
     setRawData(data);
     const meta = document.getElementById("budgetMeta");
     if (meta) {
-      meta.innerText = `Mode: ${data.mode || "--"} | Source: ${data.source || "--"}`;
+      meta.innerText = `Revenue stays net of GST; revenue rows show a 10% GST preview. Source: ${data.source || "--"}`;
     }
     renderBudgetRows(data.rows || []);
     stopLoading();
@@ -859,6 +971,7 @@ function addBudgetRow() {
   const currentRows = Array.from(body.querySelectorAll("tr"));
   const idx = currentRows.length;
   body.insertAdjacentHTML("beforeend", budgetRowHtml({}, idx));
+  syncBudgetRowsUi();
 }
 
 function removeBudgetRow(idx) {
@@ -881,6 +994,7 @@ window.loadBudgetRows = loadBudgetRows;
 window.saveBudgetRows = saveBudgetRows;
 window.addBudgetRow = addBudgetRow;
 window.removeBudgetRow = removeBudgetRow;
+window.updateBudgetRowUi = updateBudgetRowUi;
 
 // ---------- Dashboard model from journal lines ----------
 function buildDashboardModel(lines) {
