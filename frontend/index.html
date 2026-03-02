@@ -235,6 +235,81 @@
       font-weight: 700;
       letter-spacing: 0.02em;
     }
+    .tx-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .tx-stat {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow-soft);
+    }
+    .tx-stat strong {
+      display: block;
+      font-size: 18px;
+      margin-top: 4px;
+    }
+    .tx-toolbar {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+      align-items: end;
+    }
+    .tx-toolbar .field {
+      min-width: 0;
+    }
+    .tx-toolbar .field label {
+      display: block;
+      color: var(--ink-2);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+    .tx-toolbar input,
+    .tx-toolbar select {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+    }
+    .tx-toolbar .actions {
+      display: flex;
+      gap: 8px;
+      align-items: end;
+    }
+    .tx-pagination {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .tx-pagination .muted { margin-left: auto; }
+    #dataTable tbody tr:nth-child(even) { background: rgba(241, 245, 249, 0.55); }
+    #dataTable th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .tx-account-cell strong { display: block; }
+    .tx-account-cell span,
+    .tx-desc-cell {
+      display: block;
+      color: var(--ink-2);
+      font-size: 12px;
+    }
+    .tx-money {
+      text-align: right;
+      font-weight: 700;
+      white-space: nowrap;
+    }
     details.kpi-tools {
       margin-top: 10px;
       border: 1px solid #d7dde8;
@@ -335,7 +410,7 @@
         <option value="">Organization</option>
       </select>
       <button onclick="showDashboard()">Overview</button>
-      <button onclick="showTransactions()">All transactions</button>
+      <button onclick="showTransactions()">Journal Lines</button>
       <button onclick="showLiabilities()">Upcoming risks</button>
       <button onclick="showBudgetInput()">Budget input</button>
       <button onclick="authorize()" class="btn-accent">Authorize</button>
@@ -444,28 +519,64 @@
 
   <!-- TRANSACTIONS -->
   <div id="transactionsContainer" style="display:none;">
-    <h2 style="margin:0 0 10px 0;">All transactions</h2>
-
-    <div style="display:flex; gap: 10px; align-items:end; flex-wrap:wrap; margin-bottom:10px;">
-      <div>
-        <div class="muted">Filter by account</div>
-        <input id="filterAccount" placeholder="e.g. rent, bank" style="padding:8px; width:220px;">
+    <h2 style="margin:0 0 10px 0;">Journal Lines</h2>
+    <div class="tx-summary">
+      <div class="tx-stat">
+        <div class="muted">Loaded lines</div>
+        <strong id="txSummaryLoaded">0</strong>
       </div>
-      <div>
-        <div class="muted">From</div>
-        <input id="filterFrom" type="date" style="padding:8px;">
+      <div class="tx-stat">
+        <div class="muted">Filtered result</div>
+        <strong id="txSummaryFiltered">0</strong>
       </div>
-      <div>
-        <div class="muted">To</div>
-        <input id="filterTo" type="date" style="padding:8px;">
+      <div class="tx-stat">
+        <div class="muted">Page size</div>
+        <strong id="txSummaryPageSize">100</strong>
       </div>
-      <button onclick="applyTransactionFilters()">Apply</button>
-      <div class="muted" id="txCount" style="margin-left:auto;"></div>
     </div>
-    <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+
+    <div class="tx-toolbar">
+      <div class="field">
+        <label for="filterAccount">Account</label>
+        <input id="filterAccount" placeholder="e.g. rent, bank">
+      </div>
+      <div class="field">
+        <label for="filterType">Type</label>
+        <select id="filterType">
+          <option value="">All types</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="filterDirection">Direction</label>
+        <select id="filterDirection">
+          <option value="">All</option>
+          <option value="in">Money in</option>
+          <option value="out">Money out</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="filterFrom">From</label>
+        <input id="filterFrom" type="date">
+      </div>
+      <div class="field">
+        <label for="filterTo">To</label>
+        <input id="filterTo" type="date">
+      </div>
+      <div class="actions">
+        <button onclick="applyTransactionFilters()">Apply</button>
+        <button onclick="resetTransactionFilters()" class="btn-muted" type="button">Reset</button>
+      </div>
+    </div>
+    <div class="tx-pagination">
       <button id="txPrevBtn" onclick="changeTransactionPage(-1)" class="btn-muted" type="button">Previous</button>
       <button id="txNextBtn" onclick="changeTransactionPage(1)" class="btn-muted" type="button">Next</button>
+      <select id="txPageSize" class="input-pill" onchange="changeTransactionPageSize(this.value)">
+        <option value="50">50 rows</option>
+        <option value="100" selected>100 rows</option>
+        <option value="250">250 rows</option>
+      </select>
       <div class="muted" id="txPageInfo"></div>
+      <div class="muted" id="txCount"></div>
     </div>
 
     <div id="tableContainer" class="table-container" style="display:block;">

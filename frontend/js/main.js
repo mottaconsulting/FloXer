@@ -5,7 +5,7 @@ let JOURNAL_CACHE = null;
 let JOURNAL_LINES = null;
 let FILTERED_JOURNAL_LINES = null;
 let TX_CURRENT_PAGE = 1;
-const TX_PAGE_SIZE = 100;
+let TX_PAGE_SIZE = 100;
 
 const INCOME_TYPES = new Set(["REVENUE"]);   // your org shows REVENUE
 const EXPENSE_TYPES = new Set(["EXPENSE"]);  // your org shows EXPENSE
@@ -993,14 +993,56 @@ function renderDashboard(model) {
 }
 
 // ---------- Transactions table ----------
+function escapeHtmlText(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatJournalTypeLabel(type) {
+  const map = {
+    REVENUE: "Revenue",
+    EXPENSE: "Expense",
+    CURRLIAB: "Liability",
+    BANK: "Bank",
+    EQUITY: "Equity",
+    FIXED: "Fixed asset",
+    CURRENT: "Current asset"
+  };
+  return map[String(type || "").toUpperCase()] || String(type || "Other");
+}
+
+function populateTransactionTypeFilter(lines) {
+  const select = document.getElementById("filterType");
+  if (!select) return;
+  const current = select.value;
+  const types = Array.from(new Set((lines || []).map(r => String(r.accountType || "").trim()).filter(Boolean))).sort();
+  select.innerHTML = ['<option value="">All types</option>']
+    .concat(types.map(t => `<option value="${escapeHtmlText(t)}">${escapeHtmlText(formatJournalTypeLabel(t))}</option>`))
+    .join("");
+  if (types.includes(current)) select.value = current;
+}
+
+function renderTransactionSummary(totalLoaded, totalFiltered) {
+  const loadedEl = document.getElementById("txSummaryLoaded");
+  const filteredEl = document.getElementById("txSummaryFiltered");
+  const pageSizeEl = document.getElementById("txSummaryPageSize");
+  if (loadedEl) loadedEl.textContent = Number(totalLoaded || 0).toLocaleString();
+  if (filteredEl) filteredEl.textContent = Number(totalFiltered || 0).toLocaleString();
+  if (pageSizeEl) pageSizeEl.textContent = String(TX_PAGE_SIZE);
+}
+
 function renderTransactionTable(lines) {
   const cols = [
     { label: "Date", render: r => XeroTables.formatDate(r.date) },
-    { label: "Journal #", render: r => r.journalNumber },
-    { label: "Account", render: r => `${r.accountCode} ${r.accountName}`.trim() },
-    { label: "Type", render: r => r.accountType },
-    { label: "Description", render: r => r.description },
-    { label: "Net", render: r => XeroTables.formatCurrency(r.net) }
+    { label: "Account", render: r => `<div class="tx-account-cell"><strong>${escapeHtmlText(`${r.accountCode} ${r.accountName}`.trim())}</strong><span>Journal #${escapeHtmlText(r.journalNumber || "—")}</span></div>` },
+    { label: "Type", render: r => escapeHtmlText(formatJournalTypeLabel(r.accountType)) },
+    { label: "Description", render: r => `<div class="tx-desc-cell">${escapeHtmlText(r.description || "—")}</div>` },
+    { label: "Money In", render: r => `<div class="tx-money">${Number(r.net || 0) < 0 ? XeroTables.formatCurrency(Math.abs(Number(r.net || 0))) : "—"}</div>` },
+    { label: "Money Out", render: r => `<div class="tx-money">${Number(r.net || 0) > 0 ? XeroTables.formatCurrency(Number(r.net || 0)) : "—"}</div>` }
   ];
 
   const total = lines.length;
@@ -1013,6 +1055,7 @@ function renderTransactionTable(lines) {
   const slice = lines.slice(start, end);
 
   XeroTables.renderTable(cols, slice);
+  renderTransactionSummary((JOURNAL_LINES || []).length, total);
 
   const txCount = document.getElementById("txCount");
   if (txCount) {
@@ -1032,6 +1075,8 @@ function applyTransactionFilters() {
   if (!JOURNAL_LINES) return;
 
   const q = (document.getElementById("filterAccount").value || "").toLowerCase();
+  const type = document.getElementById("filterType")?.value || "";
+  const direction = document.getElementById("filterDirection")?.value || "";
   const from = document.getElementById("filterFrom").value;
   const to = document.getElementById("filterTo").value;
 
@@ -1041,6 +1086,11 @@ function applyTransactionFilters() {
   const filtered = JOURNAL_LINES.filter(r => {
     const acc = `${r.accountCode} ${r.accountName}`.toLowerCase();
     if (q && !acc.includes(q)) return false;
+    if (type && String(r.accountType || "") !== type) return false;
+
+    const amount = Number(r.net || 0);
+    if (direction === "in" && !(amount < 0)) return false;
+    if (direction === "out" && !(amount > 0)) return false;
 
     const d = XeroTables.parseXeroDate(r.date);
     if (fromDate && d < fromDate) return false;
@@ -1056,6 +1106,23 @@ function applyTransactionFilters() {
 
 window.applyTransactionFilters = applyTransactionFilters;
 
+function resetTransactionFilters() {
+  const ids = ["filterAccount", "filterFrom", "filterTo"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  const typeEl = document.getElementById("filterType");
+  const dirEl = document.getElementById("filterDirection");
+  if (typeEl) typeEl.value = "";
+  if (dirEl) dirEl.value = "";
+  FILTERED_JOURNAL_LINES = JOURNAL_LINES || [];
+  TX_CURRENT_PAGE = 1;
+  renderTransactionTable(FILTERED_JOURNAL_LINES);
+}
+
+window.resetTransactionFilters = resetTransactionFilters;
+
 function changeTransactionPage(delta) {
   if (!FILTERED_JOURNAL_LINES) {
     FILTERED_JOURNAL_LINES = JOURNAL_LINES || [];
@@ -1065,6 +1132,15 @@ function changeTransactionPage(delta) {
 }
 
 window.changeTransactionPage = changeTransactionPage;
+
+function changeTransactionPageSize(value) {
+  const parsed = Number(value || 100);
+  TX_PAGE_SIZE = Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
+  TX_CURRENT_PAGE = 1;
+  renderTransactionTable(FILTERED_JOURNAL_LINES || JOURNAL_LINES || []);
+}
+
+window.changeTransactionPageSize = changeTransactionPageSize;
 
 // ---------- Navigation ----------
 async function showDashboard() {
@@ -1107,6 +1183,7 @@ async function showTransactions() {
   try {
     const journals = await getJournals();
     JOURNAL_LINES = flattenJournalLines(journals);
+    populateTransactionTypeFilter(JOURNAL_LINES);
 
     // âœ… ADD THIS LINE
     console.log(
