@@ -329,89 +329,61 @@ function renderOverviewCharts(data) {
   if (!sales || !profit || !expenses) return;
 
   const labels = sales.labels || [];
-  const asOfMonth = data?.meta?.as_of_month || (data?.meta?.today ? data.meta.today.slice(0, 7) : "");
-  const selectedMonthLabel = (document.getElementById("overviewDateSelect")?.value || "").slice(0, 7) || asOfMonth;
-  const highlightIndex = labels.indexOf(selectedMonthLabel);
-  const cutoffIndex = labels.indexOf(asOfMonth);
   const salesActual = SALES_MODE === "cumulative" ? sales.actual_cumulative : sales.actual_monthly;
-  const salesProjected = SALES_MODE === "cumulative" ? sales.projected_cumulative : sales.projected_monthly;
   const expenseActual = SALES_MODE === "cumulative" ? expenses.actual_cumulative : expenses.actual_monthly;
-  const expenseProjected = SALES_MODE === "cumulative" ? expenses.projected_cumulative : expenses.projected_monthly;
+  const netActual = SALES_MODE === "cumulative"
+    ? cumulativeSeries((profit.actual_monthly_profit || []).map(v => Number(v || 0)))
+    : (profit.actual_monthly_profit || []).map(v => Number(v || 0));
 
-  const profitActual = SALES_MODE === "cumulative"
-    ? cumulativeSeries(profit.actual_monthly_profit || [])
-    : profit.actual_monthly_profit;
-  const profitProjected = SALES_MODE === "cumulative"
-    ? cumulativeSeries(profit.projected_monthly_profit || [])
-    : profit.projected_monthly_profit;
-
-  XeroCharts.renderChart("overviewPerformance", "overviewPerformanceChart", "line", {
+  XeroCharts.renderChart("overviewPerformance", "overviewPerformanceChart", "bar", {
     labels: profit.labels || labels,
     datasets: [
       {
-        label: "Sales (actual)",
+        type: "bar",
+        label: "Sales",
         data: seriesWithLessZeroNoise(salesActual),
         borderColor: "#0f766e",
-        pointRadius: labels.map((_, i) => (i === highlightIndex ? 4 : 0)),
-        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#0f766e")),
-        tension: 0.3,
-        spanGaps: true
+        backgroundColor: "rgba(15, 118, 110, 0.72)",
+        borderWidth: 1,
+        borderRadius: 8,
+        barThickness: 18
       },
       {
-        label: "Spend (actual)",
+        type: "bar",
+        label: "Expenses",
         data: seriesWithLessZeroNoise(expenseActual),
         borderColor: "#b91c1c",
-        pointRadius: labels.map((_, i) => (i === highlightIndex ? 4 : 0)),
-        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#b91c1c")),
-        tension: 0.3,
-        spanGaps: true
+        backgroundColor: "rgba(185, 28, 28, 0.72)",
+        borderWidth: 1,
+        borderRadius: 8,
+        barThickness: 18
       },
       {
-        label: "Net (actual)",
-        data: seriesWithLessZeroNoise(profitActual || []),
+        type: "line",
+        label: "Net Profit",
+        data: seriesWithLessZeroNoise(netActual || []),
         borderColor: "#2563eb",
         borderWidth: 3,
-        pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
-        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#2563eb")),
-        tension: 0.3,
-        spanGaps: true
-      },
-      {
-        label: "Sales (projected)",
-        data: seriesWithLessZeroNoise(salesProjected),
-        borderColor: "#14b8a6",
-        borderDash: [6, 4],
-        pointRadius: 0,
-        tension: 0.3,
-        spanGaps: true
-      },
-      {
-        label: "Spend (projected)",
-        data: seriesWithLessZeroNoise(expenseProjected),
-        borderColor: "#fb923c",
-        borderDash: [6, 4],
-        pointRadius: 0,
-        tension: 0.3,
-        spanGaps: true
-      },
-      {
-        label: "Net (projected)",
-        data: seriesWithLessZeroNoise(profitProjected || []),
-        borderColor: "#7c3aed",
-        borderDash: [6, 4],
-        borderWidth: 3,
-        pointRadius: 0,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: (netActual || []).map(v => Number(v || 0) >= 0 ? "#16a34a" : "#dc2626"),
+        pointBorderColor: "#ffffff",
+        pointBorderWidth: 2,
         tension: 0.3,
         spanGaps: true
       }
     ]
   }, {
-    scales: { y: { beginAtZero: false } },
-    plugins: {
-      monthHighlight: {
-        index: highlightIndex,
-        cutoffIndex,
-        color: "rgba(15, 23, 42, 0.06)"
+    interaction: {
+      mode: "index",
+      intersect: false
+    },
+    scales: {
+      x: {
+        grid: { display: false }
+      },
+      y: {
+        beginAtZero: true
       }
     }
   });
@@ -536,9 +508,9 @@ function renderOverview(data) {
   const salesMeta = document.getElementById("kpiSalesMonthMeta");
   const spendMeta = document.getElementById("kpiSpendMonthMeta");
   const liabMeta = document.getElementById("kpiCurLiabOverviewMeta");
-  if (salesMeta) salesMeta.innerText = "Selected FY month";
-  if (spendMeta) spendMeta.innerText = "Selected FY month";
-  if (liabMeta) liabMeta.innerText = "As of selected month";
+  if (salesMeta) salesMeta.innerText = "";
+  if (spendMeta) spendMeta.innerText = "";
+  if (liabMeta) liabMeta.innerText = "";
 
   applyRunwayVisuals(Number(kpis.runway_months));
   const runwaySummary = document.getElementById("runwayBurnSummary");
