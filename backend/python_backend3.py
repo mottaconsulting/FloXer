@@ -14,6 +14,7 @@ from functools import wraps
 from uuid import uuid4
 import secrets
 import sqlite3
+import psycopg2
 from collections import defaultdict, deque
 from threading import Lock
 from werkzeug.exceptions import HTTPException
@@ -38,6 +39,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", os.path.join(BASE_DIR, "exports")))
 BUDGET_FILE = os.getenv("BUDGET_FILE", str(EXPORTS_DIR / "budget.csv.xlsx"))
 MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(Path(BASE_DIR) / "data" / "manual_budget.csv")))
+BUDGET_BACKEND = os.getenv("BUDGET_BACKEND", "csv").strip().lower()
 DATA_MODE = "xero"
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
@@ -132,6 +134,7 @@ XERO_AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
 XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 XERO_CONNECTIONS_URL = "https://api.xero.com/connections"
 XERO_API_BASE = "https://api.xero.com/api.xro/2.0"
+SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "").strip()
 DB_FILE = os.getenv("DB_FILE", "app.db")
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"))
@@ -744,6 +747,119 @@ def _save_budget_rows_manual(rows: list[dict]) -> pd.DataFrame:
     out.to_csv(MANUAL_BUDGET_FILE, index=False)
     return clean
 
+
+def _supabase_budget_conn():
+    if not SUPABASE_DB_URL:
+        raise RuntimeError("SUPABASE_DB_URL must be set when BUDGET_BACKEND=supabase.")
+    return psycopg2.connect(SUPABASE_DB_URL)
+
+
+def _ensure_supabase_budget_table() -> None:
+    with _supabase_budget_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS manual_budget (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id TEXT NOT NULL,
+                    journal_date DATE NOT NULL,
+                    account_type TEXT NOT NULL,
+                    account_name TEXT NOT NULL,
+                    net_amount NUMERIC NOT NULL,
+                    data_category TEXT NOT NULL DEFAULT 'Budget',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        conn.commit()
+
+
+def _budget_session_user_id() -> str:
+    user_id = session.get("user_id") if has_request_context() else None
+    if not user_id:
+        raise RuntimeError("Login required before accessing Supabase budget storage.")
+    return str(user_id)
+
+
+def _load_budget_df_supabase() -> pd.DataFrame:
+    _ensure_supabase_budget_table()
+    user_id = _budget_session_user_id()
+    with _supabase_budget_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    account_type AS ACCOUNT_TYPE,
+                    account_name AS ACCOUNT_NAME,
+                    '' AS ACCOUNT_CODE,
+                    COALESCE(data_category, 'Budget') AS DATA_CATEGORY,
+                    journal_date AS JOURNAL_DATE,
+                    net_amount AS NET_AMOUNT
+                FROM manual_budget
+                WHERE user_id = %s
+                ORDER BY journal_date, account_type, account_name
+                """,
+                (user_id,),
+            )
+            rows = cur.fetchall()
+            cols = [desc[0] for desc in cur.description] if cur.description else []
+    if not rows:
+        return _empty_canonical_df()
+    df = pd.DataFrame(rows, columns=cols)
+    df.columns = [_normalize_col(c) for c in df.columns]
+    budget = _normalize_schema(df)
+    budget = _enforce_sign_convention(budget)
+    if "DATA_CATEGORY" in budget.columns:
+        budget["DATA_CATEGORY"] = budget["DATA_CATEGORY"].replace("", "Budget")
+    return budget
+
+
+def _save_budget_rows_supabase(rows: list[dict]) -> pd.DataFrame:
+    incoming = pd.DataFrame(rows or [])
+    if incoming.empty:
+        clean = _empty_canonical_df()
+    else:
+        incoming.columns = [_normalize_col(c) for c in incoming.columns]
+        clean = _normalize_schema(incoming)
+        clean = _enforce_sign_convention(clean)
+        if "DATA_CATEGORY" in clean.columns:
+            clean["DATA_CATEGORY"] = clean["DATA_CATEGORY"].replace("", "Budget")
+        else:
+            clean["DATA_CATEGORY"] = "Budget"
+
+    _ensure_supabase_budget_table()
+    user_id = _budget_session_user_id()
+    with _supabase_budget_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM manual_budget WHERE user_id = %s", (user_id,))
+            if not clean.empty:
+                payload = clean.copy()
+                payload["JOURNAL_DATE"] = pd.to_datetime(payload["JOURNAL_DATE"], errors="coerce").dt.date
+                records = [
+                    (
+                        user_id,
+                        row["JOURNAL_DATE"],
+                        str(row.get("ACCOUNT_TYPE") or ""),
+                        str(row.get("ACCOUNT_NAME") or ""),
+                        float(row.get("NET_AMOUNT") or 0),
+                        str(row.get("DATA_CATEGORY") or "Budget"),
+                    )
+                    for _, row in payload.iterrows()
+                    if pd.notna(row.get("JOURNAL_DATE"))
+                ]
+                if records:
+                    cur.executemany(
+                        """
+                        INSERT INTO manual_budget
+                            (user_id, journal_date, account_type, account_name, net_amount, data_category)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        records,
+                    )
+        conn.commit()
+    return clean
+
 def _load_actuals_df_xero() -> pd.DataFrame:
     journals = fetch_journals()
     rows = []
@@ -776,6 +892,8 @@ def _load_actuals_df_by_mode() -> pd.DataFrame:
 
 def _load_budget_df_by_mode() -> pd.DataFrame:
     try:
+        if BUDGET_BACKEND == "supabase":
+            return _load_budget_df_supabase()
         return _load_budget_df_manual()
     except Exception:
         return _empty_canonical_df()
@@ -1536,6 +1654,7 @@ def debug_csv():
         {
             "mode": DATA_MODE,
             "note": "CSV mode is disabled. This API now runs in Xero mode only.",
+            "budget_backend": BUDGET_BACKEND,
             "manual_budget_file": str(MANUAL_BUDGET_FILE),
         }
     )
@@ -1799,6 +1918,7 @@ def health():
             "token_expires_in": int(tokens.get("expires_at", 0)) - now,
             "note": "If token expired and no refresh_token, go to /auth to re-authorize",
             "data_mode": DATA_MODE,
+            "budget_backend": BUDGET_BACKEND,
             "manual_budget_file": str(MANUAL_BUDGET_FILE),
         }
     )
@@ -1900,6 +2020,7 @@ def api_liabilities_alias():
 @login_required
 def api_budget():
     try:
+        budget_source = "supabase:manual_budget" if BUDGET_BACKEND == "supabase" else str(MANUAL_BUDGET_FILE)
         if request.method == "GET":
             budget_df = _load_budget_df_by_mode()
             rows = budget_df.copy()
@@ -1908,7 +2029,8 @@ def api_budget():
             return jsonify(
                 {
                     "mode": "xero",
-                    "source": str(MANUAL_BUDGET_FILE),
+                    "budget_backend": BUDGET_BACKEND,
+                    "source": budget_source,
                     "rows": _clean_nan_values(rows.to_dict(orient="records")),
                 }
             )
@@ -1918,7 +2040,7 @@ def api_budget():
         if not isinstance(rows, list):
             return jsonify({"error": "rows must be a list"}), 400
 
-        clean = _save_budget_rows_manual(rows)
+        clean = _save_budget_rows_supabase(rows) if BUDGET_BACKEND == "supabase" else _save_budget_rows_manual(rows)
         out = clean.copy()
         if "JOURNAL_DATE" in out.columns:
             out["JOURNAL_DATE"] = pd.to_datetime(out["JOURNAL_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
@@ -1926,7 +2048,8 @@ def api_budget():
             {
                 "ok": True,
                 "saved_rows": int(len(out)),
-                "source": str(MANUAL_BUDGET_FILE),
+                "budget_backend": BUDGET_BACKEND,
+                "source": budget_source,
                 "rows": _clean_nan_values(out.to_dict(orient="records")),
             }
         )
