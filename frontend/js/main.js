@@ -1273,6 +1273,25 @@ window.authorize = authorize;
 window.logoutSession = logoutSession;
 window.checkHealth = checkHealth;
 
+function setXeroConnectionStatus(connected) {
+  const pill = document.getElementById("xeroConnectionPill");
+  const link = document.getElementById("xeroConnectLink");
+  const select = document.getElementById("orgSelect");
+
+  if (pill) {
+    pill.classList.toggle("connected", connected);
+    pill.classList.toggle("disconnected", !connected);
+    pill.textContent = connected ? "Xero: Connected" : "Xero: Not connected";
+  }
+  if (link) {
+    link.style.display = connected ? "none" : "inline-flex";
+  }
+  if (select && !connected) {
+    select.innerHTML = `<option value="">Organization</option>`;
+    select.disabled = true;
+  }
+}
+
 window.addEventListener("message", async (event) => {
   if (event.origin !== window.location.origin) return;
   if (event.data?.type !== "xero-auth-success") return;
@@ -1290,6 +1309,7 @@ async function loadOrganizations() {
     const savedTenantId = data?.saved_tenant_id || "";
 
     if (!connections.length) {
+      setXeroConnectionStatus(false);
       select.innerHTML = `<option value="">No organizations</option>`;
       select.disabled = true;
       return;
@@ -1304,7 +1324,9 @@ async function loadOrganizations() {
       })
       .join("");
     select.disabled = false;
+    setXeroConnectionStatus(true);
   } catch (e) {
+    setXeroConnectionStatus(false);
     select.innerHTML = `<option value="">Org unavailable</option>`;
     select.disabled = true;
   }

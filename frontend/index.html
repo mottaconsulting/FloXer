@@ -68,6 +68,19 @@
       flex-wrap: wrap;
       align-items: center;
     }
+    .nav-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .header-utilities {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-left: auto;
+    }
 
     button {
       background: #0f172a;
@@ -88,6 +101,101 @@
     .btn-accent { background: var(--accent); }
     .btn-muted { background: #374151; }
     .btn-warm { background: #b45309; }
+    .mini-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      background: #fff;
+      color: var(--ink);
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #eef2f7;
+      color: #475569;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      white-space: nowrap;
+    }
+    .status-pill::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #94a3b8;
+      display: inline-block;
+    }
+    .status-pill.connected {
+      background: #dcfce7;
+      color: #166534;
+      border-color: rgba(22, 163, 74, 0.18);
+    }
+    .status-pill.connected::before { background: #16a34a; }
+    .status-pill.disconnected {
+      background: #fff7ed;
+      color: #9a3412;
+      border-color: rgba(234, 88, 12, 0.18);
+    }
+    .status-pill.disconnected::before { background: #ea580c; }
+    details.more-menu {
+      position: relative;
+    }
+    details.more-menu summary {
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--line);
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+      font-size: 20px;
+      color: #334155;
+    }
+    details.more-menu summary::-webkit-details-marker { display: none; }
+    .more-panel {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      min-width: 180px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow-soft);
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 20;
+    }
+    .more-panel button {
+      width: 100%;
+      text-align: left;
+      justify-content: flex-start;
+      box-shadow: none;
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid transparent;
+      padding: 9px 10px;
+    }
+    .more-panel button:hover {
+      transform: none;
+      box-shadow: none;
+      background: #f8fafc;
+    }
 
     .loading { text-align: center; padding: 20px; color: var(--ink-2); }
     .error {
@@ -375,8 +483,14 @@
     @media (max-width: 900px) {
       body { margin: 10px; padding: 16px; }
       .header { flex-direction: column; align-items: flex-start; }
-      .header .actions { width: 100%; }
+      .header .actions { width: 100%; flex-direction: column; align-items: stretch; }
+      .nav-links, .header-utilities { width: 100%; }
+      .header-utilities { margin-left: 0; }
       button { width: 100%; }
+      .mini-link, .status-pill { width: 100%; justify-content: center; }
+      details.more-menu { width: 100%; }
+      details.more-menu summary { width: 100%; border-radius: 14px; }
+      .more-panel { position: static; margin-top: 8px; }
       .kpi-grid { grid-template-columns: 1fr; }
       .runway-card { grid-column: span 1; }
       .toolbar { flex-direction: column; align-items: stretch; }
@@ -390,20 +504,30 @@
   <div class="header">
     <div>
       <h1>Business Pulse</h1>
-      <div class="muted">Profit, runway, and next‑step clarity in seconds.</div>
+      <div class="muted">Profit, runway, and next-step clarity in seconds.</div>
     </div>
     <div class="actions">
-      <select id="orgSelect" title="Organization" class="input-pill">
-        <option value="">Organization</option>
-      </select>
-      <button onclick="showDashboard()">Overview</button>
-      <button onclick="showTransactions()">Journal Lines</button>
-      <button onclick="showLiabilities()">Upcoming risks</button>
-      <button onclick="showBudgetInput()">Budget input</button>
-      <button onclick="authorize()" class="btn-accent">Authorize</button>
-      <button onclick="logoutSession()" class="btn-muted">Logout</button>
-      <button onclick="checkHealth()" class="btn-muted">Status</button>
-      <button onclick="showRawJson()" id="rawJsonBtn" class="btn-warm">Show Raw JSON</button>
+      <div class="nav-links">
+        <button onclick="showDashboard()">Overview</button>
+        <button onclick="showTransactions()">Journal Lines</button>
+        <button onclick="showLiabilities()">Upcoming Risks</button>
+        <button onclick="showBudgetInput()">Budget Input</button>
+      </div>
+      <div class="header-utilities">
+        <select id="orgSelect" title="Organization" class="input-pill">
+          <option value="">Organization</option>
+        </select>
+        <div id="xeroConnectionPill" class="status-pill disconnected">Xero: Not connected</div>
+        <a id="xeroConnectLink" href="/auth/start" class="mini-link">Connect</a>
+        <details class="more-menu">
+          <summary aria-label="More">&#8226;&#8226;&#8226;</summary>
+          <div class="more-panel">
+            <button onclick="logoutSession()" class="btn-muted">Logout</button>
+            <button onclick="checkHealth()" class="btn-muted">Status</button>
+            <button onclick="showRawJson()" id="rawJsonBtn" class="btn-warm">Show Raw JSON</button>
+          </div>
+        </details>
+      </div>
     </div>
   </div>
 
