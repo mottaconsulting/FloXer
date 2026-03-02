@@ -1026,23 +1026,14 @@ function populateTransactionTypeFilter(lines) {
   if (types.includes(current)) select.value = current;
 }
 
-function renderTransactionSummary(totalLoaded, totalFiltered) {
-  const loadedEl = document.getElementById("txSummaryLoaded");
-  const filteredEl = document.getElementById("txSummaryFiltered");
-  const pageSizeEl = document.getElementById("txSummaryPageSize");
-  if (loadedEl) loadedEl.textContent = Number(totalLoaded || 0).toLocaleString();
-  if (filteredEl) filteredEl.textContent = Number(totalFiltered || 0).toLocaleString();
-  if (pageSizeEl) pageSizeEl.textContent = String(TX_PAGE_SIZE);
-}
-
 function renderTransactionTable(lines) {
   const cols = [
     { label: "Date", render: r => XeroTables.formatDate(r.date) },
     { label: "Account", render: r => `<div class="tx-account-cell"><strong>${escapeHtmlText(`${r.accountCode} ${r.accountName}`.trim())}</strong><span>Journal #${escapeHtmlText(r.journalNumber || "—")}</span></div>` },
     { label: "Type", render: r => escapeHtmlText(formatJournalTypeLabel(r.accountType)) },
     { label: "Description", render: r => `<div class="tx-desc-cell">${escapeHtmlText(r.description || "—")}</div>` },
-    { label: "Money In", render: r => `<div class="tx-money">${Number(r.net || 0) < 0 ? XeroTables.formatCurrency(Math.abs(Number(r.net || 0))) : "—"}</div>` },
-    { label: "Money Out", render: r => `<div class="tx-money">${Number(r.net || 0) > 0 ? XeroTables.formatCurrency(Number(r.net || 0)) : "—"}</div>` }
+    { label: "Money In", render: r => `<div class="tx-money money-in">${Number(r.net || 0) < 0 ? XeroTables.formatCurrency(Math.abs(Number(r.net || 0))) : "—"}</div>` },
+    { label: "Money Out", render: r => `<div class="tx-money money-out">${Number(r.net || 0) > 0 ? XeroTables.formatCurrency(Number(r.net || 0)) : "—"}</div>` }
   ];
 
   const total = lines.length;
@@ -1055,7 +1046,6 @@ function renderTransactionTable(lines) {
   const slice = lines.slice(start, end);
 
   XeroTables.renderTable(cols, slice);
-  renderTransactionSummary((JOURNAL_LINES || []).length, total);
 
   const txCount = document.getElementById("txCount");
   if (txCount) {
