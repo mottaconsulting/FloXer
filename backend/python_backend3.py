@@ -37,7 +37,7 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(Path(BASE_DIR) / "data" / "manual_budget.csv")))
-BUDGET_BACKEND = os.getenv("BUDGET_BACKEND", "csv").strip().lower()
+BUDGET_BACKEND = os.getenv("BUDGET_BACKEND", "supabase").strip().lower()
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
@@ -132,6 +132,8 @@ XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 XERO_CONNECTIONS_URL = "https://api.xero.com/connections"
 XERO_API_BASE = "https://api.xero.com/api.xro/2.0"
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "").strip()
+if not SUPABASE_DB_URL:
+    raise RuntimeError("SUPABASE_DB_URL must be set in environment variables. This app requires PostgreSQL (Supabase) for budget storage.")
 DB_FILE = os.getenv("DB_FILE", "app.db")
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"))
@@ -838,11 +840,12 @@ def _load_actuals_df_xero() -> pd.DataFrame:
     return _enforce_sign_convention(df)
 
 def _load_budget_df_active() -> pd.DataFrame:
+    """Load budget data from Supabase (PostgreSQL) only."""
     try:
-        if BUDGET_BACKEND == "supabase":
-            return _load_budget_df_supabase()
-        return _load_budget_df_manual()
-    except Exception:
+        return _load_budget_df_supabase()
+    except Exception as e:
+        # Log error but return empty DF instead of crashing
+        print(f"Warning: Failed to load budget from Supabase: {e}")
         return _empty_canonical_df()
 
 def _load_liability_lines_df_xero() -> pd.DataFrame:
@@ -1580,14 +1583,14 @@ def _run_tests() -> None:
     assert len(series["projected_monthly"]) == 12
 
 
-@app.route("/api/debug/csv")
-def debug_csv():
+@app.route("/api/debug/config")
+def debug_config():
     return jsonify(
         {
-            "mode": "xero",
-            "note": "This API runs in Xero-only mode.",
+            "mode": "xero-with-supabase",
+            "note": "This API integrates Xero accounting data with Supabase budget storage.",
             "budget_backend": BUDGET_BACKEND,
-            "manual_budget_file": str(MANUAL_BUDGET_FILE),
+            "supabase_url_set": bool(SUPABASE_DB_URL),
         }
     )
 
