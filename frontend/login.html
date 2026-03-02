@@ -61,6 +61,14 @@
       text-decoration: none;
     }
     .btn:hover { filter: brightness(0.95); }
+    .fallback {
+      display: block;
+      margin-top: 14px;
+      text-align: center;
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
     .small {
       margin-top: 14px;
       font-size: 13px;
@@ -72,7 +80,10 @@
   <main class="card">
     <h1>Business Pulse</h1>
     <p>Connect your Xero organization to open the dashboard.</p>
-    <a class="btn" href="/auth/start">Connect Xero</a>
+    <form action="/auth/start" method="get">
+      <button class="btn" type="submit">Connect Xero</button>
+    </form>
+    <a class="fallback" href="/auth/start">If the button does not respond, continue here</a>
     <div class="small">You will be redirected back automatically after login.</div>
   </main>
 </body>

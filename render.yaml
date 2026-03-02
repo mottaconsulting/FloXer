@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: mmxeroapi
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn python_backend3:app
+    envVars:
+      - key: APP_ENV
+        value: production
