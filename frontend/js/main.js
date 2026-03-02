@@ -238,12 +238,22 @@ function setDelta(el, value) {
 }
 
 function seriesWithLessZeroNoise(arr) {
-  const data = (arr || []).map(v => Number(v || 0));
+  const data = (arr || []).map(v => (v === null || v === undefined ? null : Number(v || 0)));
   return data.map((v, i) => {
+    if (v === null || Number.isNaN(v)) return null;
     if (Math.abs(v) > 0.0001) return v;
-    const prev = i > 0 ? Math.abs(data[i - 1]) : 0;
-    const next = i < data.length - 1 ? Math.abs(data[i + 1]) : 0;
+    const prev = i > 0 && data[i - 1] !== null ? Math.abs(data[i - 1]) : 0;
+    const next = i < data.length - 1 && data[i + 1] !== null ? Math.abs(data[i + 1]) : 0;
     return (prev < 0.0001 && next < 0.0001) ? null : v;
+  });
+}
+
+function cumulativeSeries(arr) {
+  let total = 0;
+  return (arr || []).map(v => {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return null;
+    total += Number(v || 0);
+    return total;
   });
 }
 
@@ -316,7 +326,7 @@ function renderOverviewCharts(data) {
   const sales = data?.charts?.sales_fy;
   const profit = data?.charts?.profit_fy;
   const expenses = data?.charts?.expenses_fy;
-  if (!sales || !profit) return;
+  if (!sales || !profit || !expenses) return;
 
   const labels = sales.labels || [];
   const asOfMonth = data?.meta?.as_of_month || (data?.meta?.today ? data.meta.today.slice(0, 7) : "");
@@ -325,117 +335,72 @@ function renderOverviewCharts(data) {
   const cutoffIndex = labels.indexOf(asOfMonth);
   const salesActual = SALES_MODE === "cumulative" ? sales.actual_cumulative : sales.actual_monthly;
   const salesProjected = SALES_MODE === "cumulative" ? sales.projected_cumulative : sales.projected_monthly;
+  const expenseActual = SALES_MODE === "cumulative" ? expenses.actual_cumulative : expenses.actual_monthly;
+  const expenseProjected = SALES_MODE === "cumulative" ? expenses.projected_cumulative : expenses.projected_monthly;
 
-  XeroCharts.renderChart("salesFy", "salesFyChart", "line", {
-    labels,
+  const profitActual = SALES_MODE === "cumulative"
+    ? cumulativeSeries(profit.actual_monthly_profit || [])
+    : profit.actual_monthly_profit;
+  const profitProjected = SALES_MODE === "cumulative"
+    ? cumulativeSeries(profit.projected_monthly_profit || [])
+    : profit.projected_monthly_profit;
+
+  XeroCharts.renderChart("overviewPerformance", "overviewPerformanceChart", "line", {
+    labels: profit.labels || labels,
     datasets: [
       {
-        label: "Actual",
+        label: "Sales (actual)",
         data: seriesWithLessZeroNoise(salesActual),
-        borderDash: [],
-        pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
-        pointHoverRadius: labels.map((_, i) => (i === highlightIndex ? 7 : 4)),
-        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#0f766e")),
         borderColor: "#0f766e",
+        pointRadius: labels.map((_, i) => (i === highlightIndex ? 4 : 0)),
+        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#0f766e")),
         tension: 0.3,
         spanGaps: true
       },
       {
-        label: "Projected",
-        data: seriesWithLessZeroNoise(salesProjected),
-        borderDash: [6, 4],
-        pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
-        pointHoverRadius: labels.map((_, i) => (i === highlightIndex ? 7 : 4)),
-        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#7c2d12" : "#b45309")),
-        borderColor: "#b45309",
+        label: "Spend (actual)",
+        data: seriesWithLessZeroNoise(expenseActual),
+        borderColor: "#b91c1c",
+        pointRadius: labels.map((_, i) => (i === highlightIndex ? 4 : 0)),
+        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#b91c1c")),
         tension: 0.3,
         spanGaps: true
-      }
-    ]
-  }, {
-    scales: { y: { beginAtZero: true } },
-    plugins: {
-      monthHighlight: {
-        index: highlightIndex,
-        cutoffIndex,
-        color: "rgba(15, 23, 42, 0.08)"
-      }
-    }
-  });
-
-  if (expenses) {
-    const expenseActual = SALES_MODE === "cumulative" ? expenses.actual_cumulative : expenses.actual_monthly;
-    const expenseProjected = SALES_MODE === "cumulative" ? expenses.projected_cumulative : expenses.projected_monthly;
-    XeroCharts.renderChart("expensesFy", "expensesFyChart", "line", {
-      labels: expenses.labels || labels,
-      datasets: [
-        {
-          label: "Actual expenses",
-          data: seriesWithLessZeroNoise(expenseActual),
-          borderDash: [],
-          pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
-          pointHoverRadius: labels.map((_, i) => (i === highlightIndex ? 7 : 4)),
-          pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#7f1d1d" : "#b91c1c")),
-          borderColor: "#b91c1c",
-          tension: 0.3,
-          spanGaps: true
-        },
-        {
-          label: "Projected expenses",
-          data: seriesWithLessZeroNoise(expenseProjected),
-          borderDash: [6, 4],
-          pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
-          pointHoverRadius: labels.map((_, i) => (i === highlightIndex ? 7 : 4)),
-          pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#9a3412" : "#ea580c")),
-          borderColor: "#ea580c",
-          tension: 0.3,
-          spanGaps: true
-        }
-      ]
-    }, {
-      scales: { y: { beginAtZero: true } },
-      plugins: {
-        monthHighlight: {
-          index: highlightIndex,
-          cutoffIndex,
-          color: "rgba(15, 23, 42, 0.06)"
-        }
-      }
-    });
-  }
-
-  const profitActual = SALES_MODE === "cumulative"
-    ? (profit.actual_monthly_profit || []).reduce((acc, v, i) => {
-        acc.push((acc[i - 1] || 0) + Number(v || 0));
-        return acc;
-      }, [])
-    : profit.actual_monthly_profit;
-  const profitProjected = SALES_MODE === "cumulative"
-    ? (profit.projected_monthly_profit || []).reduce((acc, v, i) => {
-        acc.push((acc[i - 1] || 0) + Number(v || 0));
-        return acc;
-      }, [])
-    : profit.projected_monthly_profit;
-
-  XeroCharts.renderChart("profitFy", "profitFyChart", "line", {
-    labels: profit.labels || labels,
-    datasets: [
+      },
       {
-        label: "Actual profit",
+        label: "Net (actual)",
         data: seriesWithLessZeroNoise(profitActual || []),
         borderColor: "#2563eb",
+        borderWidth: 3,
         pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
         pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#2563eb")),
         tension: 0.3,
         spanGaps: true
       },
       {
-        label: "Projected profit",
+        label: "Sales (projected)",
+        data: seriesWithLessZeroNoise(salesProjected),
+        borderColor: "#14b8a6",
+        borderDash: [6, 4],
+        pointRadius: 0,
+        tension: 0.3,
+        spanGaps: true
+      },
+      {
+        label: "Spend (projected)",
+        data: seriesWithLessZeroNoise(expenseProjected),
+        borderColor: "#fb923c",
+        borderDash: [6, 4],
+        pointRadius: 0,
+        tension: 0.3,
+        spanGaps: true
+      },
+      {
+        label: "Net (projected)",
         data: seriesWithLessZeroNoise(profitProjected || []),
         borderColor: "#7c3aed",
         borderDash: [6, 4],
-        pointRadius: labels.map((_, i) => (i === highlightIndex ? 5 : 1)),
-        pointBackgroundColor: labels.map((_, i) => (i === highlightIndex ? "#0f172a" : "#7c3aed")),
+        borderWidth: 3,
+        pointRadius: 0,
         tension: 0.3,
         spanGaps: true
       }
@@ -504,9 +469,24 @@ function renderOverview(data) {
   populateFySelect(data);
 
   const currentDataMonth = data?.meta?.as_of_month || (data?.meta?.today ? data.meta.today.slice(0, 7) : "");
+  const fyLabel = document.getElementById("overviewFyLabel");
+  if (fyLabel && data?.meta?.fy_end) {
+    const fyEndYear = Number(String(data.meta.fy_end).slice(0, 4));
+    fyLabel.textContent = Number.isFinite(fyEndYear) ? `FY ${fyEndYear - 1}-${fyEndYear}` : "--";
+  }
   const dataMonthEl = document.getElementById("overviewDataMonth");
   if (dataMonthEl) {
-    dataMonthEl.textContent = `Actuals through ${formatMonthLabel(currentDataMonth)}`;
+    dataMonthEl.textContent = formatMonthLabel(currentDataMonth);
+  }
+  const projectionStatusEl = document.getElementById("overviewProjectionStatus");
+  if (projectionStatusEl) {
+    if (kpis.future_profit === null || kpis.future_profit === undefined) {
+      projectionStatusEl.textContent = "Unavailable";
+    } else if ((kpis.warnings || []).some(msg => String(msg).toLowerCase().includes("filled"))) {
+      projectionStatusEl.textContent = "Partial";
+    } else {
+      projectionStatusEl.textContent = "Ready";
+    }
   }
 
   setKpiValue(
@@ -535,6 +515,12 @@ function renderOverview(data) {
     kpis.current_liabilities,
     { isCurrency: true, warning: true }
   );
+  const cashBalanceDisplay = document.getElementById("kpiCashBalance");
+  const cashInput = document.getElementById("cashBalanceInput");
+  if (cashBalanceDisplay) {
+    const cashVal = cashInput && cashInput.value !== "" ? Number(cashInput.value) : NaN;
+    cashBalanceDisplay.innerText = Number.isFinite(cashVal) ? fmtUSD(cashVal) : "--";
+  }
   setKpiValue(
     document.getElementById("kpiSalesMonth"),
     document.getElementById("kpiSalesMonthMeta"),
@@ -557,7 +543,6 @@ function renderOverview(data) {
   applyRunwayVisuals(Number(kpis.runway_months));
   const runwaySummary = document.getElementById("runwayBurnSummary");
   if (runwaySummary) {
-    const cashInput = document.getElementById("cashBalanceInput");
     const burnInput = document.getElementById("burnMonthsInput");
     const cashVal = cashInput && cashInput.value !== "" ? Number(cashInput.value) : null;
     const burnMonths = burnInput ? Number(burnInput.value || 3) : 3;
@@ -565,16 +550,22 @@ function renderOverview(data) {
     if (!Number.isFinite(Number(kpis.runway_months))) {
       runwaySummary.textContent = cashVal === null
         ? "Enter a cash balance to calculate runway for the selected financial year."
-        : "Runway is unavailable until there is enough expense history in the selected financial year.";
+        : "Runway is unavailable until there is enough bank movement history in the selected financial year.";
     } else {
       const cashText = Number.isFinite(cashVal) ? fmtUSD(cashVal) : "entered cash";
       const burnText = Number.isFinite(burnVal) && burnVal > 0 ? fmtUSD(burnVal) : "unknown burn";
-      runwaySummary.textContent = `Based on ${cashText} cash and ${burnMonths}-month avg burn (${burnText}/month).`;
+      runwaySummary.textContent = `Based on ${cashText} cash and ${burnMonths}-month avg bank burn (${burnText}/month).`;
     }
   }
   const deltas = computeProfitDeltas(data);
   setDelta(document.getElementById("kpiProfitNowDelta"), deltas.profitNowDelta);
   setDelta(document.getElementById("kpiFutureProfitDelta"), deltas.futureDelta);
+  const futureMeta = document.getElementById("kpiFutureProfitMeta");
+  if (futureMeta) {
+    futureMeta.innerText = (kpis.future_profit === null || kpis.future_profit === undefined)
+      ? "Budget required for FY projection"
+      : "Projected to FY end";
+  }
   const futureRisk = document.getElementById("futureProfitRiskBadge");
   if (futureRisk) {
     futureRisk.style.display = Number(kpis.future_profit || 0) < 0 ? "inline-block" : "none";

@@ -241,7 +241,6 @@
       color: #9a3412;
     }
     .runway-card {
-      grid-column: span 2;
       border-left-width: 8px;
       padding: 22px;
       min-height: 180px;
@@ -287,11 +286,78 @@
       animation: fadeUp 420ms ease both;
     }
 
-    .kpi-grid {
+    .hero-card {
+      min-height: 196px;
+      padding: 22px;
+    }
+    .hero-card .big {
+      font-size: 40px;
+      line-height: 1;
+    }
+    .compact-card {
+      min-height: 142px;
+    }
+    .compact-card .big {
+      font-size: 28px;
+    }
+    .overview-context-strip {
       display: grid;
-      grid-template-columns: repeat(3, minmax(220px, 1fr));
-      gap: var(--grid-gap);
-      margin-bottom: 20px;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .context-chip {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      background: rgba(255, 255, 255, 0.68);
+      box-shadow: var(--shadow-soft);
+    }
+    .context-label {
+      color: #64748b;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .context-value {
+      color: #0f172a;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .overview-top-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .overview-group {
+      display: grid;
+      gap: 12px;
+    }
+    .section-kicker {
+      color: #475569;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+    .group-grid {
+      display: grid;
+      gap: 12px;
+    }
+    .performance-grid {
+      grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+    }
+    .month-snapshot-grid,
+    .liquidity-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .performance-panel {
+      margin-bottom: 4px;
     }
 
     .toolbar {
@@ -659,7 +725,8 @@
     }
 
     #orgSelect { min-width: 220px; }
-    #overviewDateSelect { margin-left: auto; }
+    #fySelect { min-width: 140px; }
+    #overviewDateSelect { margin-left: 0; min-width: 160px; }
 
     #dashboardContainer, #transactionsContainer, #liabilitiesContainer, #budgetContainer {
       animation: fadeUp 420ms ease both;
@@ -675,8 +742,13 @@
     }
 
     @media (max-width: 980px) {
-      .kpi-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
-      .runway-card { grid-column: span 2; }
+      .overview-context-strip,
+      .overview-top-grid,
+      .performance-grid,
+      .month-snapshot-grid,
+      .liquidity-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 900px) {
@@ -690,9 +762,10 @@
       details.more-menu { width: 100%; }
       details.more-menu summary { width: 100%; border-radius: 14px; }
       .more-panel { position: static; margin-top: 8px; }
-      .kpi-grid { grid-template-columns: 1fr; }
-      .runway-card { grid-column: span 1; }
       .toolbar { flex-direction: column; align-items: stretch; }
+      .overview-context-strip { grid-template-columns: 1fr; }
+      .hero-card .big,
+      .runway-card .big { font-size: 34px; }
       .tx-filter-group,
       .tx-toolbar .actions {
         width: 100%;
@@ -770,69 +843,26 @@
 
   <!-- DASHBOARD -->
   <div id="dashboardContainer" style="display:none;">
-    <!-- KPI tiles -->
-    <div class="kpi-grid">
-      <div class="card runway-card runway-tone-yellow" id="runwayCard">
-        <div class="muted">Runway</div>
-        <div id="kpiRunway" class="big">&mdash;</div>
-        <div id="kpiRunwayMeta" class="muted"></div>
-        <div id="runwayRiskBadge" style="display:none;" class="risk-badge">Risk</div>
-        <div id="runwayBurnSummary" class="runway-summary">Based on cash and trailing burn.</div>
-        <details class="kpi-tools">
-          <summary>Adjust burn rate</summary>
-          <div class="tools-row">
-            <label for="cashBalanceInput">Cash balance</label>
-            <input id="cashBalanceInput" type="number" inputmode="decimal" placeholder="Cash balance" class="input-pill" style="width:160px;">
-            <label for="burnMonthsInput">Burn months</label>
-            <select id="burnMonthsInput" class="input-pill" style="width:120px;">
-              <option value="1">1 month</option>
-              <option value="2">2 months</option>
-              <option value="3" selected>3 months</option>
-              <option value="4">4 months</option>
-              <option value="6">6 months</option>
-            </select>
-          </div>
-        </details>
+    <div class="overview-context-strip">
+      <div class="context-chip">
+        <span class="context-label">Financial year</span>
+        <span id="overviewFyLabel" class="context-value">--</span>
       </div>
-      <div class="card secondary-card" style="border-left-color:#10b981;">
-        <div class="muted">Profit Now (FY-to-date)</div>
-        <div id="kpiProfitNow" class="big">&mdash;</div>
-        <div id="kpiProfitNowMeta" class="muted">FY to date</div>
-        <div id="kpiProfitNowDelta" class="kpi-delta">--</div>
+      <div class="context-chip">
+        <span class="context-label">Actuals through</span>
+        <span id="overviewDataMonth" class="context-value">--</span>
       </div>
-      <div class="card secondary-card" style="border-left-color:#10b981;">
-        <div class="muted">Future Profit</div>
-        <div id="kpiFutureProfit" class="big">&mdash;</div>
-        <div id="kpiFutureProfitMeta" class="muted">Projected to FY end</div>
-        <div id="kpiFutureProfitDelta" class="kpi-delta">--</div>
-        <div id="futureProfitRiskBadge" style="display:none;" class="risk-badge">Projected Loss</div>
-      </div>
-      <div class="card tertiary-card" style="border-left-color:#10b981;">
-        <div class="muted">Sales in selected month</div>
-        <div id="kpiSalesMonth" class="big">&mdash;</div>
-        <div id="kpiSalesMonthMeta" class="muted"></div>
-        <div class="tertiary-context">Selected FY month</div>
-      </div>
-      <div class="card tertiary-card" style="border-left-color:#ef4444;">
-        <div class="muted">Spending in selected month</div>
-        <div id="kpiSpendMonth" class="big">&mdash;</div>
-        <div id="kpiSpendMonthMeta" class="muted"></div>
-        <div class="tertiary-context">Selected FY month</div>
-      </div>
-      <div class="card tertiary-card" style="border-left-color:#ef4444;">
-        <div class="muted">Current liabilities owed</div>
-        <div id="kpiCurLiabOverview" class="big">&mdash;</div>
-        <div id="kpiCurLiabOverviewMeta" class="muted"></div>
-        <div class="tertiary-context">As of selected month</div>
+      <div class="context-chip">
+        <span class="context-label">Projection status</span>
+        <span id="overviewProjectionStatus" class="context-value">--</span>
       </div>
     </div>
 
     <div class="financial-block">
       <div class="financial-title">
         <h2 style="margin:0;">Financial Performance</h2>
-        <div id="overviewDataMonth" class="data-month-badge">Current data month: &mdash;</div>
       </div>
-      <div class="financial-sub">Actual vs projected across the full financial year</div>
+      <div class="financial-sub">Performance first, liquidity second, and month detail as supporting context.</div>
       <div class="toolbar">
         <select id="fySelect" class="input-pill">
           <option value="2024">FY 2023-2024</option>
@@ -845,20 +875,89 @@
         </div>
       </div>
     </div>
-    <h3 style="margin:0 0 10px 0;">Sales</h3>
-    <div class="panel" style="margin-bottom: 18px;">
-      <div style="height:320px;">
-        <canvas id="salesFyChart"></canvas>
-      </div>
+
+    <div class="overview-top-grid">
+      <section class="overview-group">
+        <div class="section-kicker">Performance</div>
+        <div class="group-grid performance-grid">
+          <div class="card hero-card" style="border-left-color:#10b981;">
+            <div class="muted">Projected year-end profit</div>
+            <div id="kpiFutureProfit" class="big">&mdash;</div>
+            <div id="kpiFutureProfitMeta" class="muted">Projected to FY end</div>
+            <div id="kpiFutureProfitDelta" class="kpi-delta">--</div>
+            <div id="futureProfitRiskBadge" style="display:none;" class="risk-badge">Projected Loss</div>
+          </div>
+          <div class="card secondary-card" style="border-left-color:#10b981;">
+            <div class="muted">Profit so far this year</div>
+            <div id="kpiProfitNow" class="big">&mdash;</div>
+            <div id="kpiProfitNowMeta" class="muted">FY to date</div>
+            <div id="kpiProfitNowDelta" class="kpi-delta">--</div>
+          </div>
+        </div>
+        <div class="group-grid month-snapshot-grid">
+          <div class="card compact-card" style="border-left-color:#10b981;">
+            <div class="muted">Sales in selected month</div>
+            <div id="kpiSalesMonth" class="big">&mdash;</div>
+            <div id="kpiSalesMonthMeta" class="muted"></div>
+            <div class="tertiary-context">Selected FY month</div>
+          </div>
+          <div class="card compact-card" style="border-left-color:#ef4444;">
+            <div class="muted">Spending in selected month</div>
+            <div id="kpiSpendMonth" class="big">&mdash;</div>
+            <div id="kpiSpendMonthMeta" class="muted"></div>
+            <div class="tertiary-context">Selected FY month</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="overview-group">
+        <div class="section-kicker">Liquidity</div>
+        <div class="card runway-card runway-tone-yellow" id="runwayCard">
+          <div class="muted">Cash runway</div>
+          <div id="kpiRunway" class="big">&mdash;</div>
+          <div id="kpiRunwayMeta" class="muted"></div>
+          <div id="runwayRiskBadge" style="display:none;" class="risk-badge">Risk</div>
+          <div id="runwayBurnSummary" class="runway-summary">Based on cash and trailing bank burn.</div>
+          <details class="kpi-tools">
+            <summary>Adjust assumptions</summary>
+            <div class="tools-row">
+              <label for="cashBalanceInput">Cash balance</label>
+              <input id="cashBalanceInput" type="number" inputmode="decimal" placeholder="Cash balance" class="input-pill" style="width:160px;">
+              <label for="burnMonthsInput">Burn months</label>
+              <select id="burnMonthsInput" class="input-pill" style="width:120px;">
+                <option value="1">1 month</option>
+                <option value="2">2 months</option>
+                <option value="3" selected>3 months</option>
+                <option value="4">4 months</option>
+                <option value="6">6 months</option>
+              </select>
+            </div>
+          </details>
+        </div>
+        <div class="group-grid liquidity-grid">
+          <div class="card compact-card" style="border-left-color:#0f766e;">
+            <div class="muted">Cash on hand</div>
+            <div id="kpiCashBalance" class="big">&mdash;</div>
+            <div class="tertiary-context">Input value</div>
+          </div>
+          <div class="card compact-card" style="border-left-color:#ef4444;">
+            <div class="muted">Bills and liabilities owed</div>
+            <div id="kpiCurLiabOverview" class="big">&mdash;</div>
+            <div id="kpiCurLiabOverviewMeta" class="muted"></div>
+            <div class="tertiary-context">As of selected month</div>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <h3 style="margin:18px 0 10px 0;">Expenses</h3>
-    <div class="panel" style="height:320px;">
-      <canvas id="expensesFyChart"></canvas>
-    </div>
-    <h3 style="margin:18px 0 10px 0;">Profit</h3>
-    <div class="panel" style="height:320px;">
-      <canvas id="profitFyChart"></canvas>
+    <div class="panel performance-panel" style="margin-top: 18px;">
+      <div class="financial-title" style="margin-bottom: 12px;">
+        <h3 style="margin:0;">Monthly performance across the financial year</h3>
+        <div class="data-month-badge">Revenue, spend, and net actual vs projected</div>
+      </div>
+      <div style="height:360px;">
+        <canvas id="overviewPerformanceChart"></canvas>
+      </div>
     </div>
   </div>
 

@@ -1054,6 +1054,18 @@ def _build_sales_series(
     }
 
 
+def _cumulative_or_none(values: list[float | None]) -> list[float | None]:
+    total = 0.0
+    out: list[float | None] = []
+    for value in values:
+        if value is None:
+            out.append(None)
+            continue
+        total += float(value)
+        out.append(total)
+    return out
+
+
 def build_forecast_payload(
     today: datetime | None = None,
     fy_start_month: int = 1,
@@ -1127,6 +1139,15 @@ def build_forecast_payload(
         warnings.append(f"Budget missing months; filled {filled_count} rows using recent averages.")
 
     sales_series = _build_sales_series(actuals_fy, budget_completed, fy_start, fy_end, today)
+    if not has_budget_projection:
+        sales_series["projected_monthly"] = [
+            float(v) if m <= current_month else None
+            for m, v in zip(months, sales_series["actual_monthly"])
+        ]
+        sales_series["projected_cumulative"] = [
+            float(v) if m <= current_month else None
+            for m, v in zip(months, sales_series["actual_cumulative"])
+        ]
 
     payload = {
         "as_of": today.date().isoformat(),
@@ -1219,16 +1240,21 @@ def build_overview_payload(
             _monthly_series(budget_completed, months, "EXPENSE"),
         )
     ]
+    has_budget_projection = not budget.empty
     projected_profit = [
-        a if m <= current_month else b
+        a if m <= current_month else (b if has_budget_projection else None)
         for m, a, b in zip(months, actual_profit, budget_profit)
     ]
-    future_profit = float(np.sum(projected_profit))
+    future_profit = float(np.sum([v for v in projected_profit if v is not None])) if has_budget_projection else None
     previous_projected_profit = [
-        a if m <= previous_month else b
+        a if m <= previous_month else (b if has_budget_projection else None)
         for m, a, b in zip(months, actual_profit, budget_profit)
     ]
-    future_profit_prev = float(np.sum(previous_projected_profit)) if months and previous_month >= fy_start else None
+    future_profit_prev = (
+        float(np.sum([v for v in previous_projected_profit if v is not None]))
+        if has_budget_projection and months and previous_month >= fy_start
+        else None
+    )
 
     previous_month_cutoff = datetime(previous_month.year, previous_month.month, 1)
     previous_next_month = (pd.Timestamp(previous_month_cutoff) + pd.DateOffset(months=1)).to_pydatetime()
@@ -1242,7 +1268,7 @@ def build_overview_payload(
     actual_expense = _monthly_series(actuals_fy, months, "EXPENSE")
     budget_expense = _monthly_series(budget_completed, months, "EXPENSE")
     projected_expense = [
-        a if m <= current_month else b
+        a if m <= current_month else (b if has_budget_projection else None)
         for m, a, b in zip(months, actual_expense, budget_expense)
     ]
 
@@ -1276,10 +1302,23 @@ def build_overview_payload(
     else:
         month_rev, month_exp = None, None
 
-    expense_series = _monthly_series(actuals_fy, months, "EXPENSE")
-    past_expenses = [v for m, v in zip(months, expense_series) if m <= current_month]
-    if past_expenses:
-        tail = past_expenses[-burn_months:] if burn_months > 0 else past_expenses
+    bank_rows = actuals_fy[
+        (actuals_fy["ACCOUNT_TYPE"] == "BANK")
+        & (actuals_fy["JOURNAL_DATE"] < next_month)
+    ].copy()
+    bank_burn_series: list[float] = []
+    if len(bank_rows):
+        bank_rows["MONTH"] = bank_rows["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
+        bank_out = bank_rows.loc[bank_rows["NET_AMOUNT"] > 0].groupby("MONTH")["NET_AMOUNT"].sum()
+        bank_in = bank_rows.loc[bank_rows["NET_AMOUNT"] < 0].groupby("MONTH")["NET_AMOUNT"].sum().abs()
+        for m in months:
+            if m > current_month:
+                continue
+            outflow = float(bank_out.get(pd.Timestamp(m), 0.0))
+            inflow = float(bank_in.get(pd.Timestamp(m), 0.0))
+            bank_burn_series.append(max(0.0, outflow - inflow))
+    if bank_burn_series:
+        tail = bank_burn_series[-burn_months:] if burn_months > 0 else bank_burn_series
         monthly_burn = float(np.mean(tail))
     else:
         monthly_burn = None
@@ -1295,12 +1334,12 @@ def build_overview_payload(
     elif monthly_burn and monthly_burn > 0:
         runway_months = float(cash_balance) / monthly_burn
     else:
-        warnings.append("Insufficient expense history to compute runway.")
+        warnings.append("Insufficient bank history to compute runway.")
 
     if filled_count:
         warnings.append(f"Budget missing months; filled {filled_count} rows using recent averages.")
     if budget.empty:
-        warnings.append("No manual budget yet. Add budget rows in Budget input page for projections.")
+        warnings.append("No manual budget yet. Future Profit is unavailable until budget rows are added.")
 
     current_liabilities = None
     if "ACCOUNT_TYPE" in actuals_to_date.columns and "NET_AMOUNT" in actuals_to_date.columns:
@@ -1321,14 +1360,14 @@ def build_overview_payload(
     profit_fy = {
         "labels": sales_series["labels"],
         "actual_monthly_profit": [round(v, 2) for v in actual_profit],
-        "projected_monthly_profit": [round(v, 2) for v in projected_profit],
+        "projected_monthly_profit": [round(v, 2) if v is not None else None for v in projected_profit],
     }
     expenses_fy = {
         "labels": sales_series["labels"],
         "actual_monthly": [round(v, 2) for v in actual_expense],
-        "projected_monthly": [round(v, 2) for v in projected_expense],
+        "projected_monthly": [round(v, 2) if v is not None else None for v in projected_expense],
         "actual_cumulative": [round(v, 2) for v in list(np.cumsum(actual_expense).astype(float))],
-        "projected_cumulative": [round(v, 2) for v in list(np.cumsum(projected_expense).astype(float))],
+        "projected_cumulative": [round(v, 2) if v is not None else None for v in _cumulative_or_none(projected_expense)],
     }
 
     payload = {
@@ -1345,10 +1384,11 @@ def build_overview_payload(
         "kpis": {
             "profit_now": round(float(profit_now), 2),
             "profit_now_prev": round(float(profit_now_prev), 2) if profit_now_prev is not None else None,
-            "future_profit": round(float(future_profit), 2),
+            "future_profit": round(float(future_profit), 2) if future_profit is not None else None,
             "future_profit_prev": round(float(future_profit_prev), 2) if future_profit_prev is not None else None,
             "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
             "monthly_burn": round(float(monthly_burn), 2) if monthly_burn is not None else None,
+            "monthly_burn_basis": "bank_net_outflow_3m",
             "sales_this_month": round(float(month_rev), 2) if month_rev is not None else None,
             "spending_this_month": round(float(month_exp), 2) if month_exp is not None else None,
             "current_liabilities": round(float(current_liabilities), 2) if current_liabilities is not None else None,
