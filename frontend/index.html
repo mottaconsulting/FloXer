@@ -253,6 +253,13 @@
     .runway-tone-green { border-left-color: #059669 !important; }
 
     .table-container { overflow-x: auto; margin-top: 12px; }
+    #transactionsContainer .table-container {
+      max-height: calc(100vh - 260px);
+      overflow: auto;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(255, 255, 255, 0.84);
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -345,11 +352,38 @@
       letter-spacing: 0.02em;
     }
     .tx-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 10px;
+      padding: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+      align-items: flex-end;
+    }
+    .tx-filter-group {
+      min-width: 0;
       display: grid;
-      grid-template-columns: repeat(6, minmax(120px, 1fr));
       gap: 10px;
-      margin-bottom: 12px;
-      align-items: end;
+      padding-right: 14px;
+      border-right: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .tx-filter-group:last-of-type {
+      padding-right: 0;
+      border-right: none;
+    }
+    .tx-filter-group.search-group { grid-template-columns: minmax(220px, 280px); }
+    .tx-filter-group.filter-group,
+    .tx-filter-group.date-group { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+    .tx-filter-group-title {
+      grid-column: 1 / -1;
+      color: #64748b;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
     .tx-toolbar .field {
       min-width: 0;
@@ -376,7 +410,158 @@
       display: flex;
       gap: 8px;
       align-items: end;
+      margin-left: auto;
+      padding-left: 4px;
     }
+    .tx-clear-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      width: auto;
+      padding: 0 2px;
+      border-radius: 0;
+      border: none;
+      background: transparent;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: underline;
+      cursor: pointer;
+      box-shadow: none;
+    }
+    .tx-clear-link:hover {
+      transform: none;
+      box-shadow: none;
+      color: #334155;
+    }
+    .tx-active-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 10px;
+      min-height: 28px;
+    }
+    .tx-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      background: rgba(241, 245, 249, 0.9);
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .tx-filter-chip button {
+      width: auto;
+      min-width: 18px;
+      height: 18px;
+      padding: 0;
+      border-radius: 999px;
+      border: none;
+      background: transparent;
+      color: #475569;
+      font-size: 14px;
+      line-height: 1;
+      box-shadow: none;
+    }
+    .tx-filter-chip button:hover {
+      transform: none;
+      box-shadow: none;
+      color: #0f172a;
+    }
+    .tx-active-filters .muted {
+      font-size: 12px;
+    }
+    .tx-active-filters .tx-clear-link {
+      min-height: auto;
+    }
+    .tx-quickview {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: min(360px, calc(100vw - 28px));
+      max-height: calc(100vh - 40px);
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+      overflow: auto;
+      z-index: 120;
+      transform: translateX(calc(100% + 24px));
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 180ms ease, opacity 180ms ease;
+    }
+    .tx-quickview.is-open {
+      transform: translateX(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .tx-quickview-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .tx-quickview-title {
+      margin: 0;
+      font-size: 18px;
+    }
+    .tx-quickview-close {
+      width: 34px;
+      height: 34px;
+      min-width: 34px;
+      padding: 0;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #334155;
+      box-shadow: none;
+    }
+    .tx-quickview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .tx-quickview-field {
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(248, 250, 252, 0.96);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    .tx-quickview-field.wide {
+      grid-column: 1 / -1;
+    }
+    .tx-quickview-label {
+      display: block;
+      margin-bottom: 4px;
+      color: #64748b;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .tx-quickview-value {
+      color: #0f172a;
+      font-size: 14px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+    .tx-quickview-money {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .tx-quickview-money .tx-quickview-field {
+      text-align: center;
+    }
+    .tx-quickview-value.money-in { color: #047857; }
+    .tx-quickview-value.money-out { color: #b91c1c; }
     .tx-pagination {
       display: flex;
       gap: 10px;
@@ -386,10 +571,23 @@
     }
     .tx-pagination .muted { margin-left: auto; }
     #dataTable tbody tr:nth-child(even) { background: rgba(241, 245, 249, 0.55); }
+    #dataTable tbody tr {
+      cursor: pointer;
+      transition: background 120ms ease, box-shadow 120ms ease;
+    }
+    #dataTable tbody tr:hover {
+      background: rgba(226, 232, 240, 0.72);
+    }
+    #dataTable tbody tr.is-selected {
+      background: rgba(37, 99, 235, 0.10) !important;
+      box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.22);
+    }
     #dataTable th {
       position: sticky;
       top: 0;
-      z-index: 1;
+      z-index: 6;
+      background: #f8fafc;
+      box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.16);
     }
     .tx-account-cell strong { display: block; }
     .tx-account-cell span,
@@ -495,6 +693,41 @@
       .kpi-grid { grid-template-columns: 1fr; }
       .runway-card { grid-column: span 1; }
       .toolbar { flex-direction: column; align-items: stretch; }
+      .tx-filter-group,
+      .tx-toolbar .actions {
+        width: 100%;
+        border-right: none;
+        padding-right: 0;
+      }
+      .tx-filter-group.search-group,
+      .tx-filter-group.filter-group,
+      .tx-filter-group.date-group {
+        grid-template-columns: 1fr;
+      }
+      .tx-toolbar .actions {
+        margin-left: 0;
+        padding-left: 0;
+      }
+      #transactionsContainer .table-container {
+        max-height: calc(100vh - 220px);
+      }
+      .tx-quickview {
+        top: auto;
+        right: 12px;
+        bottom: 12px;
+        left: 12px;
+        width: auto;
+        max-height: min(72vh, 560px);
+        border-radius: 20px 20px 16px 16px;
+        transform: translateY(calc(100% + 24px));
+      }
+      .tx-quickview.is-open {
+        transform: translateY(0);
+      }
+      .tx-quickview-grid,
+      .tx-quickview-money {
+        grid-template-columns: 1fr;
+      }
       #overviewDateSelect { margin-left: 0; }
       .segmented { width: 100%; }
       .segmented button { width: 50%; min-width: 0; }
@@ -634,37 +867,47 @@
     <h2 style="margin:0 0 10px 0;">Journal Lines</h2>
 
     <div class="tx-toolbar">
-      <div class="field">
-        <label for="filterAccount">Account</label>
-        <input id="filterAccount" placeholder="e.g. rent, bank">
+      <div class="tx-filter-group search-group">
+        <div class="tx-filter-group-title">Search</div>
+        <div class="field">
+          <label for="filterAccount">Account</label>
+          <input id="filterAccount" placeholder="e.g. rent, bank">
+        </div>
       </div>
-      <div class="field">
-        <label for="filterType">Type</label>
-        <select id="filterType">
-          <option value="">All types</option>
-        </select>
+      <div class="tx-filter-group filter-group">
+        <div class="tx-filter-group-title">Filters</div>
+        <div class="field">
+          <label for="filterType">Type</label>
+          <select id="filterType">
+            <option value="">All types</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="filterDirection">Direction</label>
+          <select id="filterDirection">
+            <option value="">All</option>
+            <option value="in">Money in</option>
+            <option value="out">Money out</option>
+          </select>
+        </div>
       </div>
-      <div class="field">
-        <label for="filterDirection">Direction</label>
-        <select id="filterDirection">
-          <option value="">All</option>
-          <option value="in">Money in</option>
-          <option value="out">Money out</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="filterFrom">From</label>
-        <input id="filterFrom" type="date">
-      </div>
-      <div class="field">
-        <label for="filterTo">To</label>
-        <input id="filterTo" type="date">
+      <div class="tx-filter-group date-group">
+        <div class="tx-filter-group-title">Date Range</div>
+        <div class="field">
+          <label for="filterFrom">From</label>
+          <input id="filterFrom" type="date">
+        </div>
+        <div class="field">
+          <label for="filterTo">To</label>
+          <input id="filterTo" type="date">
+        </div>
       </div>
       <div class="actions">
         <button onclick="applyTransactionFilters()">Apply</button>
-        <button onclick="resetTransactionFilters()" class="btn-muted" type="button">Reset</button>
+        <button onclick="resetTransactionFilters()" class="tx-clear-link" type="button">Clear filters</button>
       </div>
     </div>
+    <div id="txActiveFilters" class="tx-active-filters"></div>
     <div class="tx-pagination">
       <button id="txPrevBtn" onclick="changeTransactionPage(-1)" class="btn-muted" type="button">Previous</button>
       <button id="txNextBtn" onclick="changeTransactionPage(1)" class="btn-muted" type="button">Next</button>
@@ -683,6 +926,16 @@
         <tbody id="tableBody"></tbody>
       </table>
     </div>
+    <aside id="txQuickView" class="tx-quickview" aria-hidden="true">
+      <div class="tx-quickview-header">
+        <div>
+          <div class="muted">Quick View</div>
+          <h3 class="tx-quickview-title">Journal line details</h3>
+        </div>
+        <button type="button" class="tx-quickview-close" onclick="closeTransactionQuickView()" aria-label="Close quick view">&times;</button>
+      </div>
+      <div id="txQuickViewBody"></div>
+    </aside>
   </div>
     <!-- LIABILITIES -->
      <div id="liabilitiesContainer" style="display:none;">

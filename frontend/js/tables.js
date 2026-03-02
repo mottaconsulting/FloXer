@@ -43,8 +43,23 @@ function renderTable(columns, rows) {
 
   thead.innerHTML = `<tr>${columns.map(c => `<th>${escapeHtml(c.label)}</th>`).join("")}</tr>`;
   tbody.innerHTML = rows
-    .map(r => `<tr>${columns.map(c => `<td>${c.render ? c.render(r) : escapeHtml(r[c.key])}</td>`).join("")}</tr>`)
+    .map((r, index) => `<tr data-row-index="${index}" tabindex="0">${columns.map(c => `<td>${c.render ? c.render(r) : escapeHtml(r[c.key])}</td>`).join("")}</tr>`)
     .join("");
+
+  const toggleSelectedRow = (target) => {
+    const row = target?.closest?.("tr");
+    if (!row || row.parentElement !== tbody) return;
+    row.classList.toggle("is-selected");
+  };
+
+  tbody.onclick = (event) => {
+    toggleSelectedRow(event.target);
+  };
+  tbody.onkeydown = (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    toggleSelectedRow(event.target);
+  };
 }
 
 window.XeroTables = { parseXeroDate, formatDate, formatCurrency, renderTable };

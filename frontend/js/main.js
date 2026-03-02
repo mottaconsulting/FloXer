@@ -37,6 +37,7 @@ function hideAllViews() {
     const el = document.getElementById(id);
     if (el) el.style.display = "none";
   });
+  closeTransactionQuickView();
   stopLoading();
   hideError();
 }
@@ -59,6 +60,7 @@ function flattenJournalLines(journals) {
     for (const line of lines) {
       rows.push({
         date,
+        journalId: j.JournalID ?? j.JournalId ?? "",
         journalNumber: j.JournalNumber ?? "",
         accountType: line.AccountType ?? line.accountType ?? "",
         accountCode: line.AccountCode ?? line.accountCode ?? "",
@@ -1029,7 +1031,7 @@ function populateTransactionTypeFilter(lines) {
 function renderTransactionTable(lines) {
   const cols = [
     { label: "Date", render: r => XeroTables.formatDate(r.date) },
-    { label: "Account", render: r => `<div class="tx-account-cell"><strong>${escapeHtmlText(`${r.accountCode} ${r.accountName}`.trim())}</strong><span>Journal #${escapeHtmlText(r.journalNumber || "—")}</span></div>` },
+    { label: "Account", render: r => `<div class="tx-account-cell"><strong>${escapeHtmlText(`${r.accountCode} ${r.accountName}`.trim())}</strong></div>` },
     { label: "Type", render: r => escapeHtmlText(formatJournalTypeLabel(r.accountType)) },
     { label: "Description", render: r => `<div class="tx-desc-cell">${escapeHtmlText(r.description || "—")}</div>` },
     { label: "Money In", render: r => `<div class="tx-money money-in">${Number(r.net || 0) < 0 ? XeroTables.formatCurrency(Math.abs(Number(r.net || 0))) : "—"}</div>` },
@@ -1046,6 +1048,19 @@ function renderTransactionTable(lines) {
   const slice = lines.slice(start, end);
 
   XeroTables.renderTable(cols, slice);
+  const body = document.getElementById("tableBody");
+  if (body) {
+    body.querySelectorAll("tr").forEach((rowEl, index) => {
+      const rowData = slice[index];
+      if (!rowData) return;
+      rowEl.dataset.sourceIndex = String(start + index);
+      rowEl.addEventListener("click", () => openTransactionQuickView(rowData));
+      rowEl.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        openTransactionQuickView(rowData);
+      });
+    });
+  }
 
   const txCount = document.getElementById("txCount");
   if (txCount) {
@@ -1091,6 +1106,7 @@ function applyTransactionFilters() {
 
   FILTERED_JOURNAL_LINES = filtered;
   TX_CURRENT_PAGE = 1;
+  renderTransactionFilterChips();
   renderTransactionTable(FILTERED_JOURNAL_LINES);
 }
 
@@ -1108,6 +1124,7 @@ function resetTransactionFilters() {
   if (dirEl) dirEl.value = "";
   FILTERED_JOURNAL_LINES = JOURNAL_LINES || [];
   TX_CURRENT_PAGE = 1;
+  renderTransactionFilterChips();
   renderTransactionTable(FILTERED_JOURNAL_LINES);
 }
 
@@ -1122,6 +1139,96 @@ function changeTransactionPage(delta) {
 }
 
 window.changeTransactionPage = changeTransactionPage;
+
+function getTransactionFilterState() {
+  return {
+    account: document.getElementById("filterAccount")?.value || "",
+    type: document.getElementById("filterType")?.value || "",
+    direction: document.getElementById("filterDirection")?.value || "",
+    from: document.getElementById("filterFrom")?.value || "",
+    to: document.getElementById("filterTo")?.value || ""
+  };
+}
+
+function clearTransactionFilter(key) {
+  const elementByKey = {
+    account: "filterAccount",
+    type: "filterType",
+    direction: "filterDirection",
+    from: "filterFrom",
+    to: "filterTo"
+  };
+  const id = elementByKey[key];
+  const el = id ? document.getElementById(id) : null;
+  if (!el) return;
+  el.value = "";
+  applyTransactionFilters();
+}
+
+function renderTransactionFilterChips() {
+  const container = document.getElementById("txActiveFilters");
+  if (!container) return;
+
+  const state = getTransactionFilterState();
+  const chips = [];
+
+  if (state.account) chips.push({ key: "account", label: `Account: ${state.account}` });
+  if (state.type) chips.push({ key: "type", label: `Type: ${formatJournalTypeLabel(state.type)}` });
+  if (state.direction) chips.push({ key: "direction", label: `Direction: ${state.direction === "in" ? "Money in" : "Money out"}` });
+  if (state.from) chips.push({ key: "from", label: `From: ${state.from}` });
+  if (state.to) chips.push({ key: "to", label: `To: ${state.to}` });
+
+  if (!chips.length) {
+    container.innerHTML = `<span class="muted">No active filters</span>`;
+    return;
+  }
+
+  container.innerHTML = chips.map(chip => (
+    `<span class="tx-filter-chip">${escapeHtmlText(chip.label)}<button type="button" aria-label="Remove ${escapeHtmlText(chip.label)}" onclick="clearTransactionFilter('${chip.key}')">&times;</button></span>`
+  )).join("") + `<button type="button" class="tx-clear-link" onclick="resetTransactionFilters()">Clear all</button>`;
+}
+
+window.clearTransactionFilter = clearTransactionFilter;
+
+function closeTransactionQuickView() {
+  const panel = document.getElementById("txQuickView");
+  if (!panel) return;
+  panel.classList.remove("is-open");
+  panel.setAttribute("aria-hidden", "true");
+}
+
+function openTransactionQuickView(row) {
+  const panel = document.getElementById("txQuickView");
+  const body = document.getElementById("txQuickViewBody");
+  if (!panel || !body || !row) return;
+
+  const amount = Number(row.net || 0);
+  const moneyIn = amount < 0 ? XeroTables.formatCurrency(Math.abs(amount)) : "—";
+  const moneyOut = amount > 0 ? XeroTables.formatCurrency(amount) : "—";
+  const netClass = amount < 0 ? "money-in" : amount > 0 ? "money-out" : "";
+
+  body.innerHTML = `
+    <div class="tx-quickview-grid">
+      <div class="tx-quickview-field"><span class="tx-quickview-label">Date</span><div class="tx-quickview-value">${escapeHtmlText(XeroTables.formatDate(row.date))}</div></div>
+      <div class="tx-quickview-field"><span class="tx-quickview-label">Type</span><div class="tx-quickview-value">${escapeHtmlText(formatJournalTypeLabel(row.accountType))}</div></div>
+      <div class="tx-quickview-field wide"><span class="tx-quickview-label">Account name</span><div class="tx-quickview-value">${escapeHtmlText(row.accountName || "—")}</div></div>
+      <div class="tx-quickview-field"><span class="tx-quickview-label">Account code</span><div class="tx-quickview-value">${escapeHtmlText(row.accountCode || "—")}</div></div>
+      <div class="tx-quickview-field"><span class="tx-quickview-label">Journal</span><div class="tx-quickview-value">${escapeHtmlText(row.journalNumber || "—")}</div></div>
+      <div class="tx-quickview-field wide"><span class="tx-quickview-label">Description</span><div class="tx-quickview-value">${escapeHtmlText(row.description || "—")}</div></div>
+      <div class="tx-quickview-field wide"><span class="tx-quickview-label">Journal ID</span><div class="tx-quickview-value">${escapeHtmlText(row.journalId || "—")}</div></div>
+    </div>
+    <div class="tx-quickview-money">
+      <div class="tx-quickview-field"><span class="tx-quickview-label">Money in</span><div class="tx-quickview-value money-in">${escapeHtmlText(moneyIn)}</div></div>
+      <div class="tx-quickview-field"><span class="tx-quickview-label">Money out</span><div class="tx-quickview-value money-out">${escapeHtmlText(moneyOut)}</div></div>
+      <div class="tx-quickview-field"><span class="tx-quickview-label">Net amount</span><div class="tx-quickview-value ${netClass}">${escapeHtmlText(XeroTables.formatCurrency(amount))}</div></div>
+    </div>
+  `;
+
+  panel.classList.add("is-open");
+  panel.setAttribute("aria-hidden", "false");
+}
+
+window.closeTransactionQuickView = closeTransactionQuickView;
 
 function changeTransactionPageSize(value) {
   const parsed = Number(value || 100);
@@ -1191,6 +1298,7 @@ async function showTransactions() {
     document.getElementById("transactionsContainer").style.display = "block";
     FILTERED_JOURNAL_LINES = JOURNAL_LINES;
     TX_CURRENT_PAGE = 1;
+    renderTransactionFilterChips();
     renderTransactionTable(FILTERED_JOURNAL_LINES);
   } catch (e) {
     stopLoading();
@@ -1454,6 +1562,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     loadOrganizations();
   }
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeTransactionQuickView();
+    }
+  });
   setSalesMode("monthly");
   showDashboard();
 });
