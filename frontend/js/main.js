@@ -3,6 +3,9 @@ let showingRaw = false;
 
 let JOURNAL_CACHE = null;
 let JOURNAL_LINES = null;
+let FILTERED_JOURNAL_LINES = null;
+let TX_CURRENT_PAGE = 1;
+const TX_PAGE_SIZE = 100;
 
 const INCOME_TYPES = new Set(["REVENUE"]);   // your org shows REVENUE
 const EXPENSE_TYPES = new Set(["EXPENSE"]);  // your org shows EXPENSE
@@ -1000,13 +1003,29 @@ function renderTransactionTable(lines) {
     { label: "Net", render: r => XeroTables.formatCurrency(r.net) }
   ];
 
-  const max = 600; // keep UI fast
-  const slice = lines.slice(0, max);
+  const total = lines.length;
+  const totalPages = Math.max(1, Math.ceil(total / TX_PAGE_SIZE));
+  if (TX_CURRENT_PAGE > totalPages) TX_CURRENT_PAGE = totalPages;
+  if (TX_CURRENT_PAGE < 1) TX_CURRENT_PAGE = 1;
+
+  const start = (TX_CURRENT_PAGE - 1) * TX_PAGE_SIZE;
+  const end = Math.min(start + TX_PAGE_SIZE, total);
+  const slice = lines.slice(start, end);
 
   XeroTables.renderTable(cols, slice);
 
   const txCount = document.getElementById("txCount");
-  if (txCount) txCount.textContent = `Showing ${slice.length.toLocaleString()} of ${lines.length.toLocaleString()} lines`;
+  if (txCount) {
+    txCount.textContent = total
+      ? `Showing ${start + 1}-${end} of ${total.toLocaleString()} lines`
+      : "Showing 0 of 0 lines";
+  }
+  const txPageInfo = document.getElementById("txPageInfo");
+  if (txPageInfo) txPageInfo.textContent = `Page ${TX_CURRENT_PAGE} of ${totalPages}`;
+  const prevBtn = document.getElementById("txPrevBtn");
+  const nextBtn = document.getElementById("txNextBtn");
+  if (prevBtn) prevBtn.disabled = TX_CURRENT_PAGE <= 1 || total === 0;
+  if (nextBtn) nextBtn.disabled = TX_CURRENT_PAGE >= totalPages || total === 0;
 }
 
 function applyTransactionFilters() {
@@ -1030,10 +1049,22 @@ function applyTransactionFilters() {
     return true;
   });
 
-  renderTransactionTable(filtered);
+  FILTERED_JOURNAL_LINES = filtered;
+  TX_CURRENT_PAGE = 1;
+  renderTransactionTable(FILTERED_JOURNAL_LINES);
 }
 
 window.applyTransactionFilters = applyTransactionFilters;
+
+function changeTransactionPage(delta) {
+  if (!FILTERED_JOURNAL_LINES) {
+    FILTERED_JOURNAL_LINES = JOURNAL_LINES || [];
+  }
+  TX_CURRENT_PAGE += Number(delta || 0);
+  renderTransactionTable(FILTERED_JOURNAL_LINES);
+}
+
+window.changeTransactionPage = changeTransactionPage;
 
 // ---------- Navigation ----------
 async function showDashboard() {
@@ -1091,7 +1122,9 @@ async function showTransactions() {
 
     stopLoading();
     document.getElementById("transactionsContainer").style.display = "block";
-    renderTransactionTable(JOURNAL_LINES);
+    FILTERED_JOURNAL_LINES = JOURNAL_LINES;
+    TX_CURRENT_PAGE = 1;
+    renderTransactionTable(FILTERED_JOURNAL_LINES);
   } catch (e) {
     stopLoading();
     showError(e.message);

@@ -1774,15 +1774,8 @@ def api_accounts():
 @login_required
 def api_journals():
     try:
-        resp = requests.get(
-            f"{XERO_API_BASE}/Journals",
-            headers=xero_headers(),
-            params={"offset": 0, "paymentsOnly": "false"},
-        )
-        if resp.status_code != 200:
-            return jsonify({"error": f"Xero API error: {resp.status_code}", "details": resp.text}), resp.status_code
-
-        return jsonify(resp.json())
+        journals = fetch_journals()
+        return jsonify({"Journals": journals})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1875,13 +1868,30 @@ def fetch_invoices() -> list[dict]:
 
 
 def fetch_journals() -> list[dict]:
-    resp = requests.get(
-        f"{XERO_API_BASE}/Journals",
-        headers=xero_headers(),
-        params={"offset": 0, "paymentsOnly": "false"},
-    )
-    resp.raise_for_status()
-    return resp.json().get("Journals", [])
+    all_journals: list[dict] = []
+    offset = 0
+    page_size = 100
+
+    while True:
+        resp = requests.get(
+            f"{XERO_API_BASE}/Journals",
+            headers=xero_headers(),
+            params={"offset": offset, "paymentsOnly": "false"},
+        )
+        resp.raise_for_status()
+        batch = resp.json().get("Journals", []) or []
+        if not batch:
+            break
+
+        all_journals.extend(batch)
+
+        # Xero Journals pagination uses offset; advance by the number received.
+        # Stop when the returned page is smaller than the typical page size.
+        if len(batch) < page_size:
+            break
+        offset += len(batch)
+
+    return all_journals
 
 @app.route("/api/dashboard/summary")
 @login_required
