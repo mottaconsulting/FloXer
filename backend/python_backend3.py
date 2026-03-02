@@ -1154,6 +1154,7 @@ def build_overview_payload(
 ) -> dict:
     if today is None:
         today = datetime.today()
+    requested_today = today
     actuals = _load_actuals_df_xero()
     budget = _load_budget_df_active()
 
@@ -1169,22 +1170,37 @@ def build_overview_payload(
             actuals_fy = actuals[(actuals["JOURNAL_DATE"] >= fy_start) & (actuals["JOURNAL_DATE"] <= fy_end)]
             budget_fy = budget[(budget["JOURNAL_DATE"] >= fy_start) & (budget["JOURNAL_DATE"] <= fy_end)]
 
-    # In Xero mode, if caller passes a date beyond the latest actual in this FY
-    # (e.g. FY-end picker), keep FY fixed but clamp "today" to latest actual so
-    # projected months still use budget after the real cutoff.
+    requested_month = datetime(today.year, today.month, 1)
+    latest_actual_dt = None
     if len(actuals_fy):
         latest_actual_fy = actuals_fy["JOURNAL_DATE"].max()
         if pd.notna(latest_actual_fy):
             latest_actual_dt = latest_actual_fy.to_pydatetime() if hasattr(latest_actual_fy, "to_pydatetime") else latest_actual_fy
-            if today > latest_actual_dt:
-                today = latest_actual_dt
+
+    anchor_month = requested_month
+    if latest_actual_dt is not None:
+        latest_actual_month = datetime(latest_actual_dt.year, latest_actual_dt.month, 1)
+        if anchor_month > latest_actual_month:
+            anchor_month = latest_actual_month
+            today = latest_actual_dt
+        else:
+            month_end_candidate = (pd.Timestamp(anchor_month) + pd.offsets.MonthEnd(0)).to_pydatetime()
+            if today < anchor_month:
+                today = anchor_month
+            if today > month_end_candidate:
+                today = month_end_candidate
+    else:
+        month_end_candidate = (pd.Timestamp(anchor_month) + pd.offsets.MonthEnd(0)).to_pydatetime()
+        if today > month_end_candidate:
+            today = month_end_candidate
 
     budget_completed, filled_count = complete_budget_to_fy(budget_fy, fy_start, fy_end)
 
-    current_month = datetime(today.year, today.month, 1)
+    current_month = anchor_month
     next_month = (pd.Timestamp(current_month) + pd.DateOffset(months=1)).to_pydatetime()
+    previous_month = (pd.Timestamp(current_month) - pd.DateOffset(months=1)).to_pydatetime()
 
-    actuals_to_date = actuals_fy[actuals_fy["JOURNAL_DATE"] <= today]
+    actuals_to_date = actuals_fy[actuals_fy["JOURNAL_DATE"] < next_month]
     revenue_value, expense_value = _calc_revenue_expense(actuals_to_date)
     profit_now = revenue_value - expense_value
 
@@ -1208,6 +1224,20 @@ def build_overview_payload(
         for m, a, b in zip(months, actual_profit, budget_profit)
     ]
     future_profit = float(np.sum(projected_profit))
+    previous_projected_profit = [
+        a if m <= previous_month else b
+        for m, a, b in zip(months, actual_profit, budget_profit)
+    ]
+    future_profit_prev = float(np.sum(previous_projected_profit)) if months and previous_month >= fy_start else None
+
+    previous_month_cutoff = datetime(previous_month.year, previous_month.month, 1)
+    previous_next_month = (pd.Timestamp(previous_month_cutoff) + pd.DateOffset(months=1)).to_pydatetime()
+    if previous_month_cutoff >= fy_start:
+        prior_actuals = actuals_fy[actuals_fy["JOURNAL_DATE"] < previous_next_month]
+        prev_rev, prev_exp = _calc_revenue_expense(prior_actuals)
+        profit_now_prev = float(prev_rev - prev_exp)
+    else:
+        profit_now_prev = None
 
     actual_expense = _monthly_series(actuals_fy, months, "EXPENSE")
     budget_expense = _monthly_series(budget_completed, months, "EXPENSE")
@@ -1256,6 +1286,10 @@ def build_overview_payload(
 
     warnings = []
     runway_months = None
+    if latest_actual_dt is not None and requested_month > datetime(latest_actual_dt.year, latest_actual_dt.month, 1):
+        warnings.append(
+            f"Selected month is beyond available actuals; using {latest_actual_dt.year}-{latest_actual_dt.month:02d} as the latest actual month."
+        )
     if cash_balance is None:
         warnings.append("Cash balance not provided; runway_months unavailable.")
     elif monthly_burn and monthly_burn > 0:
@@ -1269,10 +1303,20 @@ def build_overview_payload(
         warnings.append("No manual budget yet. Add budget rows in Budget input page for projections.")
 
     current_liabilities = None
-    if "ACCOUNT_TYPE" in actuals_fy.columns and "NET_AMOUNT" in actuals_fy.columns:
-        cur = actuals_fy.loc[actuals_fy["ACCOUNT_TYPE"] == "CURRLIAB", "NET_AMOUNT"]
-        if len(cur):
-            current_liabilities = float(cur.abs().sum())
+    if "ACCOUNT_TYPE" in actuals_to_date.columns and "NET_AMOUNT" in actuals_to_date.columns:
+        cur_df = actuals_to_date.loc[actuals_to_date["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
+        if len(cur_df):
+            if "ACCOUNT_CODE" in cur_df.columns:
+                key_series = cur_df["ACCOUNT_CODE"].fillna("")
+            elif "ACCOUNT_NAME" in cur_df.columns:
+                key_series = cur_df["ACCOUNT_NAME"].fillna("")
+            else:
+                key_series = pd.Series(["CURRLIAB"] * len(cur_df), index=cur_df.index)
+            cur_df["_LIAB_KEY"] = key_series.astype(str)
+            balances = cur_df.groupby("_LIAB_KEY")["NET_AMOUNT"].sum()
+            outstanding = balances[balances < 0].abs()
+            if len(outstanding):
+                current_liabilities = float(outstanding.sum())
 
     profit_fy = {
         "labels": sales_series["labels"],
@@ -1290,6 +1334,8 @@ def build_overview_payload(
     payload = {
         "meta": {
             "today": today.date().isoformat(),
+            "requested_today": requested_today.date().isoformat(),
+            "as_of_month": f"{current_month.year}-{current_month.month:02d}",
             "fy_start": fy_start.date().isoformat(),
             "fy_end": fy_end.date().isoformat(),
             "currency": currency,
@@ -1298,7 +1344,9 @@ def build_overview_payload(
         },
         "kpis": {
             "profit_now": round(float(profit_now), 2),
+            "profit_now_prev": round(float(profit_now_prev), 2) if profit_now_prev is not None else None,
             "future_profit": round(float(future_profit), 2),
+            "future_profit_prev": round(float(future_profit_prev), 2) if future_profit_prev is not None else None,
             "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
             "monthly_burn": round(float(monthly_burn), 2) if monthly_burn is not None else None,
             "sales_this_month": round(float(month_rev), 2) if month_rev is not None else None,

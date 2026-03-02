@@ -808,22 +808,22 @@
         <div id="futureProfitRiskBadge" style="display:none;" class="risk-badge">Projected Loss</div>
       </div>
       <div class="card tertiary-card" style="border-left-color:#10b981;">
-        <div class="muted">Sales this month</div>
+        <div class="muted">Sales in selected month</div>
         <div id="kpiSalesMonth" class="big">&mdash;</div>
         <div id="kpiSalesMonthMeta" class="muted"></div>
-        <div class="tertiary-context">This month</div>
+        <div class="tertiary-context">Selected FY month</div>
       </div>
       <div class="card tertiary-card" style="border-left-color:#ef4444;">
-        <div class="muted">Spending this month</div>
+        <div class="muted">Spending in selected month</div>
         <div id="kpiSpendMonth" class="big">&mdash;</div>
         <div id="kpiSpendMonthMeta" class="muted"></div>
-        <div class="tertiary-context">This month</div>
+        <div class="tertiary-context">Selected FY month</div>
       </div>
       <div class="card tertiary-card" style="border-left-color:#ef4444;">
-        <div class="muted">Current liabilities</div>
+        <div class="muted">Current liabilities owed</div>
         <div id="kpiCurLiabOverview" class="big">&mdash;</div>
         <div id="kpiCurLiabOverviewMeta" class="muted"></div>
-        <div class="tertiary-context">Current</div>
+        <div class="tertiary-context">As of selected month</div>
       </div>
     </div>
 
@@ -832,21 +832,21 @@
         <h2 style="margin:0;">Financial Performance</h2>
         <div id="overviewDataMonth" class="data-month-badge">Current data month: &mdash;</div>
       </div>
-        <div class="financial-sub">Actual vs projected across the full financial year</div>
-    </div>
-    <h3 style="margin:0 0 10px 0;">Sales</h3>
-    <div class="panel" style="margin-bottom: 18px;">
+      <div class="financial-sub">Actual vs projected across the full financial year</div>
       <div class="toolbar">
+        <select id="fySelect" class="input-pill">
+          <option value="2024">FY 2023-2024</option>
+          <option value="2025">FY 2024-2025</option>
+        </select>
+        <select id="overviewDateSelect" class="input-pill"></select>
         <div class="segmented">
           <button id="salesModeMonthly" class="active">Monthly</button>
           <button id="salesModeCumulative">Cumulative</button>
         </div>
-        <select id="overviewDateSelect" class="input-pill"></select>
-        <select id="fySelect" class="input-pill">
-          <option value="2024">FY 2023–2024</option>
-          <option value="2025">FY 2024–2025</option>
-        </select>
       </div>
+    </div>
+    <h3 style="margin:0 0 10px 0;">Sales</h3>
+    <div class="panel" style="margin-bottom: 18px;">
       <div style="height:320px;">
         <canvas id="salesFyChart"></canvas>
       </div>

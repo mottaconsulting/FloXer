@@ -6,6 +6,7 @@ let JOURNAL_LINES = null;
 let FILTERED_JOURNAL_LINES = null;
 let TX_CURRENT_PAGE = 1;
 let TX_PAGE_SIZE = 100;
+let APP_CURRENCY = "AUD";
 
 const INCOME_TYPES = new Set(["REVENUE"]);   // your org shows REVENUE
 const EXPENSE_TYPES = new Set(["EXPENSE"]);  // your org shows EXPENSE
@@ -171,7 +172,12 @@ function round2(x) { return Math.round(Number(x || 0) * 100) / 100; }
 
 function fmtUSD(n) {
   const v = Number(n || 0);
-  return v.toLocaleString(undefined, { style: "currency", currency: "AUD" });
+  return v.toLocaleString(undefined, { style: "currency", currency: APP_CURRENCY });
+}
+
+function setAppCurrency(currencyCode) {
+  const next = String(currencyCode || "").trim().toUpperCase();
+  if (next) APP_CURRENCY = next;
 }
 
 function setRawData(data) {
@@ -265,13 +271,13 @@ function populateDateSelect(data) {
     select.innerHTML = availableMonths
       .map(month => `<option value="${monthEndFromLabel(month)}">${month}</option>`)
       .join("");
-    const currentMonth = data?.meta?.today ? data.meta.today.slice(0, 7) : null;
+    const currentMonth = data?.meta?.as_of_month || (data?.meta?.today ? data.meta.today.slice(0, 7) : null);
     const idx = currentMonth ? availableMonths.indexOf(currentMonth) : -1;
     select.selectedIndex = idx >= 0 ? idx : availableMonths.length - 1;
     return;
   }
 
-  const currentMonth = data?.meta?.today ? data.meta.today.slice(0, 7) : null;
+  const currentMonth = data?.meta?.as_of_month || (data?.meta?.today ? data.meta.today.slice(0, 7) : null);
   select.innerHTML = labels
     .map(label => `<option value="${monthEndFromLabel(label)}">${label}</option>`)
     .join("");
@@ -313,11 +319,10 @@ function renderOverviewCharts(data) {
   if (!sales || !profit) return;
 
   const labels = sales.labels || [];
-  const selectedMonthLabel = (document.getElementById("overviewDateSelect")?.value || "").slice(0, 7)
-    || (data?.meta?.today ? data.meta.today.slice(0, 7) : "");
+  const asOfMonth = data?.meta?.as_of_month || (data?.meta?.today ? data.meta.today.slice(0, 7) : "");
+  const selectedMonthLabel = (document.getElementById("overviewDateSelect")?.value || "").slice(0, 7) || asOfMonth;
   const highlightIndex = labels.indexOf(selectedMonthLabel);
-  const todayLabel = data?.meta?.today ? data.meta.today.slice(0, 7) : "";
-  const cutoffIndex = labels.indexOf(todayLabel);
+  const cutoffIndex = labels.indexOf(asOfMonth);
   const salesActual = SALES_MODE === "cumulative" ? sales.actual_cumulative : sales.actual_monthly;
   const salesProjected = SALES_MODE === "cumulative" ? sales.projected_cumulative : sales.projected_monthly;
 
@@ -479,26 +484,29 @@ function applyRunwayVisuals(runwayMonths) {
 }
 
 function computeProfitDeltas(data) {
-  const labels = data?.charts?.profit_fy?.labels || [];
-  const actual = data?.charts?.profit_fy?.actual_monthly_profit || [];
-  const projected = data?.charts?.profit_fy?.projected_monthly_profit || [];
-  const todayMonth = data?.meta?.today ? data.meta.today.slice(0, 7) : "";
-  let idx = labels.indexOf(todayMonth);
-  if (idx < 1) {
-    idx = actual.reduce((last, v, i) => (Number(v || 0) !== 0 ? i : last), 0);
-  }
-  const prev = Math.max(idx - 1, 0);
-  const profitNowDelta = Number(actual[idx] || 0) - Number(actual[prev] || 0);
-  const futureDelta = Number(projected[idx] || 0) - Number(projected[prev] || 0);
+  const profitNow = Number(data?.kpis?.profit_now);
+  const profitNowPrev = Number(data?.kpis?.profit_now_prev);
+  const futureProfit = Number(data?.kpis?.future_profit);
+  const futureProfitPrev = Number(data?.kpis?.future_profit_prev);
+  const profitNowDelta = Number.isFinite(profitNow) && Number.isFinite(profitNowPrev)
+    ? profitNow - profitNowPrev
+    : NaN;
+  const futureDelta = Number.isFinite(futureProfit) && Number.isFinite(futureProfitPrev)
+    ? futureProfit - futureProfitPrev
+    : NaN;
   return { profitNowDelta, futureDelta };
 }
 
 function renderOverview(data) {
   const kpis = data?.kpis || {};
-  const currentDataMonth = data?.meta?.today ? data.meta.today.slice(0, 7) : "";
+  setAppCurrency(data?.meta?.currency);
+  populateDateSelect(data);
+  populateFySelect(data);
+
+  const currentDataMonth = data?.meta?.as_of_month || (data?.meta?.today ? data.meta.today.slice(0, 7) : "");
   const dataMonthEl = document.getElementById("overviewDataMonth");
   if (dataMonthEl) {
-    dataMonthEl.textContent = `Current data month: ${formatMonthLabel(currentDataMonth)}`;
+    dataMonthEl.textContent = `Actuals through ${formatMonthLabel(currentDataMonth)}`;
   }
 
   setKpiValue(
@@ -542,9 +550,9 @@ function renderOverview(data) {
   const salesMeta = document.getElementById("kpiSalesMonthMeta");
   const spendMeta = document.getElementById("kpiSpendMonthMeta");
   const liabMeta = document.getElementById("kpiCurLiabOverviewMeta");
-  if (salesMeta) salesMeta.innerText = "This month";
-  if (spendMeta) spendMeta.innerText = "This month";
-  if (liabMeta) liabMeta.innerText = "Current";
+  if (salesMeta) salesMeta.innerText = "Selected FY month";
+  if (spendMeta) spendMeta.innerText = "Selected FY month";
+  if (liabMeta) liabMeta.innerText = "As of selected month";
 
   applyRunwayVisuals(Number(kpis.runway_months));
   const runwaySummary = document.getElementById("runwayBurnSummary");
@@ -554,9 +562,15 @@ function renderOverview(data) {
     const cashVal = cashInput && cashInput.value !== "" ? Number(cashInput.value) : null;
     const burnMonths = burnInput ? Number(burnInput.value || 3) : 3;
     const burnVal = Number(kpis.monthly_burn || 0);
-    const cashText = Number.isFinite(cashVal) ? fmtUSD(cashVal) : "entered cash";
-    const burnText = Number.isFinite(burnVal) && burnVal > 0 ? fmtUSD(burnVal) : "unknown burn";
-    runwaySummary.textContent = `Based on ${cashText} cash and ${burnMonths}-month avg burn (${burnText}/month).`;
+    if (!Number.isFinite(Number(kpis.runway_months))) {
+      runwaySummary.textContent = cashVal === null
+        ? "Enter a cash balance to calculate runway for the selected financial year."
+        : "Runway is unavailable until there is enough expense history in the selected financial year.";
+    } else {
+      const cashText = Number.isFinite(cashVal) ? fmtUSD(cashVal) : "entered cash";
+      const burnText = Number.isFinite(burnVal) && burnVal > 0 ? fmtUSD(burnVal) : "unknown burn";
+      runwaySummary.textContent = `Based on ${cashText} cash and ${burnMonths}-month avg burn (${burnText}/month).`;
+    }
   }
   const deltas = computeProfitDeltas(data);
   setDelta(document.getElementById("kpiProfitNowDelta"), deltas.profitNowDelta);
@@ -567,8 +581,6 @@ function renderOverview(data) {
   }
 
   renderOverviewCharts(data);
-  populateDateSelect(data);
-  populateFySelect(data);
 }
 // ---------- Liability due-date estimation (journal-only) ----------
 // Edit these defaults to match your reality:

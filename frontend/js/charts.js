@@ -28,7 +28,7 @@ const monthHighlightPlugin = {
       ctx.setLineDash([]);
       ctx.font = "11px Source Sans 3, sans-serif";
       ctx.fillStyle = opts?.dividerColor || "rgba(15, 23, 42, 0.6)";
-      ctx.fillText("Today", splitX + 6, yScale.top + 14);
+      ctx.fillText("Forecast", splitX + 6, yScale.top + 14);
       ctx.restore();
     }
 
