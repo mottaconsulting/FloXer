@@ -1551,21 +1551,24 @@ def auth_start():
     if not REDIRECT_URI:
         return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
 
-    # Ensure a stable user id exists BEFORE redirecting away
     if not session.get("user_id"):
-        session["user_id"] = str(uuid4())
+        return redirect("/login")
 
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
 
-    auth_url = f"{XERO_AUTHORIZE_URL}?{urllib.parse.urlencode({
-        'client_id': CLIENT_ID,
-        'redirect_uri': REDIRECT_URI,
-        'response_type': 'code',
-        'scope': SCOPES,
-        'state': state,
-        'prompt': 'login'
-    })}"
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": SCOPES,
+        "state": state,
+        "prompt": "login",
+    }
+
+    query = urllib.parse.urlencode(params)
+    auth_url = f"{XERO_AUTHORIZE_URL}?{query}"
+
     return redirect(auth_url)
 
 @app.route("/auth")
