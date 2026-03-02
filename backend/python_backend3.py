@@ -1670,9 +1670,6 @@ def auth_start():
     if not REDIRECT_URI:
         return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
 
-    if not session.get("user_id"):
-        return redirect("/login")
-
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
 
