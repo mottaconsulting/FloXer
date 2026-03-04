@@ -504,6 +504,38 @@ def xero_headers() -> dict:
     }
 
 
+def _json_error(message: str, status: int = 500, details: str | None = None):
+    payload = {"error": message}
+    if details:
+        payload["details"] = details
+    return jsonify(payload), status
+
+
+def _xero_get(resource: str, *, params: dict | None = None) -> requests.Response:
+    resource_path = resource.lstrip("/")
+    return requests.get(
+        f"{XERO_API_BASE}/{resource_path}",
+        headers=xero_headers(),
+        params=params,
+    )
+
+
+def _xero_passthrough(resource: str):
+    try:
+        resp = _xero_get(resource)
+        if resp.status_code != 200:
+            return _json_error(f"Xero API error: {resp.status_code}", resp.status_code, resp.text)
+        return jsonify(resp.json())
+    except Exception as e:
+        return _json_error(str(e))
+
+
+def _xero_collection(resource: str, root_key: str, *, params: dict | None = None) -> list[dict]:
+    resp = _xero_get(resource, params=params)
+    resp.raise_for_status()
+    return resp.json().get(root_key, []) or []
+
+
 def parse_xero_date(xero_date_str: str | None) -> datetime | None:
     """Handles Xero date formats.
 
@@ -1838,37 +1870,19 @@ def health():
 @app.route("/api/invoices")
 @login_required
 def api_invoices():
-    try:
-        resp = requests.get(f"{XERO_API_BASE}/Invoices", headers=xero_headers())
-        if resp.status_code != 200:
-            return jsonify({"error": f"Xero API error: {resp.status_code}", "details": resp.text}), resp.status_code
-        return jsonify(resp.json())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return _xero_passthrough("Invoices")
 
 
 @app.route("/api/contacts")
 @login_required
 def api_contacts():
-    try:
-        resp = requests.get(f"{XERO_API_BASE}/Contacts", headers=xero_headers())
-        if resp.status_code != 200:
-            return jsonify({"error": f"Xero API error: {resp.status_code}", "details": resp.text}), resp.status_code
-        return jsonify(resp.json())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return _xero_passthrough("Contacts")
 
 
 @app.route("/api/accounts")
 @login_required
 def api_accounts():
-    try:
-        resp = requests.get(f"{XERO_API_BASE}/Accounts", headers=xero_headers())
-        if resp.status_code != 200:
-            return jsonify({"error": f"Xero API error: {resp.status_code}", "details": resp.text}), resp.status_code
-        return jsonify(resp.json())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return _xero_passthrough("Accounts")
 
 @app.route("/api/journals")
 @login_required
@@ -1877,16 +1891,13 @@ def api_journals():
         journals = fetch_journals()
         return jsonify({"Journals": journals})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _json_error(str(e))
 
 
 @app.route("/api/journal-lines")
 @login_required
 def api_journal_lines():
-    try:
-        return jsonify({"error": "JournalLines passthrough is not supported in Xero mode; use /api/journals"}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return _json_error("JournalLines passthrough is not supported in Xero mode; use /api/journals", 400)
 
 
 @app.route("/api/refresh", methods=["POST", "GET"])
@@ -1961,9 +1972,7 @@ def api_budget():
 # Dashboard endpoints (the main recommendation)
 # ----------------------------
 def fetch_invoices() -> list[dict]:
-    resp = requests.get(f"{XERO_API_BASE}/Invoices", headers=xero_headers())
-    resp.raise_for_status()
-    return resp.json().get("Invoices", [])
+    return _xero_collection("Invoices", "Invoices")
 
 
 
@@ -1973,13 +1982,11 @@ def fetch_journals() -> list[dict]:
     page_size = 100
 
     while True:
-        resp = requests.get(
-            f"{XERO_API_BASE}/Journals",
-            headers=xero_headers(),
+        batch = _xero_collection(
+            "Journals",
+            "Journals",
             params={"offset": offset, "paymentsOnly": "false"},
         )
-        resp.raise_for_status()
-        batch = resp.json().get("Journals", []) or []
         if not batch:
             break
 
