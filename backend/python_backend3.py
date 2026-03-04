@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, send_from_directory, request, redirect, session, has_request_context, abort
 import requests
-import json
 import os
 import time
 import urllib.parse
@@ -55,6 +54,8 @@ def _origin_from_url(url: str) -> str:
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
 _allowed_origins = [o.strip() for o in ALLOWED_ORIGINS if o.strip()]
+
+
 def _csv_env(name: str, default_csv: str = "") -> list[str]:
     raw = os.getenv(name)
     if raw is None or not raw.strip():
@@ -66,7 +67,6 @@ _csp_extra_connect_src = _csv_env("CSP_EXTRA_CONNECT_SRC", "")
 _csp_extra_script_src = _csv_env("CSP_EXTRA_SCRIPT_SRC", "https://cdn.jsdelivr.net")
 _csp_extra_style_src = _csv_env("CSP_EXTRA_STYLE_SRC", "https://fonts.googleapis.com")
 _csp_extra_font_src = _csv_env("CSP_EXTRA_FONT_SRC", "https://fonts.gstatic.com")
-backend_origin = _origin_from_url(os.getenv("APP_ORIGIN", "") or REDIRECT_URI)
 # Frontend is served by Flask on the same origin in the Render deployment,
 # so runtime CORS is intentionally disabled.
 
@@ -93,10 +93,9 @@ _CSP_FONT_SRC = " ".join(["'self'", "data:"] + _csp_extra_font_src)
 secret_key = os.getenv("FLASK_SECRET_KEY")
 if not secret_key or len(secret_key) < 32:
     raise RuntimeError("FLASK_SECRET_KEY must be set and at least 32 characters long.")
-is_prod = os.getenv("APP_ENV", "development") == "production"
 app.config["SECRET_KEY"] = secret_key
 app.config["SESSION_COOKIE_NAME"] = "xero_dash_session"
-app.config["SESSION_COOKIE_SECURE"] = is_prod
+app.config["SESSION_COOKIE_SECURE"] = IS_PRODUCTION
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
@@ -107,8 +106,6 @@ if IS_PRODUCTION:
     # In production behind Cloudflare Tunnel/reverse proxy, trust one proxy hop
     # so Flask/Werkzeug derive remote/proto/host from validated proxy headers.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-
-
 
 # ----------------------------
 # Config
