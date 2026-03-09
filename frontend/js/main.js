@@ -2,7 +2,8 @@ let JOURNAL_CACHE = null;
 let JOURNAL_LINES = null;
 let FILTERED_JOURNAL_LINES = null;
 let TX_CURRENT_PAGE = 1;
-let TX_PAGE_SIZE = 100;
+let TX_PAGE_SIZE = 50;
+let TX_FILTER_EVENTS_BOUND = false;
 let APP_CURRENCY = "AUD";
 
 const INCOME_TYPES = new Set(["REVENUE"]);   // your org shows REVENUE
@@ -387,20 +388,6 @@ function applyRunwayVisuals(runwayMonths) {
   }
 }
 
-function computeProfitDeltas(data) {
-  const profitNow = Number(data?.kpis?.profit_now);
-  const profitNowPrev = Number(data?.kpis?.profit_now_prev);
-  const futureProfit = Number(data?.kpis?.future_profit);
-  const futureProfitPrev = Number(data?.kpis?.future_profit_prev);
-  const profitNowDelta = Number.isFinite(profitNow) && Number.isFinite(profitNowPrev)
-    ? profitNow - profitNowPrev
-    : NaN;
-  const futureDelta = Number.isFinite(futureProfit) && Number.isFinite(futureProfitPrev)
-    ? futureProfit - futureProfitPrev
-    : NaN;
-  return { profitNowDelta, futureDelta };
-}
-
 function sumNumeric(values) {
   return (values || []).reduce((total, value) => {
     const num = Number(value);
@@ -420,6 +407,20 @@ function computeYearProfitKpi(data) {
     ? ((yearProfit - priorYearProfit) / Math.abs(priorYearProfit)) * 100
     : NaN;
   return { yearProfit, priorYearProfit, changePct };
+}
+
+function computeBalanceKpi(data) {
+  const balance = Number(data?.kpis?.cash_balance_proxy);
+  const cashflow = data?.charts?.cashflow || {};
+  const cashIn = (cashflow.cashIn || []).map(v => Number(v || 0));
+  const cashOut = (cashflow.cashOut || []).map(v => Number(v || 0));
+  const monthlyNet = cashIn.map((v, idx) => v - Number(cashOut[idx] || 0));
+  const currentNet = monthlyNet.length ? Number(monthlyNet[monthlyNet.length - 1] || 0) : NaN;
+  const previousBalance = Number.isFinite(balance) && Number.isFinite(currentNet) ? balance - currentNet : NaN;
+  const changePct = Number.isFinite(balance) && Number.isFinite(previousBalance) && Math.abs(previousBalance) > 0.0001
+    ? ((balance - previousBalance) / Math.abs(previousBalance)) * 100
+    : NaN;
+  return { balance, previousBalance, changePct, monthlyNet };
 }
 
 function buildSparklineMarkup(values) {
@@ -453,6 +454,20 @@ function buildSparklineMarkup(values) {
       ></polyline>
     </svg>
   `;
+}
+
+function monthInitialLabels(labels) {
+  return (labels || []).map(label => {
+    const parts = String(label || "").split("-");
+    if (parts.length !== 2) return String(label || "").slice(0, 1).toUpperCase();
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+      return String(label || "").slice(0, 1).toUpperCase();
+    }
+    const dt = new Date(year, month - 1, 1);
+    return dt.toLocaleString(undefined, { month: "short" }).slice(0, 1).toUpperCase();
+  });
 }
 
 function renderEmptyView(containerId, title, message) {
@@ -518,8 +533,8 @@ function renderOverview(data) {
   const kpis = data?.kpis || {};
   setAppCurrency(data?.meta?.currency);
   populateFySelect(data);
-  const deltas = computeProfitDeltas(data);
   const yearProfitKpi = computeYearProfitKpi(data);
+  const balanceKpi = computeBalanceKpi(data);
   const companyName = selectedCompanyName();
   const greeting = document.getElementById("dashboardGreeting");
   if (greeting) greeting.textContent = `Hi, ${companyName}`;
@@ -563,16 +578,31 @@ function renderOverview(data) {
 
   const balanceValue = document.getElementById("dashboardBalanceValue");
   if (balanceValue) {
-    const balance = Number(kpis.cash_balance_proxy);
     balanceValue.classList.remove("positive", "negative");
-    balanceValue.textContent = Number.isFinite(balance) ? fmtUSD(balance) : "--";
-    if (Number.isFinite(balance)) {
-      balanceValue.classList.add(balance < 0 ? "negative" : "positive");
+    balanceValue.textContent = Number.isFinite(balanceKpi.balance) ? fmtUSD(balanceKpi.balance) : "--";
+    if (Number.isFinite(balanceKpi.balance)) {
+      balanceValue.classList.add(balanceKpi.balance < 0 ? "negative" : "positive");
     }
   }
 
   const balanceTrend = document.getElementById("dashboardBalanceTrend");
-  if (balanceTrend) balanceTrend.textContent = Number.isFinite(deltas.profitNowDelta) ? formatDelta(deltas.profitNowDelta) : "--";
+  if (balanceTrend) {
+    balanceTrend.classList.remove("up", "down", "flat");
+    if (Number.isFinite(balanceKpi.changePct)) {
+      const direction = balanceKpi.changePct > 0 ? "up" : (balanceKpi.changePct < 0 ? "down" : "flat");
+      balanceTrend.textContent = `${direction === "up" ? "+" : (direction === "down" ? "-" : "=")} ${Math.round(Math.abs(balanceKpi.changePct))}% vs PM`;
+      balanceTrend.classList.add(direction);
+    } else {
+      balanceTrend.textContent = "--";
+      balanceTrend.classList.add("flat");
+    }
+  }
+
+  const balanceSparkline = document.getElementById("dashboardBalanceSparkline");
+  if (balanceSparkline) {
+    const cumulativeBalanceSeries = cumulativeSeries(balanceKpi.monthlyNet || []);
+    balanceSparkline.innerHTML = buildSparklineMarkup(cumulativeBalanceSeries);
+  }
 
   const runwayValue = document.getElementById("dashboardRunwayValue");
   if (runwayValue) {
@@ -592,20 +622,17 @@ function renderOverview(data) {
 
   const cashflow = data?.charts?.cashflow;
   if (cashflow?.labels?.length) {
+    const cashInMonthly = (cashflow.cashIn || []).map(v => Number(v || 0));
+    const cashOutMonthly = (cashflow.cashOut || []).map(v => Number(v || 0));
+    const netMonthly = cashInMonthly.map((v, idx) => v - Number(cashOutMonthly[idx] || 0));
     XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
-      labels: cashflow.labels,
+      labels: monthInitialLabels(cashflow.labels),
       datasets: [
         {
-          label: "Cash In",
-          data: cashflow.cashIn || [],
-          backgroundColor: "rgba(59, 130, 246, 0.82)",
-          borderRadius: 6
-        },
-        {
-          label: "Cash Out",
-          data: (cashflow.cashOut || []).map(v => Number(v || 0) * -1),
-          backgroundColor: "rgba(236, 72, 153, 0.78)",
-          borderRadius: 6
+          label: "Net Cash Flow",
+          data: netMonthly,
+          backgroundColor: netMonthly.map(v => Number(v || 0) < 0 ? "rgba(236, 72, 153, 0.84)" : "rgba(59, 130, 246, 0.82)"),
+          borderRadius: 0
         }
       ]
     }, {
@@ -621,7 +648,7 @@ function renderOverview(data) {
   const expenses = data?.charts?.expenses_fy;
   if (sales?.labels?.length && expenses?.labels?.length) {
     XeroCharts.renderChart("dashboardRevenueExpenses", "dashboardRevenueExpensesChart", "line", {
-      labels: sales.labels,
+      labels: monthInitialLabels(sales.labels),
       datasets: [
         {
           label: "Revenue",
@@ -1148,8 +1175,14 @@ async function loadBudgetRows() {
     const data = await XeroAPI.fetch_json("/api/budget");
     setRawData(data);
     const meta = document.getElementById("budgetMeta");
+    const backendBadge = document.getElementById("budgetBackendBadge");
+    const backend = String(data?.budget_backend || "--").toLowerCase();
+    const source = data?.source || "--";
     if (meta) {
-      meta.innerText = `Revenue stays net of GST; revenue rows show a 10% GST preview. Source: ${data.source || "--"}`;
+      meta.innerText = `Revenue stays net of GST; revenue rows show a 10% GST preview. Backend: ${backend}. Source: ${source}`;
+    }
+    if (backendBadge) {
+      backendBadge.textContent = `Source: ${backend === "supabase" ? "Supabase" : "Manual"} (${source})`;
     }
     renderBudgetRows(data.rows || []);
     stopLoading();
@@ -1171,6 +1204,12 @@ async function saveBudgetRows() {
       body: JSON.stringify({ rows })
     });
     setRawData(data);
+    const backendBadge = document.getElementById("budgetBackendBadge");
+    const backend = String(data?.budget_backend || "--").toLowerCase();
+    const source = data?.source || "--";
+    if (backendBadge) {
+      backendBadge.textContent = `Source: ${backend === "supabase" ? "Supabase" : "Manual"} (${source})`;
+    }
     renderBudgetRows(data.rows || []);
     stopLoading();
   } catch (e) {
@@ -1475,6 +1514,25 @@ function resetTransactionFilters() {
 
 window.resetTransactionFilters = resetTransactionFilters;
 
+function bindTransactionFilterEvents() {
+  if (TX_FILTER_EVENTS_BOUND) return;
+  TX_FILTER_EVENTS_BOUND = true;
+
+  const search = document.getElementById("filterAccount");
+  const type = document.getElementById("filterType");
+  const direction = document.getElementById("filterDirection");
+  const from = document.getElementById("filterFrom");
+  const to = document.getElementById("filterTo");
+
+  if (search) {
+    search.addEventListener("input", () => applyTransactionFilters());
+  }
+  [type, direction, from, to].forEach(el => {
+    if (!el) return;
+    el.addEventListener("change", () => applyTransactionFilters());
+  });
+}
+
 function changeTransactionPage(delta) {
   if (!FILTERED_JOURNAL_LINES) {
     FILTERED_JOURNAL_LINES = JOURNAL_LINES || [];
@@ -1576,8 +1634,8 @@ function openTransactionQuickView(row) {
 window.closeTransactionQuickView = closeTransactionQuickView;
 
 function changeTransactionPageSize(value) {
-  const parsed = Number(value || 100);
-  TX_PAGE_SIZE = Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
+  const parsed = Number(value || 50);
+  TX_PAGE_SIZE = Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
   TX_CURRENT_PAGE = 1;
   renderTransactionTable(FILTERED_JOURNAL_LINES || JOURNAL_LINES || []);
 }
@@ -1633,6 +1691,7 @@ async function showTransactions() {
     const journals = await getJournals();
     JOURNAL_LINES = flattenJournalLines(journals);
     populateTransactionTypeFilter(JOURNAL_LINES);
+    bindTransactionFilterEvents();
 
     setRawData({
       journals_count: journals.length,
@@ -1643,6 +1702,9 @@ async function showTransactions() {
     document.getElementById("transactionsContainer").style.display = "block";
     FILTERED_JOURNAL_LINES = JOURNAL_LINES;
     TX_CURRENT_PAGE = 1;
+    TX_PAGE_SIZE = 50;
+    const pageSizeSelect = document.getElementById("txPageSize");
+    if (pageSizeSelect) pageSizeSelect.value = "50";
     renderTransactionFilterChips();
     renderTransactionTable(FILTERED_JOURNAL_LINES);
   } catch (e) {

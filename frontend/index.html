@@ -892,6 +892,37 @@
       display: grid;
       gap: 14px;
     }
+    .budget-screen .rebuilt-subtitle {
+      max-width: 88ch;
+    }
+    .budget-head-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .budget-backend-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid #dbe2ea;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .budget-backend-pill::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #3b82f6;
+      display: inline-block;
+    }
     .budget-toolbar {
       display: flex;
       gap: 10px;
@@ -1153,6 +1184,30 @@
     }
     .tx-active-filters .tx-clear-link {
       min-height: auto;
+    }
+    .tx-meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 2px 0 2px;
+    }
+    .tx-page-size {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .tx-page-size select {
+      border: 1px solid #dbe2ea;
+      background: #fff;
+      border-radius: 10px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #0f172a;
     }
     .tx-quickview {
       position: fixed;
@@ -1549,8 +1604,9 @@
             <span>Current Balance</span>
             <span id="dashboardBalanceTrend" class="rebuilt-kpi-trend">--</span>
           </div>
-          <div class="rebuilt-kpi-body">
+          <div class="rebuilt-kpi-split">
             <div id="dashboardBalanceValue" class="rebuilt-kpi-value">--</div>
+            <div id="dashboardBalanceSparkline" class="rebuilt-kpi-sparkline" aria-hidden="true"></div>
           </div>
         </div>
         <div class="rebuilt-kpi-card">
@@ -1603,7 +1659,83 @@
   </div>
 
   <!-- TRANSACTIONS -->
-  <div id="transactionsContainer" style="display:none;"></div>
+  <div id="transactionsContainer" style="display:none;">
+    <section class="rebuilt-dashboard">
+      <div class="rebuilt-hero">
+        <h1 class="rebuilt-title">Transactions</h1>
+        <div class="rebuilt-subtitle">All available journal lines from Xero</div>
+      </div>
+
+      <section class="rebuilt-panel">
+        <div class="tx-toolbar">
+          <div class="tx-filter-group search-group">
+            <label for="filterAccount">Search</label>
+            <input id="filterAccount" type="text" placeholder="Account code, account name, or description">
+          </div>
+          <div class="tx-filter-group filter-group">
+            <label for="filterType">Type</label>
+            <select id="filterType">
+              <option value="">All types</option>
+            </select>
+          </div>
+          <div class="tx-filter-group filter-group">
+            <label for="filterDirection">Direction</label>
+            <select id="filterDirection">
+              <option value="">All</option>
+              <option value="in">Money in</option>
+              <option value="out">Money out</option>
+            </select>
+          </div>
+          <div class="tx-filter-group date-group">
+            <label for="filterFrom">From</label>
+            <input id="filterFrom" type="date">
+          </div>
+          <div class="tx-filter-group date-group">
+            <label for="filterTo">To</label>
+            <input id="filterTo" type="date">
+          </div>
+          <div class="actions">
+            <button type="button" class="btn-muted" onclick="applyTransactionFilters()">Apply</button>
+            <button type="button" class="btn-muted" onclick="resetTransactionFilters()">Reset</button>
+          </div>
+        </div>
+
+        <div id="txActiveFilters" class="tx-active-filters"></div>
+
+        <div class="tx-meta-row">
+          <div id="txCount" class="muted">Showing 0 of 0 lines</div>
+          <div class="tx-page-size">
+            <label for="txPageSize">Rows per page</label>
+            <select id="txPageSize" onchange="changeTransactionPageSize(this.value)">
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead id="tableHeader"></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="tx-pagination">
+          <button id="txPrevBtn" type="button" class="btn-muted" onclick="changeTransactionPage(-1)">Previous</button>
+          <div id="txPageInfo" class="muted">Page 1 of 1</div>
+          <button id="txNextBtn" type="button" class="btn-muted" onclick="changeTransactionPage(1)">Next</button>
+        </div>
+      </section>
+    </section>
+  </div>
+  <aside id="txQuickView" class="tx-quickview" aria-hidden="true">
+    <div class="tx-quickview-header">
+      <h3 class="tx-quickview-title">Transaction Details</h3>
+      <button type="button" class="tx-quickview-close" onclick="closeTransactionQuickView()" aria-label="Close details">&times;</button>
+    </div>
+    <div id="txQuickViewBody"></div>
+  </aside>
   <!-- LIABILITIES -->
   <div id="liabilitiesContainer" style="display:none;"></div>
   <template id="liabilitiesLegacy">
@@ -1650,61 +1782,63 @@
 </template>
   
   <!-- BUDGET INPUT -->
-  <div id="budgetContainer" style="display:none;"></div>
-  <template id="budgetLegacy">
-    <div class="budget-shell">
-      <div>
-        <h2 style="margin:0 0 10px 0;">Budget input</h2>
-        <div class="muted" id="budgetMeta" style="margin-bottom:10px;">
-          Add monthly budget rows used for projected metrics in Xero mode. Revenue stays net of GST; revenue rows show a 10% GST preview.
+  <div id="budgetContainer" style="display:none;">
+    <section class="rebuilt-dashboard budget-screen">
+      <div class="rebuilt-hero">
+        <h1 class="rebuilt-title">Budget Input</h1>
+        <div class="rebuilt-subtitle" id="budgetMeta">
+          Add monthly budget rows used for projected metrics. Revenue stays net of GST; revenue rows show a 10% GST preview.
         </div>
       </div>
 
-      <div class="budget-summary-grid">
-        <div class="budget-summary-card">
-          <div class="label">Rows</div>
-          <div class="value" id="budgetRowsCount">0</div>
+      <section class="rebuilt-panel">
+        <div class="budget-head-row">
+          <div id="budgetBackendBadge" class="budget-backend-pill">Source: --</div>
+          <div class="budget-toolbar">
+            <button type="button" onclick="addBudgetRow()" class="btn-accent">Add row</button>
+            <button type="button" onclick="loadBudgetRows()" class="btn-muted">Reload</button>
+            <button type="button" onclick="saveBudgetRows()">Save budget</button>
+          </div>
         </div>
-        <div class="budget-summary-card">
-          <div class="label">Revenue (net)</div>
-          <div class="value" id="budgetRevenueTotal">&mdash;</div>
+
+        <div class="budget-summary-grid">
+          <div class="budget-summary-card">
+            <div class="label">Rows</div>
+            <div class="value" id="budgetRowsCount">0</div>
+          </div>
+          <div class="budget-summary-card">
+            <div class="label">Revenue (net)</div>
+            <div class="value" id="budgetRevenueTotal">&mdash;</div>
+          </div>
+          <div class="budget-summary-card">
+            <div class="label">GST on sales</div>
+            <div class="value" id="budgetGstTotal">&mdash;</div>
+          </div>
         </div>
-        <div class="budget-summary-card">
-          <div class="label">GST on sales</div>
-          <div class="value" id="budgetGstTotal">&mdash;</div>
+
+        <div class="budget-table-wrap">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Type</th>
+                  <th>Account name</th>
+                  <th>Net amount</th>
+                  <th>Repeat</th>
+                  <th>End</th>
+                  <th>GST</th>
+                  <th>Total incl. GST</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="budgetBody"></tbody>
+            </table>
+          </div>
         </div>
-      </div>
-
-      <div class="budget-toolbar">
-        <button onclick="addBudgetRow()" class="btn-accent">Add row</button>
-        <button onclick="loadBudgetRows()" class="btn-muted">Reload</button>
-        <button onclick="saveBudgetRows()">Save budget</button>
-      </div>
-
-      <div class="budget-table-wrap">
-        <div class="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Month</th>
-                <th>Type</th>
-                <th>Account name</th>
-                <th>Net amount</th>
-                <th>Repeat</th>
-                <th>End</th>
-                <th>GST</th>
-                <th>Total incl. GST</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="budgetBody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </template>
-
-
+      </section>
+    </section>
+  </div>
   <pre id="rawOutput" style="display:none; background:#f5f5f5; padding:15px; border-radius:6px; overflow-x:auto;"></pre>
 
   <script defer src="/js/api.js"></script>
