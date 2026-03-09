@@ -46,8 +46,6 @@ FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
 REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
-if not REDIRECT_URI:
-    raise RuntimeError("XERO_REDIRECT_URI must be set (Render env var).")
 PROVISIONAL_LOGIN_EMAIL = os.getenv("PROVISIONAL_LOGIN_EMAIL", "demo@businesspulse.local").strip().lower()
 PROVISIONAL_LOGIN_PASSWORD = os.getenv("PROVISIONAL_LOGIN_PASSWORD", "demo123").strip()
 
@@ -57,6 +55,26 @@ def _origin_from_url(url: str) -> str:
     if not parsed.scheme or not parsed.netloc:
         return ""
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}".rstrip("/")
+
+
+def _is_localhost_url(url: str) -> bool:
+    host = urllib.parse.urlparse((url or "").strip()).hostname or ""
+    return host in {"localhost", "127.0.0.1"}
+
+
+def _effective_redirect_uri() -> str:
+    configured = (REDIRECT_URI or "").strip()
+    # Prefer configured production URI unless it is clearly a local URI on a non-local host.
+    if configured:
+        if has_request_context():
+            req_host = (request.host or "").split(":")[0].lower()
+            if _is_localhost_url(configured) and req_host not in {"localhost", "127.0.0.1"}:
+                return f"{request.url_root.rstrip('/')}/callback"
+        return configured
+    # Fallback for environments where XERO_REDIRECT_URI is not injected.
+    if has_request_context():
+        return f"{request.url_root.rstrip('/')}/callback"
+    return ""
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
@@ -1688,7 +1706,8 @@ def debug_config():
 def auth_start():
     if not CLIENT_ID or not CLIENT_SECRET:
         return jsonify({"error": "Missing XERO_CLIENT_ID or XERO_CLIENT_SECRET"}), 500
-    if not REDIRECT_URI:
+    redirect_uri = _effective_redirect_uri()
+    if not redirect_uri:
         return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
 
     state = secrets.token_urlsafe(32)
@@ -1699,7 +1718,7 @@ def auth_start():
 
     params = {
         "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": SCOPES,
         "state": state,
@@ -1719,7 +1738,8 @@ def auth():
 @app.route("/callback")
 def callback():
     """Complete OAuth: validate state, exchange code, then create session identity."""
-    if not REDIRECT_URI:
+    redirect_uri = _effective_redirect_uri()
+    if not redirect_uri:
         return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
     expected_state = session.get("oauth_state")
     callback_state = request.args.get("state")
@@ -1757,7 +1777,7 @@ def callback():
         data={
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": redirect_uri,
         },
         auth=(CLIENT_ID, CLIENT_SECRET),
     )
