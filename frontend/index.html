@@ -356,21 +356,21 @@
       justify-content: center;
       padding: 20px;
       z-index: 1200;
-      background: rgba(13, 27, 75, 0.45);
+      background: rgba(13, 27, 75, 0.5);
       backdrop-filter: blur(6px);
     }
     .xero-connect-modal.is-open {
       display: flex;
     }
     .xero-connect-card {
-      width: min(480px, 100%);
+      width: min(432px, 100%);
       background: #ffffff;
       border-radius: 20px;
       box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(15, 23, 42, 0.03);
       border: 1px solid #e5e7eb;
-      padding: 0 22px 14px;
+      padding: 0 36px 16px;
       display: grid;
-      gap: 10px;
+      gap: 8px;
       transform: scale(0.92);
       opacity: 0;
     }
@@ -379,7 +379,7 @@
     }
     .xero-connect-topbar {
       height: 8px;
-      margin: 0 -22px;
+      margin: 0 -36px;
       border-radius: 20px 20px 0 0;
       background: linear-gradient(90deg, #e91e8c 0%, #13b5ea 100%);
     }
@@ -387,68 +387,50 @@
       display: flex;
       align-items: center;
       justify-content: flex-start;
-      gap: 10px;
-      padding-top: 14px;
+      gap: 9px;
+      padding-top: 12px;
     }
     .xero-connect-logo-floxer {
-      width: 34px;
-      height: 34px;
+      width: 24px;
+      height: 24px;
       object-fit: contain;
     }
     .xero-connect-divider {
-      color: #9ca3af;
+      color: #cbd5e1;
       font-weight: 700;
-      font-size: 15px;
+      font-size: 14px;
       line-height: 1;
-      transform: translateY(-1px);
     }
     .xero-connect-logo-xero {
       display: inline-flex;
       align-items: center;
-      gap: 7px;
+      gap: 6px;
       color: #0d1b4b;
       font-family: "Space Grotesk", sans-serif;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.01em;
+      min-height: 24px;
     }
     .xero-connect-logo-xero::before {
       content: "";
-      width: 14px;
-      height: 14px;
+      width: 12px;
+      height: 12px;
       border-radius: 999px;
       background: #13b5ea;
       box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.42);
     }
-    .xero-connect-brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 2px;
-    }
-    .xero-connect-brand img {
-      width: 34px;
-      height: 34px;
-      object-fit: contain;
-    }
-    .xero-connect-brand-text {
-      font-family: "Space Grotesk", sans-serif;
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-      color: #1e2a78;
-    }
     .xero-connect-eyebrow {
-      margin: 0;
+      margin: 1px 0 0;
       display: inline-flex;
       width: fit-content;
       align-items: center;
       gap: 7px;
       color: #0d1b4b;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.1em;
     }
     .xero-connect-eyebrow::before {
       content: "";
@@ -459,36 +441,38 @@
       display: inline-block;
     }
     .xero-connect-title {
-      margin: 0;
+      margin: 1px 0 0;
       font-family: "Space Grotesk", sans-serif;
       font-size: 28px;
+      font-weight: 800;
       letter-spacing: -0.03em;
       color: #0d1b4b;
     }
     .xero-connect-subhead {
-      margin: -2px 0 2px;
-      color: #334155;
-      font-size: 15px;
+      margin: 0;
+      color: #0d1b4b;
+      font-size: 16px;
       font-weight: 600;
       line-height: 1.45;
     }
     .xero-connect-text {
-      margin: 0;
+      margin: 1px 0 0;
       color: #6b7280;
       font-size: 15px;
-      line-height: 1.45;
+      line-height: 1.5;
       max-width: 44ch;
     }
     .xero-connect-separator {
       border: 0;
-      border-top: 1px solid #e5e7eb;
-      margin: 2px 0 0;
+      border-top: 1px solid #e2e8f0;
+      margin: 6px 0 2px;
     }
     .xero-connect-actions {
       display: flex;
-      gap: 10px;
+      gap: 12px;
       justify-content: flex-end;
       margin-top: 4px;
+      padding-left: 10px;
     }
     .xero-connect-actions .xero-connect-secondary,
     .xero-connect-actions .xero-connect-primary {
@@ -509,6 +493,7 @@
     }
     .xero-connect-actions .xero-connect-secondary:hover {
       text-decoration: underline;
+      background: rgba(148, 163, 184, 0.12);
     }
     .xero-connect-actions .xero-connect-primary {
       background: #0d1b4b;
@@ -526,18 +511,38 @@
       outline-offset: 2px;
     }
     .xero-connect-lock {
+      width: 16px;
+      height: 16px;
       margin-right: 6px;
-      font-size: 12px;
-      transform: translateY(-1px);
-      display: inline-block;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vertical-align: text-bottom;
     }
     .xero-connect-footer {
       margin: 2px 0 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
       text-align: center;
-      color: #6b7280;
+      color: #475569;
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.01em;
+    }
+    .xero-connect-footer-icon {
+      width: 14px;
+      height: 14px;
+      stroke: #13b5ea;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex: 0 0 14px;
     }
 
     .rebuilt-dashboard {
@@ -1567,9 +1572,9 @@
       <hr class="xero-connect-separator">
       <div class="xero-connect-actions">
         <button type="button" class="xero-connect-secondary" onclick="hideXeroConnectModal()">Not now</button>
-        <button type="button" class="xero-connect-primary" onclick="authorize()"><span class="xero-connect-lock">🔒</span>Authorise</button>
+        <button type="button" class="xero-connect-primary" onclick="authorize()"><svg viewBox="0 0 24 24" class="xero-connect-lock" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>Authorise</button>
       </div>
-      <p class="xero-connect-footer">🔐 Secure OAuth 2.0 — Floxer never stores your Xero password</p>
+      <p class="xero-connect-footer"><svg viewBox="0 0 24 24" class="xero-connect-footer-icon" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 7.3 7 10 4-2.7 7-5.5 7-10V6l-7-3z"></path><path d="m9.7 12.2 1.8 1.8 3-3.2"></path></svg>Secure OAuth 2.0 — Floxer never stores your Xero password</p>
     </section>
   </div>
 
