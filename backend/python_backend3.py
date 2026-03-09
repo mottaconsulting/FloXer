@@ -13,13 +13,18 @@ from functools import wraps
 from uuid import uuid4
 import secrets
 import sqlite3
-import psycopg2
 from collections import defaultdict, deque
 from threading import Lock
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+try:
+    import psycopg2
+except ModuleNotFoundError:
+    psycopg2 = None
+
 load_dotenv()
+load_dotenv(Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / ".env.local", override=True)
 
 
 # ----------------------------
@@ -43,6 +48,8 @@ IS_PRODUCTION = APP_ENV == "production"
 REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
 if not REDIRECT_URI:
     raise RuntimeError("XERO_REDIRECT_URI must be set (Render env var).")
+PROVISIONAL_LOGIN_EMAIL = os.getenv("PROVISIONAL_LOGIN_EMAIL", "demo@businesspulse.local").strip().lower()
+PROVISIONAL_LOGIN_PASSWORD = os.getenv("PROVISIONAL_LOGIN_PASSWORD", "demo123").strip()
 
 
 def _origin_from_url(url: str) -> str:
@@ -129,8 +136,11 @@ XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 XERO_CONNECTIONS_URL = "https://api.xero.com/connections"
 XERO_API_BASE = "https://api.xero.com/api.xro/2.0"
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "").strip()
-if not SUPABASE_DB_URL:
-    raise RuntimeError("SUPABASE_DB_URL must be set in environment variables. This app requires PostgreSQL (Supabase) for budget storage.")
+if BUDGET_BACKEND == "supabase":
+    if psycopg2 is None:
+        raise RuntimeError("psycopg2 is required when BUDGET_BACKEND=supabase. Install dependencies from backend/requirements.txt.")
+    if not SUPABASE_DB_URL:
+        raise RuntimeError("SUPABASE_DB_URL must be set when BUDGET_BACKEND=supabase.")
 DB_FILE = os.getenv("DB_FILE", "app.db")
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"))
@@ -181,6 +191,8 @@ def csrf_protect_forms():
     session.permanent = True
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_urlsafe(32)
+    if request.path == "/login":
+        return None
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
 
@@ -730,6 +742,8 @@ def _save_budget_rows_manual(rows: list[dict]) -> pd.DataFrame:
 
 
 def _supabase_budget_conn():
+    if psycopg2 is None:
+        raise RuntimeError("psycopg2 is not installed. Switch to BUDGET_BACKEND=manual for local CSV budget storage, or install backend requirements.")
     if not SUPABASE_DB_URL:
         raise RuntimeError("SUPABASE_DB_URL must be set when BUDGET_BACKEND=supabase.")
     return psycopg2.connect(SUPABASE_DB_URL)
@@ -1277,6 +1291,33 @@ def build_overview_payload(
             _monthly_series(actuals_fy, months, "EXPENSE"),
         )
     ]
+    actual_profit_to_date = [
+        r - e
+        for r, e in zip(
+            _monthly_series(actuals_to_date, months, "REVENUE"),
+            _monthly_series(actuals_to_date, months, "EXPENSE"),
+        )
+    ]
+    prev_fy_start = (pd.Timestamp(fy_start) - pd.DateOffset(years=1)).to_pydatetime()
+    prev_fy_end = (pd.Timestamp(fy_end) - pd.DateOffset(years=1)).to_pydatetime()
+    prev_next_month = (pd.Timestamp(next_month) - pd.DateOffset(years=1)).to_pydatetime()
+    prev_months = _month_range(prev_fy_start, prev_fy_end)
+    prev_actuals_to_match = actuals[
+        (actuals["JOURNAL_DATE"] >= prev_fy_start) & (actuals["JOURNAL_DATE"] < prev_next_month)
+    ]
+    previous_year_profit_to_date = [
+        r - e
+        for r, e in zip(
+            _monthly_series(prev_actuals_to_match, prev_months, "REVENUE"),
+            _monthly_series(prev_actuals_to_match, prev_months, "EXPENSE"),
+        )
+    ]
+    actual_profit_ytd = float(np.sum(actual_profit_to_date)) if actual_profit_to_date else 0.0
+    previous_year_profit_ytd = (
+        float(np.sum(previous_year_profit_to_date))
+        if previous_year_profit_to_date
+        else None
+    )
     budget_profit = [
         r - e
         for r, e in zip(
@@ -1350,16 +1391,20 @@ def build_overview_payload(
         (actuals_fy["ACCOUNT_TYPE"] == "BANK")
         & (actuals_fy["JOURNAL_DATE"] < next_month)
     ].copy()
+    cashflow_cash_in = [0.0 for _ in months]
+    cashflow_cash_out = [0.0 for _ in months]
     bank_burn_series: list[float] = []
     if len(bank_rows):
         bank_rows["MONTH"] = bank_rows["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
         bank_out = bank_rows.loc[bank_rows["NET_AMOUNT"] > 0].groupby("MONTH")["NET_AMOUNT"].sum()
         bank_in = bank_rows.loc[bank_rows["NET_AMOUNT"] < 0].groupby("MONTH")["NET_AMOUNT"].sum().abs()
-        for m in months:
+        for idx, m in enumerate(months):
             if m > current_month:
                 continue
             outflow = float(bank_out.get(pd.Timestamp(m), 0.0))
             inflow = float(bank_in.get(pd.Timestamp(m), 0.0))
+            cashflow_cash_in[idx] = inflow
+            cashflow_cash_out[idx] = outflow
             bank_burn_series.append(max(0.0, outflow - inflow))
     if bank_burn_series:
         tail = bank_burn_series[-burn_months:] if burn_months > 0 else bank_burn_series
@@ -1404,6 +1449,11 @@ def build_overview_payload(
     profit_fy = {
         "labels": sales_series["labels"],
         "actual_monthly_profit": [round(v, 2) for v in actual_profit],
+        "actual_ytd_profit": round(actual_profit_ytd, 2),
+        "previous_year_monthly_profit": [round(v, 2) for v in previous_year_profit_to_date],
+        "previous_year_ytd_profit": (
+            round(previous_year_profit_ytd, 2) if previous_year_profit_ytd is not None else None
+        ),
         "projected_monthly_profit": [round(v, 2) if v is not None else None for v in projected_profit],
     }
     expenses_fy = {
@@ -1412,6 +1462,11 @@ def build_overview_payload(
         "projected_monthly": [round(v, 2) if v is not None else None for v in projected_expense],
         "actual_cumulative": [round(v, 2) for v in list(np.cumsum(actual_expense).astype(float))],
         "projected_cumulative": [round(v, 2) if v is not None else None for v in _cumulative_or_none(projected_expense)],
+    }
+    cashflow = {
+        "labels": sales_series["labels"],
+        "cashIn": [round(v, 2) for v in cashflow_cash_in],
+        "cashOut": [round(v, 2) for v in cashflow_cash_out],
     }
 
     payload = {
@@ -1439,6 +1494,7 @@ def build_overview_payload(
             "warnings": warnings,
         },
         "charts": {
+            "cashflow": cashflow,
             "sales_fy": sales_series,
             "profit_fy": profit_fy,
             "expenses_fy": expenses_fy,
@@ -1628,6 +1684,7 @@ def debug_config():
 # ----------------------------
 
 @app.route("/auth/start")
+@login_required
 def auth_start():
     if not CLIENT_ID or not CLIENT_SECRET:
         return jsonify({"error": "Missing XERO_CLIENT_ID or XERO_CLIENT_SECRET"}), 500
@@ -1636,6 +1693,9 @@ def auth_start():
 
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
+    pending_states = list(session.get("oauth_states") or [])
+    pending_states.append(state)
+    session["oauth_states"] = pending_states[-8:]
 
     params = {
         "client_id": CLIENT_ID,
@@ -1663,10 +1723,26 @@ def callback():
         return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
     expected_state = session.get("oauth_state")
     callback_state = request.args.get("state")
-    if not expected_state or not callback_state or expected_state != callback_state:
-        abort(403)
-    # State validated successfully; discard one-time value to prevent replay.
+    pending_states = list(session.get("oauth_states") or [])
+    state_valid = bool(
+        callback_state
+        and (
+            callback_state == expected_state
+            or callback_state in pending_states
+        )
+    )
+    if not state_valid:
+        return jsonify(
+            {
+                "error": "OAuth state validation failed",
+                "message": "State mismatch/expired. Start authorization again from /auth/start.",
+            }
+        ), 403
+    # State validated successfully; discard one-time value(s) to prevent replay.
     session.pop("oauth_state", None)
+    if callback_state in pending_states:
+        pending_states = [s for s in pending_states if s != callback_state]
+        session["oauth_states"] = pending_states
 
     oauth_error = request.args.get("error")
     if oauth_error:
@@ -1804,8 +1880,22 @@ def index():
     return redirect("/login")
 
 
-@app.route("/login")
+@app.route("/login", methods=["GET", "POST"])
 def login_page():
+    if request.method == "POST":
+        email = str(request.form.get("email", "")).strip().lower()
+        password = str(request.form.get("password", "")).strip()
+
+        if email != PROVISIONAL_LOGIN_EMAIL or password != PROVISIONAL_LOGIN_PASSWORD:
+            return redirect("/login?error=invalid")
+
+        user_id = f"local:{email}"
+        session["user_id"] = user_id
+        ensure_user(user_id)
+        return redirect("/dashboard")
+
+    if session.get("user_id"):
+        return redirect("/dashboard")
     return app.send_static_file("login.html")
 
 

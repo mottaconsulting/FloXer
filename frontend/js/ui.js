@@ -4,8 +4,8 @@ let _xeroUiShowingRaw = false;
 function setLoading(msg) {
   const el = document.getElementById("loading");
   if (!el) return;
-  el.textContent = msg || "Loading...";
-  el.style.display = "block";
+  el.textContent = msg || "Preparing dashboard...";
+  el.style.display = "flex";
 }
 
 function stopLoading() {
@@ -23,6 +23,20 @@ function showError(msg) {
 function hideError() {
   const el = document.getElementById("error");
   if (el) el.style.display = "none";
+}
+
+function showXeroConnectModal() {
+  const modal = document.getElementById("xeroConnectModal");
+  if (!modal) return;
+  modal.classList.add("is-open");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function hideXeroConnectModal() {
+  const modal = document.getElementById("xeroConnectModal");
+  if (!modal) return;
+  modal.classList.remove("is-open");
+  modal.setAttribute("aria-hidden", "true");
 }
 
 function hideAllViews() {
@@ -81,12 +95,14 @@ function setXeroConnectionStatus(connected) {
     pill.textContent = connected ? "Xero: Connected" : "Xero: Not connected";
   }
   if (link) {
-    link.style.display = connected ? "none" : "inline-flex";
+    link.style.visibility = "visible";
   }
   if (select && !connected) {
     select.innerHTML = `<option value="">Organization</option>`;
     select.disabled = true;
   }
+  if (connected) hideXeroConnectModal();
+  else showXeroConnectModal();
 }
 
 window.XeroUI = {
@@ -95,7 +111,9 @@ window.XeroUI = {
   hideError,
   setLoading,
   setRawData,
+  hideXeroConnectModal,
   setXeroConnectionStatus,
+  showXeroConnectModal,
   showError,
   showRawJson,
   stopLoading
@@ -105,7 +123,9 @@ window.hideAllViews = hideAllViews;
 window.hideError = hideError;
 window.setLoading = setLoading;
 window.setRawData = setRawData;
+window.hideXeroConnectModal = hideXeroConnectModal;
 window.setXeroConnectionStatus = setXeroConnectionStatus;
+window.showXeroConnectModal = showXeroConnectModal;
 window.showError = showError;
 window.showRawJson = showRawJson;
 window.stopLoading = stopLoading;

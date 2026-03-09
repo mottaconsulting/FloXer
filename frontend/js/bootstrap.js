@@ -8,6 +8,7 @@ async function logoutSession() {
 }
 
 function authorize() {
+  if (typeof hideXeroConnectModal === "function") hideXeroConnectModal();
   const w = XeroAPI.open_auth_popup();
   if (!w) return;
 
@@ -65,7 +66,7 @@ async function loadOrganizations() {
 
 async function switchOrganization(tenantId) {
   if (!tenantId) return;
-  setLoading("Switching organization...");
+  setLoading("Switching Xero organization...");
   try {
     await XeroAPI.fetch_json(`/set-tenant?tenantId=${encodeURIComponent(tenantId)}`);
     await showDashboard();
@@ -120,7 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
     dateSelect.addEventListener("change", async (e) => {
       const val = e.target.value;
       if (!val) return;
-      setLoading("Refreshing overview...");
+      setLoading("Updating dashboard...");
       try {
         const data = await fetchOverview(val, 7, cashInput?.value, burnMonthsInput?.value);
         stopLoading();
@@ -137,7 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const endYear = e.target.value;
       const today = fyEndDateFromYear(endYear);
       if (!today) return;
-      setLoading("Refreshing overview...");
+      setLoading("Updating dashboard...");
       try {
         const data = await fetchOverview(today, 7, cashInput?.value, burnMonthsInput?.value);
         stopLoading();
@@ -152,7 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (cashInput) {
     const handler = async () => {
       const todayOverride = dateSelect?.value || null;
-      setLoading("Refreshing overview...");
+      setLoading("Updating dashboard...");
       try {
         const data = await fetchOverview(todayOverride, 7, cashInput.value, burnMonthsInput?.value);
         stopLoading();
@@ -169,7 +170,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (burnMonthsInput) {
     const handler = async () => {
       const todayOverride = dateSelect?.value || null;
-      setLoading("Refreshing overview...");
+      setLoading("Updating dashboard...");
       try {
         const data = await fetchOverview(todayOverride, 7, cashInput?.value, burnMonthsInput.value);
         stopLoading();
@@ -184,7 +185,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (liabFySelect) {
     liabFySelect.addEventListener("change", async () => {
-      setLoading("Refreshing liabilities...");
+      setLoading("Updating risk view...");
       try {
         await showLiabilities();
         stopLoading();

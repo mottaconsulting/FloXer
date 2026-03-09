@@ -138,7 +138,12 @@ function round2(x) { return Math.round(Number(x || 0) * 100) / 100; }
 
 function fmtUSD(n) {
   const v = Number(n || 0);
-  return v.toLocaleString(undefined, { style: "currency", currency: APP_CURRENCY });
+  return v.toLocaleString(undefined, {
+    style: "currency",
+    currency: APP_CURRENCY,
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  });
 }
 
 function setAppCurrency(currencyCode) {
@@ -172,7 +177,7 @@ function formatDelta(v, asCurrency = true) {
   const sign = v > 0 ? "+" : (v < 0 ? "-" : "=");
   const abs = Math.abs(v);
   const val = asCurrency ? fmtUSD(abs) : abs.toFixed(1);
-  return sign + " " + val + " vs last month";
+  return sign + " " + val + " vs PM";
 }
 
 function formatMonthLabel(monthKey) {
@@ -396,118 +401,257 @@ function computeProfitDeltas(data) {
   return { profitNowDelta, futureDelta };
 }
 
+function sumNumeric(values) {
+  return (values || []).reduce((total, value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? total + num : total;
+  }, 0);
+}
+
+function computeYearProfitKpi(data) {
+  const profitChart = data?.charts?.profit_fy || {};
+  const currentYtdProfit = Number(profitChart.actual_ytd_profit);
+  const previousYtdProfit = Number(profitChart.previous_year_ytd_profit);
+  const monthlyProfit = profitChart.actual_monthly_profit || [];
+  const previousYearMonthlyProfit = profitChart.previous_year_monthly_profit || [];
+  const yearProfit = Number.isFinite(currentYtdProfit) ? currentYtdProfit : sumNumeric(monthlyProfit);
+  const priorYearProfit = Number.isFinite(previousYtdProfit) ? previousYtdProfit : sumNumeric(previousYearMonthlyProfit);
+  const changePct = Number.isFinite(yearProfit) && Number.isFinite(priorYearProfit) && Math.abs(priorYearProfit) > 0.0001
+    ? ((yearProfit - priorYearProfit) / Math.abs(priorYearProfit)) * 100
+    : NaN;
+  return { yearProfit, priorYearProfit, changePct };
+}
+
+function buildSparklineMarkup(values) {
+  const points = (values || [])
+    .map(v => Number(v))
+    .filter(v => Number.isFinite(v));
+  if (points.length < 2) return "";
+
+  const width = 120;
+  const height = 42;
+  const pad = 3;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const step = points.length > 1 ? (width - pad * 2) / (points.length - 1) : 0;
+  const coords = points.map((value, index) => {
+    const x = pad + step * index;
+    const y = height - pad - (((value - min) / range) * (height - pad * 2));
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(" ");
+
+  return `
+    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="presentation">
+      <polyline
+        points="${coords}"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      ></polyline>
+    </svg>
+  `;
+}
+
+function renderEmptyView(containerId, title, message) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = `
+    <section class="rebuilt-dashboard">
+      <section class="rebuilt-panel">
+        <h3 class="rebuilt-panel-title">${escapeHtmlText(title)}</h3>
+        <div class="rebuilt-empty" style="padding: 10px 0 4px; text-align: left;">
+          ${escapeHtmlText(message)}
+        </div>
+      </section>
+    </section>
+  `;
+}
+
+function selectedCompanyName() {
+  const select = document.getElementById("orgSelect");
+  const option = select?.selectedOptions?.[0];
+  const name = option?.textContent?.trim();
+  return name || "Company";
+}
+
+async function renderDashboardRecentTransactions() {
+  const body = document.getElementById("dashboardRecentTransactionsBody");
+  if (!body) return;
+
+  try {
+    const journals = await getJournals();
+    const rows = flattenJournalLines(journals);
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setDate(cutoff.getDate() - 31);
+
+    const recent = rows
+      .filter(row => {
+        const d = XeroTables.parseXeroDate(row.date);
+        return d instanceof Date && !Number.isNaN(d.getTime()) && d >= cutoff;
+      })
+      .sort((a, b) => XeroTables.parseXeroDate(b.date) - XeroTables.parseXeroDate(a.date))
+      .slice(0, 8);
+
+    if (!recent.length) {
+      body.innerHTML = `<tr><td colspan="4" class="rebuilt-empty">No journal lines in the past month.</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = recent.map(row => `
+      <tr>
+        <td>${escapeHtmlText(XeroTables.formatDate(row.date))}</td>
+        <td>${escapeHtmlText(`${row.accountCode || ""} ${row.accountName || ""}`.trim() || "General")}</td>
+        <td>${escapeHtmlText(row.description || "--")}</td>
+        <td>${escapeHtmlText(XeroTables.formatCurrency(Math.abs(Number(row.net || 0)), APP_CURRENCY))}</td>
+      </tr>
+    `).join("");
+  } catch (_) {
+    body.innerHTML = `<tr><td colspan="4" class="rebuilt-empty">Unable to load recent transactions.</td></tr>`;
+  }
+}
+
 function renderOverview(data) {
   const kpis = data?.kpis || {};
   setAppCurrency(data?.meta?.currency);
-  populateDateSelect(data);
   populateFySelect(data);
-
-  const currentDataMonth = data?.meta?.as_of_month || (data?.meta?.today ? data.meta.today.slice(0, 7) : "");
-  const fyLabel = document.getElementById("overviewFyLabel");
-  if (fyLabel && data?.meta?.fy_end) {
-    const fyEndYear = Number(String(data.meta.fy_end).slice(0, 4));
-    fyLabel.textContent = Number.isFinite(fyEndYear) ? `FY ${fyEndYear - 1}-${fyEndYear}` : "--";
-  }
-  const dataMonthEl = document.getElementById("overviewDataMonth");
-  if (dataMonthEl) {
-    dataMonthEl.textContent = formatMonthLabel(currentDataMonth);
-  }
-  const projectionStatusEl = document.getElementById("overviewProjectionStatus");
-  if (projectionStatusEl) {
-    if (kpis.future_profit === null || kpis.future_profit === undefined) {
-      projectionStatusEl.textContent = "Unavailable";
-    } else if ((kpis.warnings || []).some(msg => String(msg).toLowerCase().includes("filled"))) {
-      projectionStatusEl.textContent = "Partial";
-    } else {
-      projectionStatusEl.textContent = "Ready";
-    }
-  }
-
-  setKpiValue(
-    document.getElementById("kpiProfitNow"),
-    document.getElementById("kpiProfitNowMeta"),
-    kpis.profit_now,
-    { isCurrency: true, colorize: true, warning: true }
-  );
-  setKpiValue(
-    document.getElementById("kpiFutureProfit"),
-    document.getElementById("kpiFutureProfitMeta"),
-    kpis.future_profit,
-    { isCurrency: true, colorize: true, warning: true }
-  );
-  setKpiValue(
-    document.getElementById("kpiRunway"),
-    document.getElementById("kpiRunwayMeta"),
-    kpis.runway_months,
-    { isCurrency: false, suffix: " months", warning: true }
-  );
-  const runwayMeta = document.getElementById("kpiRunwayMeta");
-  if (runwayMeta) runwayMeta.innerText = "";
-  setKpiValue(
-    document.getElementById("kpiCurLiabOverview"),
-    document.getElementById("kpiCurLiabOverviewMeta"),
-    kpis.current_liabilities,
-    { isCurrency: true, warning: true }
-  );
-  const cashBalanceDisplay = document.getElementById("kpiCashBalance");
-  const cashInput = document.getElementById("cashBalanceInput");
-  if (cashBalanceDisplay) {
-    const cashVal = cashInput && cashInput.value !== "" ? Number(cashInput.value) : NaN;
-    cashBalanceDisplay.innerText = Number.isFinite(cashVal) ? fmtUSD(cashVal) : "--";
-  }
-  setKpiValue(
-    document.getElementById("kpiSalesMonth"),
-    document.getElementById("kpiSalesMonthMeta"),
-    kpis.sales_this_month,
-    { isCurrency: true, warning: true }
-  );
-  setKpiValue(
-    document.getElementById("kpiSpendMonth"),
-    document.getElementById("kpiSpendMonthMeta"),
-    kpis.spending_this_month,
-    { isCurrency: true, warning: true }
-  );
-  const salesMeta = document.getElementById("kpiSalesMonthMeta");
-  const spendMeta = document.getElementById("kpiSpendMonthMeta");
-  const liabMeta = document.getElementById("kpiCurLiabOverviewMeta");
-  if (salesMeta) salesMeta.innerText = "";
-  if (spendMeta) spendMeta.innerText = "";
-  if (liabMeta) liabMeta.innerText = "";
-
-  applyRunwayVisuals(Number(kpis.runway_months));
-  const runwaySummary = document.getElementById("runwayBurnSummary");
-  if (runwaySummary) {
-    const burnInput = document.getElementById("burnMonthsInput");
-    const cashVal = cashInput && cashInput.value !== "" ? Number(cashInput.value) : null;
-    const burnMonths = burnInput ? Number(burnInput.value || 3) : 3;
-    const burnVal = Number(kpis.monthly_burn || 0);
-    if (!Number.isFinite(Number(kpis.runway_months))) {
-      const runwayEl = document.getElementById("kpiRunway");
-      if (runwayEl) runwayEl.innerText = "Enter cash on hand";
-      runwaySummary.textContent = cashVal === null
-        ? "Enter a cash balance to calculate runway for the selected financial year."
-        : "Runway is unavailable until there is enough bank movement history in the selected financial year.";
-    } else {
-      const cashText = Number.isFinite(cashVal) ? fmtUSD(cashVal) : "entered cash";
-      const burnText = Number.isFinite(burnVal) && burnVal > 0 ? fmtUSD(burnVal) : "unknown burn";
-      runwaySummary.textContent = `Based on ${cashText} cash and ${burnMonths}-month avg bank burn (${burnText}/month).`;
-    }
-  }
   const deltas = computeProfitDeltas(data);
-  setDelta(document.getElementById("kpiProfitNowDelta"), deltas.profitNowDelta);
-  setDelta(document.getElementById("kpiFutureProfitDelta"), deltas.futureDelta);
-  const futureMeta = document.getElementById("kpiFutureProfitMeta");
-  if (futureMeta) {
-    futureMeta.innerText = (kpis.future_profit === null || kpis.future_profit === undefined)
-      ? "Budget required for FY projection"
-      : "Projected to FY end";
-  }
-  const futureRisk = document.getElementById("futureProfitRiskBadge");
-  if (futureRisk) {
-    futureRisk.style.display = Number(kpis.future_profit || 0) < 0 ? "inline-block" : "none";
+  const yearProfitKpi = computeYearProfitKpi(data);
+  const companyName = selectedCompanyName();
+  const greeting = document.getElementById("dashboardGreeting");
+  if (greeting) greeting.textContent = `Hi, ${companyName}`;
+
+  const fyEndYear = data?.meta?.fy_end ? Number(String(data.meta.fy_end).slice(0, 4)) : null;
+  const profitLabel = document.getElementById("dashboardProfitLabel");
+  if (profitLabel) {
+    profitLabel.textContent = Number.isFinite(fyEndYear) ? `Profit ${fyEndYear - 1}-${fyEndYear}` : "Profit";
   }
 
-  renderOverviewCharts(data);
+  const profitValue = document.getElementById("dashboardProfitValue");
+  if (profitValue) {
+    profitValue.classList.remove("positive", "negative");
+    profitValue.textContent = Number.isFinite(yearProfitKpi.yearProfit) ? fmtUSD(yearProfitKpi.yearProfit) : "--";
+    if (Number.isFinite(yearProfitKpi.yearProfit)) {
+      profitValue.classList.add(yearProfitKpi.yearProfit < 0 ? "negative" : "positive");
+    }
+  }
+
+  const profitTrend = document.getElementById("dashboardProfitTrend");
+  if (profitTrend) {
+    profitTrend.classList.remove("up", "down", "flat");
+    if (Number.isFinite(yearProfitKpi.changePct)) {
+      const direction = yearProfitKpi.changePct > 0 ? "up" : (yearProfitKpi.changePct < 0 ? "down" : "flat");
+      const arrow = yearProfitKpi.changePct > 0 ? "▲" : (yearProfitKpi.changePct < 0 ? "▼" : "•");
+      profitTrend.textContent = `${arrow} ${Math.round(Math.abs(yearProfitKpi.changePct))}% vs PY`;
+      profitTrend.classList.add(direction);
+      profitTrend.textContent = `${direction === "up" ? "+" : (direction === "down" ? "-" : "=")} ${Math.round(Math.abs(yearProfitKpi.changePct))}% vs PY`;
+    } else {
+      profitTrend.textContent = "--";
+      profitTrend.classList.add("flat");
+    }
+  }
+
+  const profitSparkline = document.getElementById("dashboardProfitSparkline");
+  if (profitSparkline) {
+    const profitSeries = data?.charts?.profit_fy?.actual_monthly_profit || [];
+    const cumulativeProfitSeries = cumulativeSeries(profitSeries);
+    profitSparkline.innerHTML = buildSparklineMarkup(cumulativeProfitSeries);
+  }
+
+  const balanceValue = document.getElementById("dashboardBalanceValue");
+  if (balanceValue) {
+    const balance = Number(kpis.cash_balance_proxy);
+    balanceValue.classList.remove("positive", "negative");
+    balanceValue.textContent = Number.isFinite(balance) ? fmtUSD(balance) : "--";
+    if (Number.isFinite(balance)) {
+      balanceValue.classList.add(balance < 0 ? "negative" : "positive");
+    }
+  }
+
+  const balanceTrend = document.getElementById("dashboardBalanceTrend");
+  if (balanceTrend) balanceTrend.textContent = Number.isFinite(deltas.profitNowDelta) ? formatDelta(deltas.profitNowDelta) : "--";
+
+  const runwayValue = document.getElementById("dashboardRunwayValue");
+  if (runwayValue) {
+    const runwayMonths = Number(kpis.runway_months);
+    runwayValue.classList.remove("positive", "negative");
+    runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths)} Months` : "--";
+    if (Number.isFinite(runwayMonths)) {
+      runwayValue.classList.add(runwayMonths <= 3 ? "negative" : "positive");
+    }
+  }
+
+  const burnNote = document.getElementById("dashboardBurnNote");
+  if (burnNote) {
+    const burn = Number(kpis.monthly_burn || 0);
+    burnNote.textContent = Number.isFinite(burn) && burn > 0 ? `At ${fmtUSD(burn)} per month` : "--";
+  }
+
+  const cashflow = data?.charts?.cashflow;
+  if (cashflow?.labels?.length) {
+    XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
+      labels: cashflow.labels,
+      datasets: [
+        {
+          label: "Cash In",
+          data: cashflow.cashIn || [],
+          backgroundColor: "rgba(59, 130, 246, 0.82)",
+          borderRadius: 6
+        },
+        {
+          label: "Cash Out",
+          data: (cashflow.cashOut || []).map(v => Number(v || 0) * -1),
+          backgroundColor: "rgba(236, 72, 153, 0.78)",
+          borderRadius: 6
+        }
+      ]
+    }, {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true }
+      }
+    });
+  }
+
+  const sales = data?.charts?.sales_fy;
+  const expenses = data?.charts?.expenses_fy;
+  if (sales?.labels?.length && expenses?.labels?.length) {
+    XeroCharts.renderChart("dashboardRevenueExpenses", "dashboardRevenueExpensesChart", "line", {
+      labels: sales.labels,
+      datasets: [
+        {
+          label: "Revenue",
+          data: sales.actual_monthly || [],
+          borderColor: "#3b82f6",
+          backgroundColor: "rgba(59, 130, 246, 0.18)",
+          borderWidth: 3,
+          pointRadius: 0,
+          tension: 0.35
+        },
+        {
+          label: "Expenses",
+          data: expenses.actual_monthly || [],
+          borderColor: "#ec4899",
+          backgroundColor: "rgba(236, 72, 153, 0.18)",
+          borderWidth: 3,
+          pointRadius: 0,
+          tension: 0.35
+        }
+      ]
+    }, {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true }
+      }
+    });
+  }
+
+  renderDashboardRecentTransactions();
 }
 // ---------- Liability due-date estimation (journal-only) ----------
 // Edit these defaults to match your reality:
@@ -635,18 +779,26 @@ function computeLiabilityDueEstimates(lines) {
 
 // ---------- Liability due estimates ----------
 function renderLiabilitySummary(rows) {
+  const kpiCurLiab = document.getElementById("kpiCurLiab");
+  const kpiTaxLiab = document.getElementById("kpiTaxLiab");
+  const kpiOtherLiab = document.getElementById("kpiOtherLiab");
+  const th = document.getElementById("liabHeader");
+  const tb = document.getElementById("liabBody");
+  if (!kpiCurLiab || !kpiTaxLiab || !kpiOtherLiab || !th || !tb) {
+    renderEmptyView("liabilitiesContainer", "Upcoming Risks", "This screen has been cleared and is ready to rebuild.");
+    return;
+  }
+
   const totalCur = rows.reduce((a, r) => a + Number(r.outstanding || 0), 0);
   const dueSoon = rows
     .filter(r => r.status === "Due soon" || r.status === "Overdue")
     .reduce((a, r) => a + Number(r.outstanding || 0), 0);
   const other = Math.max(0, totalCur - dueSoon);
 
-  document.getElementById("kpiCurLiab").innerText = fmtUSD(totalCur);
-  document.getElementById("kpiTaxLiab").innerText = fmtUSD(dueSoon);
-  document.getElementById("kpiOtherLiab").innerText = fmtUSD(other);
+  kpiCurLiab.innerText = fmtUSD(totalCur);
+  kpiTaxLiab.innerText = fmtUSD(dueSoon);
+  kpiOtherLiab.innerText = fmtUSD(other);
 
-  const th = document.getElementById("liabHeader");
-  const tb = document.getElementById("liabBody");
   th.innerHTML = `
     <tr>
       <th>Account</th>
@@ -678,9 +830,14 @@ function renderLiabilitySummary(rows) {
 
 async function showLiabilities() {
   hideAllViews();
-  setLoading("Building liabilities view...");
+  setLoading("Building risk insights...");
 
   try {
+    renderEmptyView("liabilitiesContainer", "Upcoming Risks", "This screen is not rebuilt yet.");
+    stopLoading();
+    document.getElementById("liabilitiesContainer").style.display = "block";
+    return;
+
     const fySelect = document.getElementById("liabFySelect");
     const todayOverride = fySelect ? fyEndDateFromYear(fySelect.value) : null;
     const qs = todayOverride ? `?today=${encodeURIComponent(todayOverride)}` : "";
@@ -981,7 +1138,12 @@ function renderBudgetRows(rows) {
 }
 
 async function loadBudgetRows() {
-  setLoading("Loading budget...");
+  if (!document.getElementById("budgetBody")) {
+    renderEmptyView("budgetContainer", "Budget Input", "This screen is not rebuilt yet.");
+    stopLoading();
+    return null;
+  }
+  setLoading("Loading budget workspace...");
   try {
     const data = await XeroAPI.fetch_json("/api/budget");
     setRawData(data);
@@ -1001,7 +1163,7 @@ async function loadBudgetRows() {
 
 async function saveBudgetRows() {
   const rows = collectBudgetRowsFromTable();
-  setLoading("Saving budget...");
+  setLoading("Saving budget changes...");
   try {
     const data = await XeroAPI.request_json("/api/budget", {
       method: "POST",
@@ -1038,6 +1200,10 @@ function removeBudgetRow(idx) {
 async function showBudgetInput() {
   hideAllViews();
   document.getElementById("budgetContainer").style.display = "block";
+  if (!document.getElementById("budgetBody")) {
+    renderEmptyView("budgetContainer", "Budget Input", "This screen is not rebuilt yet.");
+    return;
+  }
   await loadBudgetRows();
 }
 
@@ -1125,14 +1291,23 @@ function buildDashboardModel(lines) {
 
 // ---------- Render dashboard ----------
 function renderDashboard(model) {
-  document.getElementById("kpiCash").innerText = fmtUSD(model.kpis.cash_balance_proxy);
-  document.getElementById("kpiRevenue").innerText = fmtUSD(model.kpis.monthly_revenue);
-  document.getElementById("kpiExpenses").innerText = fmtUSD(model.kpis.monthly_expenses);
-  document.getElementById("kpiProfit").innerText = fmtUSD(model.kpis.monthly_profit);
+  const kpiCash = document.getElementById("kpiCash");
+  const kpiRevenue = document.getElementById("kpiRevenue");
+  const kpiExpenses = document.getElementById("kpiExpenses");
+  const kpiProfit = document.getElementById("kpiProfit");
+  const kpiAR = document.getElementById("kpiAR");
+  const kpiAP = document.getElementById("kpiAP");
+  const out = document.getElementById("bigOutflows");
+  if (!kpiCash || !kpiRevenue || !kpiExpenses || !kpiProfit || !kpiAR || !kpiAP || !out) return;
+
+  kpiCash.innerText = fmtUSD(model.kpis.cash_balance_proxy);
+  kpiRevenue.innerText = fmtUSD(model.kpis.monthly_revenue);
+  kpiExpenses.innerText = fmtUSD(model.kpis.monthly_expenses);
+  kpiProfit.innerText = fmtUSD(model.kpis.monthly_profit);
 
   // journal-only placeholders
-  document.getElementById("kpiAR").innerText = "--";
-  document.getElementById("kpiAP").innerText = "--";
+  kpiAR.innerText = "--";
+  kpiAP.innerText = "--";
 
   XeroCharts.renderChart("plTrend", "plTrendChart", "line", {
     labels: model.charts.plTrend.labels,
@@ -1155,7 +1330,6 @@ function renderDashboard(model) {
     ]
   }, { scales: { y: { beginAtZero: true } } });
 
-  const out = document.getElementById("bigOutflows");
   out.innerHTML = model.topOutflows.length
     ? model.topOutflows.map(([k,v]) =>
         `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #eee;">
@@ -1413,7 +1587,7 @@ window.changeTransactionPageSize = changeTransactionPageSize;
 // ---------- Navigation ----------
 async function showDashboard() {
   hideAllViews();
-  setLoading("Loading overview...");
+  setLoading("Preparing dashboard...");
 
   try {
     const data = await fetchOverview();
@@ -1447,8 +1621,15 @@ async function fetchOverview(todayStr, fyStartMonth = 7, cashBalance = null, bur
 
 async function showTransactions() {
   hideAllViews();
-  setLoading("Loading journal lines...");
+  setLoading("Loading transactions...");
   try {
+    if (!document.getElementById("tableHeader") || !document.getElementById("tableBody")) {
+      renderEmptyView("transactionsContainer", "Transactions", "This screen is not rebuilt yet.");
+      stopLoading();
+      document.getElementById("transactionsContainer").style.display = "block";
+      return;
+    }
+
     const journals = await getJournals();
     JOURNAL_LINES = flattenJournalLines(journals);
     populateTransactionTypeFilter(JOURNAL_LINES);

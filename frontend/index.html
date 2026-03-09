@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Business Pulse</title>
+  <title>FloXer - Dashboard for Xero</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
@@ -34,13 +34,13 @@
     body {
       font-family: "Source Sans 3", sans-serif;
       color: var(--ink);
-      max-width: 1320px;
-      margin: 22px auto 28px;
-      padding: 26px;
-      background:
-        radial-gradient(1200px 420px at 12% -10%, #deefe9 0%, transparent 62%),
-        radial-gradient(1050px 400px at 92% 0%, #ffeedd 0%, transparent 66%),
-        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+      display: grid;
+      grid-template-columns: 228px minmax(0, 1fr);
+      gap: 28px;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background: #FAFAFD;
     }
 
     h1, h2, h3 {
@@ -49,44 +49,135 @@
     }
 
     .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 24px;
-      padding: 16px 18px;
-      background: var(--panel);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-soft);
-      border: 1px solid var(--line);
-      flex-wrap: wrap;
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 228px;
+      min-width: 228px;
+      max-width: 228px;
+      display: grid;
+      grid-template-rows: min-content 1fr;
+      gap: 20px;
+      padding: 20px 14px;
+      background: linear-gradient(180deg, #02045f 0%, #01024a 100%);
+      border-radius: 0;
+      box-shadow: 0 18px 36px rgba(1, 2, 74, 0.22);
+      border: 1px solid rgba(157, 173, 255, 0.18);
+      height: 100vh;
+      min-height: 100vh;
+      overflow: hidden;
       animation: rise 400ms ease-out both;
     }
 
-    .header h1 {
-      margin: 0;
-      font-size: 30px;
-      font-weight: 700;
+    .nav-links {
+      display: grid;
+      gap: 6px;
+      align-items: stretch;
+    }
+    .header-utilities {
+      display: grid;
+      gap: 8px;
+      align-items: stretch;
+      padding-top: 14px;
+      border-top: 1px solid rgba(122, 143, 255, 0.28);
+      align-self: end;
+    }
+
+    .header > div:first-child {
+      display: grid;
+      gap: 10px;
+      width: 100%;
+      align-self: start;
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(122, 143, 255, 0.28);
     }
 
     .header .actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
+      display: grid;
+      grid-template-rows: min-content 1fr;
+      gap: 20px;
+      min-height: 100%;
+      align-content: stretch;
     }
-    .nav-links {
+
+    .sidebar-brand {
       display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
       align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-width: 0;
     }
-    .header-utilities {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
+    .brand-mark {
+      width: 100%;
+      height: auto;
+      min-width: 0;
+      max-width: 100%;
+      min-height: 0;
+      max-height: 72px;
+      object-fit: contain;
+      filter: drop-shadow(0 8px 18px rgba(70, 220, 255, 0.18));
+    }
+
+    .header .nav-links button,
+    .header .header-utilities button,
+    .header .mini-link {
+      width: 100%;
+      justify-content: flex-start;
+      border-radius: 4px;
+      padding: 11px 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      box-shadow: none;
+      color: #f7f9ff;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: left;
+      line-height: 1.2;
+      min-height: 40px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .header .nav-links button:hover,
+    .header .header-utilities button:hover,
+    .header .mini-link:hover {
+      transform: none;
+      box-shadow: none;
+      background: rgba(82, 162, 255, 0.16);
+      border-color: rgba(82, 162, 255, 0.22);
+    }
+    .header .nav-links button:first-child {
+      background: #4ea8f7;
+      color: #ffffff;
+    }
+    .header .header-utilities > * {
+      width: 100%;
+      flex-shrink: 0;
+    }
+    .sidebar-item-label {
+      display: inline-flex;
       align-items: center;
-      margin-left: auto;
+      gap: 10px;
+      min-width: 0;
+    }
+    .sidebar-item-icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      display: inline-block;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.96;
+    }
+    .sidebar-item-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     button {
@@ -154,35 +245,43 @@
       border-color: rgba(234, 88, 12, 0.18);
     }
     .status-pill.disconnected::before { background: #ea580c; }
-    details.more-menu {
-      position: relative;
+    #orgSelect,
+    #xeroConnectionPill {
+      display: none;
     }
+    details.more-menu { position: relative; width: 100%; }
     details.more-menu summary {
       list-style: none;
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      border-radius: 999px;
-      background: #fff;
-      border: 1px solid var(--line);
+      justify-content: flex-start;
+      width: 100%;
+      min-height: 40px;
+      border-radius: 4px;
+      background: transparent;
+      border: 1px solid transparent;
       cursor: pointer;
-      box-shadow: var(--shadow-soft);
-      font-size: 20px;
-      color: #334155;
+      box-shadow: none;
+      font-size: 13px;
+      font-weight: 700;
+      color: #f7f9ff;
+      padding: 11px 12px;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     details.more-menu summary::-webkit-details-marker { display: none; }
     .more-panel {
       position: absolute;
+      left: 0;
       right: 0;
       top: auto;
       bottom: calc(100% + 8px);
-      min-width: 180px;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      box-shadow: var(--shadow-soft);
+      background: #08126f;
+      border: 1px solid rgba(122, 143, 255, 0.28);
+      border-radius: 6px;
+      box-shadow: 0 12px 24px rgba(1, 2, 74, 0.24);
       padding: 8px;
       display: flex;
       flex-direction: column;
@@ -194,18 +293,53 @@
       text-align: left;
       justify-content: flex-start;
       box-shadow: none;
-      background: #fff;
-      color: var(--ink);
+      background: transparent;
+      color: #f7f9ff;
       border: 1px solid transparent;
       padding: 9px 10px;
     }
     .more-panel button:hover {
       transform: none;
       box-shadow: none;
-      background: #f8fafc;
+      background: rgba(82, 162, 255, 0.16);
     }
 
-    .loading { text-align: center; padding: 20px; color: var(--ink-2); }
+    .loading {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(2, 6, 23, 0.35);
+      backdrop-filter: blur(2px);
+      z-index: 1150;
+      color: #334155;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .loading::before {
+      content: "";
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      border: 3px solid rgba(59, 130, 246, 0.24);
+      border-top-color: #3b82f6;
+      animation: spin 700ms linear infinite;
+      margin-right: 10px;
+    }
+    .loading::after {
+      content: "";
+      position: absolute;
+      width: min(360px, calc(100vw - 40px));
+      height: 64px;
+      border-radius: 12px;
+      background: #ffffff;
+      border: 1px solid #dbe2ea;
+      box-shadow: 0 16px 34px rgba(15, 23, 42, 0.24);
+      z-index: -1;
+    }
     .error {
       color: #7f1d1d;
       padding: 12px 14px;
@@ -213,6 +347,274 @@
       border-radius: var(--radius-sm);
       display: none;
       box-shadow: var(--shadow-soft);
+    }
+    .xero-connect-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 1200;
+      background: rgba(13, 27, 75, 0.36);
+      backdrop-filter: blur(2px);
+    }
+    .xero-connect-modal.is-open {
+      display: flex;
+    }
+    .xero-connect-card {
+      width: min(480px, 100%);
+      background: linear-gradient(180deg, #f8f9fd 0%, #ffffff 100%);
+      border-radius: 10px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+      border: 1px solid #dbe2ea;
+      padding: 22px 22px 20px;
+      display: grid;
+      gap: 10px;
+    }
+    .xero-connect-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 2px;
+    }
+    .xero-connect-brand img {
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+    }
+    .xero-connect-brand-text {
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #1e2a78;
+    }
+    .xero-connect-eyebrow {
+      margin: 0;
+      display: inline-flex;
+      width: fit-content;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .xero-connect-title {
+      margin: 0;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 30px;
+      letter-spacing: -0.03em;
+      color: #0d1b4b;
+    }
+    .xero-connect-text {
+      margin: 0;
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .xero-connect-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+    .xero-connect-actions .xero-connect-secondary,
+    .xero-connect-actions .xero-connect-primary {
+      width: auto;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: background-color 140ms ease, border-color 140ms ease, transform 120ms ease;
+    }
+    .xero-connect-actions .xero-connect-secondary {
+      background: #ffffff;
+      color: #475569;
+      border-color: #dbe2ea;
+      box-shadow: none;
+    }
+    .xero-connect-actions .xero-connect-secondary:hover {
+      background: #f8fafc;
+    }
+    .xero-connect-actions .xero-connect-primary {
+      background: #0d1b4b;
+      color: #ffffff;
+      box-shadow: 0 10px 20px rgba(13, 27, 75, 0.24);
+    }
+    .xero-connect-actions .xero-connect-primary:hover {
+      background: #e91e8c;
+      box-shadow: 0 12px 22px rgba(233, 30, 140, 0.24);
+      transform: translateY(-1px);
+    }
+    .xero-connect-actions .xero-connect-secondary:focus-visible,
+    .xero-connect-actions .xero-connect-primary:focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
+
+    .rebuilt-dashboard {
+      display: grid;
+      gap: 22px;
+      padding: 28px 28px 36px;
+    }
+    .rebuilt-hero-bar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .rebuilt-hero {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .rebuilt-hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex: 0 0 auto;
+    }
+    .rebuilt-fy-select {
+      min-width: 168px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid #dbe2ea;
+      background: #ffffff;
+      color: #111827;
+      font-size: 14px;
+      font-weight: 700;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
+    }
+    .rebuilt-title {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: #111827;
+    }
+    .rebuilt-subtitle {
+      color: #6b7280;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .rebuilt-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .rebuilt-kpi-card,
+    .rebuilt-panel {
+      background: #ffffff;
+      border-radius: 10px;
+      border: none;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+    .rebuilt-kpi-card {
+      padding: 16px 18px;
+      display: grid;
+      gap: 8px;
+      min-height: 104px;
+    }
+    .rebuilt-kpi-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: #6b7280;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .rebuilt-kpi-trend {
+      color: #4f46e5;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .rebuilt-kpi-trend.up { color: #4ea8f7; }
+    .rebuilt-kpi-trend.down { color: #dc2626; }
+    .rebuilt-kpi-trend.flat { color: #6b7280; }
+    .rebuilt-kpi-value {
+      color: #1e2a78;
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 0.95;
+    }
+    .rebuilt-kpi-value.positive {
+      color: #1e2a78;
+    }
+    .rebuilt-kpi-value.negative {
+      color: #ec4899;
+    }
+    .rebuilt-kpi-split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 104px;
+      gap: 10px;
+      align-items: center;
+    }
+    .rebuilt-kpi-body {
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+    }
+    .rebuilt-kpi-sparkline {
+      width: 100%;
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      color: #8b909a;
+    }
+    .rebuilt-kpi-sparkline svg {
+      display: block;
+      width: 100%;
+      height: 34px;
+    }
+    .rebuilt-chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+    .rebuilt-panel {
+      padding: 18px 20px;
+    }
+    .rebuilt-panel-title {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: #111827;
+    }
+    .rebuilt-chart-wrap {
+      height: 240px;
+    }
+    .rebuilt-table-wrap {
+      overflow-x: auto;
+    }
+    .rebuilt-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .rebuilt-table th,
+    .rebuilt-table td {
+      padding: 12px 10px;
+      border-bottom: 1px solid #eef2f7;
+      text-align: left;
+      font-size: 13px;
+    }
+    .rebuilt-table th {
+      color: #6b7280;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .rebuilt-empty {
+      color: #94a3b8;
+      text-align: center;
+      font-weight: 600;
     }
 
     .muted { color: var(--ink-2); font-size: 12px; }
@@ -854,6 +1256,18 @@
     #fySelect { min-width: 140px; }
     #overviewDateSelect { margin-left: 0; min-width: 160px; }
 
+    #loading,
+    #error,
+    #dashboardContainer,
+    #transactionsContainer,
+    #liabilitiesContainer,
+    #budgetContainer,
+    #rawOutput {
+      grid-column: 2;
+      min-width: 0;
+      margin-right: 28px;
+    }
+
     #dashboardContainer, #transactionsContainer, #liabilitiesContainer, #budgetContainer {
       animation: fadeUp 420ms ease both;
     }
@@ -866,27 +1280,55 @@
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
 
     @media (max-width: 980px) {
       .overview-context-strip,
       .overview-top-grid,
       .performance-grid,
       .month-snapshot-grid,
-      .liquidity-grid {
+      .liquidity-grid,
+      .rebuilt-hero-bar,
+      .rebuilt-kpi-grid,
+      .rebuilt-chart-grid {
         grid-template-columns: 1fr;
+      }
+      .rebuilt-hero-bar {
+        display: grid;
+      }
+      .rebuilt-hero-actions {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 980px) {
+      body { grid-template-columns: 1fr; }
+      .header {
+        position: static;
+        width: auto;
+        min-width: 0;
+        max-width: none;
+        min-height: auto;
+      }
+      #loading,
+      #error,
+      #dashboardContainer,
+      #transactionsContainer,
+      #liabilitiesContainer,
+      #budgetContainer,
+      #rawOutput {
+        grid-column: 1;
+        margin-right: 0;
       }
     }
 
     @media (max-width: 900px) {
-      body { margin: 10px; padding: 16px; }
-      .header { flex-direction: column; align-items: flex-start; }
-      .header .actions { width: 100%; flex-direction: column; align-items: stretch; }
+      body { padding: 0; }
       .nav-links, .header-utilities { width: 100%; }
-      .header-utilities { margin-left: 0; }
       button { width: 100%; }
       .mini-link, .status-pill { width: 100%; justify-content: center; }
-      details.more-menu { width: 100%; }
-      details.more-menu summary { width: 100%; border-radius: 14px; }
       .more-panel { position: static; margin-top: 8px; }
       .toolbar { flex-direction: column; align-items: stretch; }
       .overview-context-strip { grid-template-columns: 1fr; }
@@ -937,26 +1379,26 @@
 <body>
   <div class="header">
     <div>
-      <h1>Business Pulse</h1>
-      <div class="muted">Profit, runway, and next-step clarity in seconds.</div>
+      <div class="sidebar-brand">
+        <img src="/img/floxer-logo.png" alt="Floxer" class="brand-mark">
+      </div>
     </div>
-    <div class="actions">
-      <div class="nav-links">
-        <button onclick="showDashboard()">Overview</button>
-        <button onclick="showTransactions()">Journal Lines</button>
-        <button onclick="showLiabilities()">Upcoming Risks</button>
-        <button onclick="showBudgetInput()">Budget Input</button>
+      <div class="actions">
+        <div class="nav-links">
+        <button onclick="showDashboard()"><span class="sidebar-item-label"><svg viewBox="0 0 24 24" class="sidebar-item-icon" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"></path><path d="M6 9.5V20h12V9.5"></path></svg><span class="sidebar-item-text">Home</span></span></button>
+        <button onclick="showTransactions()"><span class="sidebar-item-label"><svg viewBox="0 0 24 24" class="sidebar-item-icon" aria-hidden="true"><path d="M7 7h10"></path><path d="M7 12h10"></path><path d="M7 17h7"></path><circle cx="5" cy="7" r="1"></circle><circle cx="5" cy="12" r="1"></circle><circle cx="5" cy="17" r="1"></circle></svg><span class="sidebar-item-text">Transactions</span></span></button>
+        <button onclick="showBudgetInput()"><span class="sidebar-item-label"><svg viewBox="0 0 24 24" class="sidebar-item-icon" aria-hidden="true"><path d="M4 20h16"></path><path d="M14 4l6 6"></path><path d="M6 18l3.5-.7L20 6.8 17.2 4 6.7 14.5 6 18z"></path></svg><span class="sidebar-item-text">Budget Input</span></span></button>
       </div>
       <div class="header-utilities">
         <select id="orgSelect" title="Organization" class="input-pill">
           <option value="">Organization</option>
         </select>
         <div id="xeroConnectionPill" class="status-pill disconnected">Xero: Not connected</div>
-        <a id="xeroConnectLink" href="/auth/start" class="mini-link">Connect</a>
+        <a id="xeroConnectLink" href="/auth/start" class="mini-link"><span class="sidebar-item-label"><svg viewBox="0 0 24 24" class="sidebar-item-icon" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 7.3 7 10 4-2.7 7-5.5 7-10V6l-7-3z"></path><path d="m9.5 11.8 1.8 1.8 3.7-3.9"></path></svg><span class="sidebar-item-text">Authorize</span></span></a>
+        <button onclick="logoutSession()" class="btn-muted"><span class="sidebar-item-label"><svg viewBox="0 0 24 24" class="sidebar-item-icon" aria-hidden="true"><path d="M10 17v2a2 2 0 0 0 2 2h7V3h-7a2 2 0 0 0-2 2v2"></path><path d="M15 12H3"></path><path d="m7 8-4 4 4 4"></path></svg><span class="sidebar-item-text">Logout</span></span></button>
         <details class="more-menu">
-          <summary aria-label="More">&#8226;&#8226;&#8226;</summary>
+          <summary aria-label="More"><span class="sidebar-item-label"><svg viewBox="0 0 24 24" class="sidebar-item-icon" aria-hidden="true"><circle cx="5" cy="12" r="1.5"></circle><circle cx="12" cy="12" r="1.5"></circle><circle cx="19" cy="12" r="1.5"></circle></svg><span class="sidebar-item-text">More Actions</span></span></summary>
           <div class="more-panel">
-            <button onclick="logoutSession()" class="btn-muted">Logout</button>
             <button onclick="checkHealth()" class="btn-muted">Status</button>
             <button onclick="showRawJson()" id="rawJsonBtn" class="btn-warm">Show Raw JSON</button>
           </div>
@@ -965,205 +1407,115 @@
     </div>
   </div>
 
-  <div id="loading" class="loading" style="display:none;">Loading…</div>
+  <div id="loading" class="loading" style="display:none;">Preparing dashboard...</div>
   <div id="error" class="error"></div>
+  <div id="xeroConnectModal" class="xero-connect-modal" aria-hidden="true">
+    <section class="xero-connect-card" role="dialog" aria-modal="true" aria-labelledby="xeroConnectTitle">
+      <div class="xero-connect-brand">
+        <img src="/img/floxer-logo.png" alt="Floxer">
+        <span class="xero-connect-brand-text">FLOXER</span>
+      </div>
+      <p class="xero-connect-eyebrow">Xero connection</p>
+      <h2 id="xeroConnectTitle" class="xero-connect-title">Connect Xero</h2>
+      <p class="xero-connect-text">
+        Authorize your Xero organization to load dashboard data. This uses the same authorization flow as the sidebar Authorize action.
+      </p>
+      <div class="xero-connect-actions">
+        <button type="button" class="xero-connect-secondary" onclick="hideXeroConnectModal()">Not now</button>
+        <button type="button" class="xero-connect-primary" onclick="authorize()">Authorize</button>
+      </div>
+    </section>
+  </div>
 
   <!-- DASHBOARD -->
   <div id="dashboardContainer" style="display:none;">
-    <div class="overview-context-strip">
-      <div class="context-chip">
-        <span class="context-label">Financial year</span>
-        <span id="overviewFyLabel" class="context-value">--</span>
-      </div>
-      <div class="context-chip">
-        <span class="context-label">Actuals through</span>
-        <span id="overviewDataMonth" class="context-value">--</span>
-      </div>
-      <div class="context-chip">
-        <span class="context-label">Projection status</span>
-        <span id="overviewProjectionStatus" class="context-value">--</span>
-      </div>
-    </div>
-
-    <div class="financial-block">
-      <div class="financial-title">
-        <h2 style="margin:0;">Financial Performance</h2>
-      </div>
-      <div class="financial-sub">Performance first, liquidity second, and month detail as supporting context.</div>
-      <div class="toolbar">
-        <select id="fySelect" class="input-pill">
-          <option value="2024">FY 2023-2024</option>
-          <option value="2025">FY 2024-2025</option>
-        </select>
-        <select id="overviewDateSelect" class="input-pill"></select>
-        <div class="segmented">
-          <button id="salesModeMonthly" class="active">Monthly</button>
-          <button id="salesModeCumulative">Cumulative</button>
+    <section class="rebuilt-dashboard">
+      <div class="rebuilt-hero-bar">
+        <div class="rebuilt-hero">
+          <h1 id="dashboardGreeting" class="rebuilt-title">Hi Company</h1>
+          <div class="rebuilt-subtitle">Review your cash position in Xero</div>
+        </div>
+        <div class="rebuilt-hero-actions">
+          <select id="fySelect" class="rebuilt-fy-select" aria-label="Fiscal year">
+            <option value="">Fiscal Year</option>
+          </select>
         </div>
       </div>
-    </div>
 
-    <div class="overview-top-grid">
-      <section class="overview-group">
-        <div class="section-kicker">Performance</div>
-        <div class="group-grid performance-grid">
-          <div class="card hero-card" style="border-left-color:#10b981;">
-            <div class="muted">Projected year-end profit</div>
-            <div id="kpiFutureProfit" class="big">&mdash;</div>
-            <div id="kpiFutureProfitMeta" class="muted">Projected to FY end</div>
-            <div id="kpiFutureProfitDelta" class="kpi-delta">--</div>
-            <div id="futureProfitRiskBadge" style="display:none;" class="risk-badge">Projected Loss</div>
+      <div class="rebuilt-kpi-grid">
+        <div class="rebuilt-kpi-card">
+          <div class="rebuilt-kpi-head">
+            <span id="dashboardProfitLabel">Profit</span>
+            <span id="dashboardProfitTrend" class="rebuilt-kpi-trend">--</span>
           </div>
-          <div class="card secondary-card" style="border-left-color:#10b981;">
-            <div class="muted">Profit so far this year</div>
-            <div id="kpiProfitNow" class="big">&mdash;</div>
-            <div id="kpiProfitNowMeta" class="muted">FY to date</div>
-            <div id="kpiProfitNowDelta" class="kpi-delta">--</div>
+          <div class="rebuilt-kpi-split">
+            <div id="dashboardProfitValue" class="rebuilt-kpi-value">--</div>
+            <div id="dashboardProfitSparkline" class="rebuilt-kpi-sparkline" aria-hidden="true"></div>
           </div>
         </div>
-        <div class="group-grid month-snapshot-grid">
-          <div class="card compact-card" style="border-left-color:#10b981;">
-            <div class="muted">Sales in selected month</div>
-            <div id="kpiSalesMonth" class="big">&mdash;</div>
-            <div id="kpiSalesMonthMeta" class="muted"></div>
+        <div class="rebuilt-kpi-card">
+          <div class="rebuilt-kpi-head">
+            <span>Current Balance</span>
+            <span id="dashboardBalanceTrend" class="rebuilt-kpi-trend">--</span>
           </div>
-          <div class="card compact-card" style="border-left-color:#ef4444;">
-            <div class="muted">Spending in selected month</div>
-            <div id="kpiSpendMonth" class="big">&mdash;</div>
-            <div id="kpiSpendMonthMeta" class="muted"></div>
+          <div class="rebuilt-kpi-body">
+            <div id="dashboardBalanceValue" class="rebuilt-kpi-value">--</div>
           </div>
+        </div>
+        <div class="rebuilt-kpi-card">
+          <div class="rebuilt-kpi-head">
+            <span>Out of Cash</span>
+            <span id="dashboardBurnNote" class="rebuilt-kpi-trend">--</span>
+          </div>
+          <div class="rebuilt-kpi-body">
+            <div id="dashboardRunwayValue" class="rebuilt-kpi-value">--</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rebuilt-chart-grid">
+        <section class="rebuilt-panel">
+          <h3 class="rebuilt-panel-title">Cash flow</h3>
+          <div class="rebuilt-chart-wrap">
+            <canvas id="dashboardCashflowChart"></canvas>
+          </div>
+        </section>
+        <section class="rebuilt-panel">
+          <h3 class="rebuilt-panel-title">Revenue &amp; Expenses</h3>
+          <div class="rebuilt-chart-wrap">
+            <canvas id="dashboardRevenueExpensesChart"></canvas>
+          </div>
+        </section>
+      </div>
+
+      <section class="rebuilt-panel">
+        <h3 class="rebuilt-panel-title">Transaction</h3>
+        <div class="rebuilt-table-wrap">
+          <table class="rebuilt-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardRecentTransactionsBody">
+              <tr>
+                <td colspan="4" class="rebuilt-empty">No recent transactions yet.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
-
-      <section class="overview-group">
-        <div class="section-kicker">Liquidity</div>
-        <div class="card runway-card runway-tone-yellow" id="runwayCard">
-          <div class="muted">Cash runway</div>
-          <div id="kpiRunway" class="big">&mdash;</div>
-          <div id="kpiRunwayMeta" class="muted"></div>
-          <div id="runwayRiskBadge" style="display:none;" class="risk-badge">Risk</div>
-          <div class="runway-meter" aria-hidden="true">
-            <div id="runwayMeterFill" class="runway-meter-fill"></div>
-          </div>
-          <div id="runwayBurnSummary" class="runway-summary">Based on cash and trailing bank burn.</div>
-          <details class="kpi-tools">
-            <summary>Adjust assumptions</summary>
-            <div class="tools-row">
-              <label for="cashBalanceInput">Cash balance</label>
-              <input id="cashBalanceInput" type="number" inputmode="decimal" placeholder="Cash balance" class="input-pill" style="width:160px;">
-              <label for="burnMonthsInput">Burn months</label>
-              <select id="burnMonthsInput" class="input-pill" style="width:120px;">
-                <option value="1">1 month</option>
-                <option value="2">2 months</option>
-                <option value="3" selected>3 months</option>
-                <option value="4">4 months</option>
-                <option value="6">6 months</option>
-              </select>
-            </div>
-          </details>
-        </div>
-        <div class="group-grid liquidity-grid">
-          <div class="card compact-card" style="border-left-color:#0f766e;">
-            <div class="muted">Cash on hand</div>
-            <div id="kpiCashBalance" class="big">&mdash;</div>
-          </div>
-          <div class="card compact-card" style="border-left-color:#ef4444;">
-            <div class="muted">Bills and liabilities owed</div>
-            <div id="kpiCurLiabOverview" class="big">&mdash;</div>
-            <div id="kpiCurLiabOverviewMeta" class="muted"></div>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <div class="panel performance-panel" style="margin-top: 48px;">
-      <div class="financial-title" style="margin-bottom: 12px;">
-        <h3 style="margin:0;">Monthly performance across the financial year</h3>
-        <div class="data-month-badge">Sales, expenses, and net profit</div>
-      </div>
-      <div style="height:360px;">
-        <canvas id="overviewPerformanceChart"></canvas>
-      </div>
-    </div>
+    </section>
   </div>
 
   <!-- TRANSACTIONS -->
-  <div id="transactionsContainer" style="display:none;">
-    <h2 style="margin:0 0 10px 0;">Journal Lines</h2>
-
-    <div class="tx-toolbar">
-      <div class="tx-filter-group search-group">
-        <div class="tx-filter-group-title">Search</div>
-        <div class="field">
-          <label for="filterAccount">Account</label>
-          <input id="filterAccount" placeholder="e.g. rent, bank">
-        </div>
-      </div>
-      <div class="tx-filter-group filter-group">
-        <div class="tx-filter-group-title">Filters</div>
-        <div class="field">
-          <label for="filterType">Type</label>
-          <select id="filterType">
-            <option value="">All types</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="filterDirection">Direction</label>
-          <select id="filterDirection">
-            <option value="">All</option>
-            <option value="in">Money in</option>
-            <option value="out">Money out</option>
-          </select>
-        </div>
-      </div>
-      <div class="tx-filter-group date-group">
-        <div class="tx-filter-group-title">Date Range</div>
-        <div class="field">
-          <label for="filterFrom">From</label>
-          <input id="filterFrom" type="date">
-        </div>
-        <div class="field">
-          <label for="filterTo">To</label>
-          <input id="filterTo" type="date">
-        </div>
-      </div>
-      <div class="actions">
-        <button onclick="applyTransactionFilters()">Apply</button>
-        <button onclick="resetTransactionFilters()" class="tx-clear-link" type="button">Clear filters</button>
-      </div>
-    </div>
-    <div id="txActiveFilters" class="tx-active-filters"></div>
-    <div class="tx-pagination">
-      <button id="txPrevBtn" onclick="changeTransactionPage(-1)" class="btn-muted" type="button">Previous</button>
-      <button id="txNextBtn" onclick="changeTransactionPage(1)" class="btn-muted" type="button">Next</button>
-      <select id="txPageSize" class="input-pill" onchange="changeTransactionPageSize(this.value)">
-        <option value="50">50 rows</option>
-        <option value="100" selected>100 rows</option>
-        <option value="250">250 rows</option>
-      </select>
-      <div class="muted" id="txPageInfo"></div>
-      <div class="muted" id="txCount"></div>
-    </div>
-
-    <div id="tableContainer" class="table-container" style="display:block;">
-      <table id="dataTable">
-        <thead id="tableHeader"></thead>
-        <tbody id="tableBody"></tbody>
-      </table>
-    </div>
-    <aside id="txQuickView" class="tx-quickview" aria-hidden="true">
-      <div class="tx-quickview-header">
-        <div>
-          <div class="muted">Quick View</div>
-          <h3 class="tx-quickview-title">Journal line details</h3>
-        </div>
-        <button type="button" class="tx-quickview-close" onclick="closeTransactionQuickView()" aria-label="Close quick view">&times;</button>
-      </div>
-      <div id="txQuickViewBody"></div>
-    </aside>
-  </div>
-    <!-- LIABILITIES -->
-     <div id="liabilitiesContainer" style="display:none;">
+  <div id="transactionsContainer" style="display:none;"></div>
+  <!-- LIABILITIES -->
+  <div id="liabilitiesContainer" style="display:none;"></div>
+  <template id="liabilitiesLegacy">
   <h2 style="margin:0 0 10px 0;">What should I worry about next?</h2>
   <div class="muted" style="margin-bottom:10px;">
     Liability summary based on journal postings (credits create obligations, debits reduce them).
@@ -1204,10 +1556,11 @@
       <tbody id="liabOtherBody"></tbody>
     </table>
   </div>
-</div>
+</template>
   
   <!-- BUDGET INPUT -->
-  <div id="budgetContainer" style="display:none;">
+  <div id="budgetContainer" style="display:none;"></div>
+  <template id="budgetLegacy">
     <div class="budget-shell">
       <div>
         <h2 style="margin:0 0 10px 0;">Budget input</h2>
@@ -1258,7 +1611,7 @@
         </div>
       </div>
     </div>
-  </div>
+  </template>
 
 
   <pre id="rawOutput" style="display:none; background:#f5f5f5; padding:15px; border-radius:6px; overflow-x:auto;"></pre>

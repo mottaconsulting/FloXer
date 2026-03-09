@@ -3,75 +3,158 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Business Pulse - Connect Xero</title>
+  <title>Floxer - Sign In</title>
   <style>
+    @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap");
+
     :root {
-      --bg: #f6f3ec;
-      --card: rgba(255, 255, 255, 0.92);
-      --ink: #18212f;
-      --muted: #5f6b7a;
-      --accent: #0f766e;
-      --accent-ink: #ffffff;
-      --line: rgba(148, 163, 184, 0.24);
-      --shadow: rgba(15, 23, 42, 0.1);
+      --navy: #0d1b4b;
+      --pink: #e91e8c;
+      --blue: #3b82f6;
+      --bg: #f4f6fa;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #dbe2ea;
+      --error: #dc2626;
+      --focus: rgba(59, 130, 246, 0.35);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Inter", sans-serif;
+    }
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 60fr 40fr;
+    }
+    .brand-panel {
+      position: relative;
+      overflow: hidden;
+      background: radial-gradient(circle at 12% 12%, rgba(59, 130, 246, 0.2), transparent 40%), var(--navy);
+      color: #ffffff;
       display: grid;
       place-items: center;
-      background:
-        radial-gradient(circle at 15% 20%, rgba(15, 118, 110, 0.08) 0%, transparent 28%),
-        radial-gradient(circle at 85% 18%, rgba(180, 83, 9, 0.08) 0%, transparent 24%),
-        linear-gradient(135deg, #f8f6f0 0%, var(--bg) 46%, #ece8df 100%);
-      color: var(--ink);
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      padding: 24px;
+      padding: 48px;
     }
-    .card {
+    .brand-inner {
       width: min(560px, 100%);
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      padding: 34px;
-      box-shadow: 0 18px 40px var(--shadow);
-      backdrop-filter: blur(8px);
+      display: grid;
+      gap: 20px;
+      justify-items: center;
+      text-align: center;
+      z-index: 2;
     }
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: rgba(15, 118, 110, 0.08);
-      color: var(--accent);
-      font-size: 12px;
+    .brand-logo {
+      width: min(320px, 68%);
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 12px 22px rgba(2, 8, 23, 0.36));
+    }
+    .tagline {
+      margin: 0;
+      font-family: "DM Sans", sans-serif;
       font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 16px;
+      font-size: clamp(28px, 4vw, 48px);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+      max-width: 13ch;
+    }
+    .form-panel {
+      display: grid;
+      place-items: center;
+      padding: 42px;
+      background: linear-gradient(180deg, #f8f9fd 0%, #ffffff 100%);
+    }
+    .login-card {
+      width: min(430px, 100%);
+      display: grid;
+      gap: 16px;
     }
     h1 {
-      margin: 0 0 10px;
-      font-size: 38px;
-      line-height: 1.05;
-      letter-spacing: -0.02em;
+      margin: 0;
+      font-family: "DM Sans", sans-serif;
+      font-size: 42px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: var(--navy);
     }
-    p {
-      margin: 0 0 24px;
+    .subtitle {
+      margin: 0 0 8px;
       color: var(--muted);
       font-size: 16px;
-      line-height: 1.6;
-    }
-    .callout {
-      margin: 0 0 24px;
-      padding: 14px 16px;
-      border-radius: 16px;
-      background: rgba(15, 23, 42, 0.04);
-      color: var(--ink);
-      font-size: 14px;
+      font-weight: 500;
       line-height: 1.5;
+    }
+    .error {
+      display: none;
+      margin-top: -4px;
+      color: var(--error);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .form {
+      display: grid;
+      gap: 12px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+      position: relative;
+    }
+    .field label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #334155;
+    }
+    .field input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 42px 12px 13px;
+      font-size: 15px;
+      color: var(--ink);
+      background: #ffffff;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+    .field input:focus {
+      outline: none;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 4px var(--focus);
+    }
+    .field.invalid input {
+      border-color: var(--error);
+      box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
+    }
+    .field-error {
+      display: none;
+      margin-top: 2px;
+      color: var(--error);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .field.invalid .field-error {
+      display: block;
+    }
+    .toggle-password {
+      position: absolute;
+      right: 10px;
+      bottom: 9px;
+      border: 0;
+      background: transparent;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      border-radius: 6px;
+      padding: 6px 7px;
+    }
+    .toggle-password:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 1px;
     }
     .btn {
       display: inline-flex;
@@ -79,49 +162,120 @@
       justify-content: center;
       width: 100%;
       border: 0;
-      border-radius: 999px;
+      border-radius: 10px;
       padding: 13px 18px;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 700;
-      background: var(--accent);
-      color: var(--accent-ink);
+      background: var(--navy);
+      color: #ffffff;
       cursor: pointer;
       text-decoration: none;
-      box-shadow: 0 12px 24px rgba(15, 118, 110, 0.18);
-      transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+      box-shadow: 0 12px 24px rgba(13, 27, 75, 0.24);
+      transition: transform 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
     }
     .btn:hover {
-      filter: brightness(0.97);
+      background: var(--pink);
       transform: translateY(-1px);
-      box-shadow: 0 14px 28px rgba(15, 118, 110, 0.22);
+      box-shadow: 0 14px 28px rgba(233, 30, 140, 0.24);
     }
-    .small {
-      margin-top: 16px;
+    .btn:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+    .forgot {
+      margin-top: -2px;
+      text-align: right;
+    }
+    .forgot a,
+    .signup a {
+      color: #64748b;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .forgot a:hover,
+    .signup a:hover {
+      color: var(--blue);
+      text-decoration: underline;
+    }
+    .signup {
+      margin-top: 10px;
       font-size: 13px;
       color: var(--muted);
       text-align: center;
     }
-    @media (max-width: 640px) {
-      .card {
-        padding: 26px;
-        border-radius: 20px;
+    @media (max-width: 980px) {
+      .shell {
+        grid-template-columns: 1fr;
       }
-      h1 {
-        font-size: 32px;
+      .brand-panel {
+        min-height: 42vh;
+        padding: 30px 20px;
+      }
+      .tagline {
+        font-size: clamp(24px, 7vw, 34px);
+      }
+      .form-panel {
+        padding: 28px 20px 34px;
+      }
+      .login-card {
+        width: min(460px, 100%);
       }
     }
   </style>
 </head>
 <body>
-  <main class="card">
-    <div class="eyebrow">Secure sign-in</div>
-    <h1>Business Pulse</h1>
-    <p>Connect your Xero organization to open the dashboard and sync the latest financial data.</p>
-    <div class="callout">
-      You will sign in with Xero first, then return here automatically with your session ready.
-    </div>
-    <a class="btn" href="/auth/start">Connect Xero</a>
-    <div class="small">You will be redirected back automatically after login.</div>
+  <main class="shell">
+    <section class="brand-panel" aria-hidden="true">
+      <div class="brand-inner">
+        <img src="/img/floxer-logo.png" alt="Floxer" class="brand-logo">
+        <p class="tagline">Your cash position, always clear.</p>
+      </div>
+    </section>
+
+    <section class="form-panel">
+      <div class="login-card">
+        <div class="eyebrow">Dashboard sign-in</div>
+        <h1>Welcome back</h1>
+        <p class="subtitle">Sign in to your Floxer account</p>
+        <form class="form" method="post" action="/login" autocomplete="on" novalidate>
+          <div id="emailField" class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" required autocomplete="email username" placeholder="you@company.com">
+            <div class="field-error">Invalid email address</div>
+          </div>
+          <div id="passwordField" class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required autocomplete="current-password" placeholder="Enter your password">
+            <button id="togglePassword" class="toggle-password" type="button" aria-label="Show password">Show</button>
+          </div>
+          <div class="forgot"><a href="#" tabindex="0">Forgot password?</a></div>
+          <button class="btn" type="submit">Sign In</button>
+          <div id="loginError" class="error">Invalid email or password.</div>
+        </form>
+        <div class="signup">Don't have an account? <a href="#">Get started</a></div>
+      </div>
+    </section>
   </main>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("error") === "invalid") {
+      const box = document.getElementById("loginError");
+      if (box) box.style.display = "block";
+      const emailField = document.getElementById("emailField");
+      if (emailField) emailField.classList.add("invalid");
+    }
+
+    const passwordInput = document.getElementById("password");
+    const toggle = document.getElementById("togglePassword");
+    if (passwordInput && toggle) {
+      toggle.addEventListener("click", () => {
+        const show = passwordInput.type === "password";
+        passwordInput.type = show ? "text" : "password";
+        toggle.textContent = show ? "Hide" : "Show";
+        toggle.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      });
+    }
+  </script>
 </body>
 </html>
