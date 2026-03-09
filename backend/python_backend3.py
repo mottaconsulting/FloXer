@@ -65,6 +65,10 @@ def _is_localhost_url(url: str) -> bool:
 def _effective_redirect_uri() -> str:
     configured = (REDIRECT_URI or "").strip()
     if configured:
+        if has_request_context():
+            req_host = (request.host or "").split(":")[0].lower()
+            if _is_localhost_url(configured) and req_host not in {"localhost", "127.0.0.1"}:
+                return f"{request.url_root.rstrip('/')}/callback"
         return configured
     # Fallback for environments where XERO_REDIRECT_URI is not injected.
     if has_request_context():
