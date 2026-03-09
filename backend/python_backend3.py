@@ -64,12 +64,7 @@ def _is_localhost_url(url: str) -> bool:
 
 def _effective_redirect_uri() -> str:
     configured = (REDIRECT_URI or "").strip()
-    # Prefer configured production URI unless it is clearly a local URI on a non-local host.
     if configured:
-        if has_request_context():
-            req_host = (request.host or "").split(":")[0].lower()
-            if _is_localhost_url(configured) and req_host not in {"localhost", "127.0.0.1"}:
-                return f"{request.url_root.rstrip('/')}/callback"
         return configured
     # Fallback for environments where XERO_REDIRECT_URI is not injected.
     if has_request_context():
@@ -1709,6 +1704,14 @@ def auth_start():
     redirect_uri = _effective_redirect_uri()
     if not redirect_uri:
         return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
+    if IS_PRODUCTION and (_is_localhost_url(redirect_uri) or not redirect_uri.lower().startswith("https://")):
+        return jsonify(
+            {
+                "error": "Invalid XERO_REDIRECT_URI for production",
+                "redirect_uri": redirect_uri,
+                "hint": "Set XERO_REDIRECT_URI to your exact Render callback URL (https://.../callback) and register the same URL in the Xero app.",
+            }
+        ), 500
 
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
@@ -1741,6 +1744,14 @@ def callback():
     redirect_uri = _effective_redirect_uri()
     if not redirect_uri:
         return jsonify({"error": "Missing XERO_REDIRECT_URI"}), 500
+    if IS_PRODUCTION and (_is_localhost_url(redirect_uri) or not redirect_uri.lower().startswith("https://")):
+        return jsonify(
+            {
+                "error": "Invalid XERO_REDIRECT_URI for production",
+                "redirect_uri": redirect_uri,
+                "hint": "Set XERO_REDIRECT_URI to your exact Render callback URL (https://.../callback) and register the same URL in the Xero app.",
+            }
+        ), 500
     expected_state = session.get("oauth_state")
     callback_state = request.args.get("state")
     pending_states = list(session.get("oauth_states") or [])
