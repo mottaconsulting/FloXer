@@ -5,6 +5,10 @@ let TX_CURRENT_PAGE = 1;
 let TX_PAGE_SIZE = 50;
 let TX_FILTER_EVENTS_BOUND = false;
 let APP_CURRENCY = "AUD";
+let BALANCE_ADJUST_EVENTS_BOUND = false;
+let BALANCE_ADJUST_OPEN = false;
+
+const BALANCE_OVERRIDE_STORAGE_KEY = "mmxero.balanceOverride";
 
 const INCOME_TYPES = new Set(["REVENUE"]);   // your org shows REVENUE
 const EXPENSE_TYPES = new Set(["EXPENSE"]);  // your org shows EXPENSE
@@ -58,7 +62,7 @@ function avgLastNMonths(values, n = 3) {
 
 function computeHealthFromModel(model, liabilitiesRows) {
   // Use cash out (bank) for runway because it is closer to real cash burn.
-  const cashBalance = Number(model?.kpis?.cash_balance_proxy || 0);
+  const cashBalance = Number(model?.kpis?.cash_balance_live ?? model?.kpis?.cash_balance_proxy ?? 0);
 
   const cashOutMonthly = (model?.charts?.cashflow?.cashOut || []).map(x => Number(x || 0));
   const avgCashOut = avgLastNMonths(cashOutMonthly, 3);
@@ -395,6 +399,35 @@ function sumNumeric(values) {
   }, 0);
 }
 
+function parseCurrencyInput(value) {
+  const cleaned = String(value || "").replace(/[^0-9.-]/g, "").trim();
+  if (!cleaned) return NaN;
+  return Number(cleaned);
+}
+
+function getBalanceOverrideValue() {
+  try {
+    const raw = window.localStorage.getItem(BALANCE_OVERRIDE_STORAGE_KEY);
+    if (raw === null || raw === "") return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setBalanceOverrideValue(value) {
+  try {
+    if (value === null || value === undefined || value === "") {
+      window.localStorage.removeItem(BALANCE_OVERRIDE_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(BALANCE_OVERRIDE_STORAGE_KEY, String(Number(value)));
+  } catch (_) {
+    // ignore storage errors
+  }
+}
+
 function computeYearProfitKpi(data) {
   const profitChart = data?.charts?.profit_fy || {};
   const currentYtdProfit = Number(profitChart.actual_ytd_profit);
@@ -410,7 +443,11 @@ function computeYearProfitKpi(data) {
 }
 
 function computeBalanceKpi(data) {
-  const balance = Number(data?.kpis?.cash_balance_proxy);
+  const isPastFy = isPastFinancialYearSelection(data);
+  const sourceBalance = Number(data?.kpis?.cash_balance_live ?? data?.kpis?.cash_balance_proxy);
+  const manualOverride = isPastFy ? null : getBalanceOverrideValue();
+  const hasManualOverride = Number.isFinite(manualOverride);
+  const balance = hasManualOverride ? Number(manualOverride) : sourceBalance;
   const cashflow = data?.charts?.cashflow || {};
   const cashIn = (cashflow.cashIn || []).map(v => Number(v || 0));
   const cashOut = (cashflow.cashOut || []).map(v => Number(v || 0));
@@ -420,7 +457,11 @@ function computeBalanceKpi(data) {
   const changePct = Number.isFinite(balance) && Number.isFinite(previousBalance) && Math.abs(previousBalance) > 0.0001
     ? ((balance - previousBalance) / Math.abs(previousBalance)) * 100
     : NaN;
-  return { balance, previousBalance, changePct, monthlyNet };
+  let source = "unavailable";
+  if (hasManualOverride) source = "manual";
+  else if (Number.isFinite(Number(data?.kpis?.cash_balance_live))) source = "xero";
+  else if (Number.isFinite(Number(data?.kpis?.cash_balance_proxy))) source = "proxy";
+  return { balance, previousBalance, changePct, monthlyNet, hasManualOverride, source };
 }
 
 function buildSparklineMarkup(values) {
@@ -459,15 +500,33 @@ function buildSparklineMarkup(values) {
 function monthInitialLabels(labels) {
   return (labels || []).map(label => {
     const parts = String(label || "").split("-");
-    if (parts.length !== 2) return String(label || "").slice(0, 1).toUpperCase();
+    if (parts.length !== 2) return String(label || "").slice(0, 3);
     const year = Number(parts[0]);
     const month = Number(parts[1]);
     if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-      return String(label || "").slice(0, 1).toUpperCase();
+      return String(label || "").slice(0, 3);
     }
     const dt = new Date(year, month - 1, 1);
-    return dt.toLocaleString(undefined, { month: "short" }).slice(0, 1).toUpperCase();
+    return dt.toLocaleString(undefined, { month: "short" });
   });
+}
+
+function selectedFyLabelFromUiOrData(data) {
+  const fySelect = document.getElementById("fySelect");
+  const optionText = fySelect?.selectedOptions?.[0]?.textContent?.trim();
+  if (optionText && optionText !== "Fiscal Year") return optionText;
+  const fyEndYear = data?.meta?.fy_end ? Number(String(data.meta.fy_end).slice(0, 4)) : NaN;
+  return Number.isFinite(fyEndYear) ? `FY ${fyEndYear - 1}-${fyEndYear}` : "FY --";
+}
+
+function isPastFinancialYearSelection(data) {
+  const fyEndYear = data?.meta?.fy_end ? Number(String(data.meta.fy_end).slice(0, 4)) : NaN;
+  const fyStartMonth = data?.meta?.fy_start ? Number(String(data.meta.fy_start).slice(5, 7)) : 7;
+  if (!Number.isFinite(fyEndYear)) return false;
+  const now = new Date();
+  const nowMonth = now.getMonth() + 1;
+  const currentFyEndYear = nowMonth >= fyStartMonth ? now.getFullYear() + 1 : now.getFullYear();
+  return fyEndYear < currentFyEndYear;
 }
 
 function renderEmptyView(containerId, title, message) {
@@ -529,15 +588,111 @@ async function renderDashboardRecentTransactions() {
   }
 }
 
+function bindBalanceAdjustEvents() {
+  if (BALANCE_ADJUST_EVENTS_BOUND) return;
+
+  const toggleBtn = document.getElementById("dashboardBalanceAdjustToggle");
+  const row = document.getElementById("dashboardBalanceAdjustRow");
+  const input = document.getElementById("dashboardBalanceAdjustInput");
+  const saveBtn = document.getElementById("dashboardBalanceAdjustSave");
+  const resetBtn = document.getElementById("dashboardBalanceAdjustReset");
+
+  if (!toggleBtn || !row || !input || !saveBtn || !resetBtn) return;
+
+  toggleBtn.addEventListener("click", () => {
+    BALANCE_ADJUST_OPEN = !BALANCE_ADJUST_OPEN;
+    const data = window.XeroUI?.getRawData?.();
+    const balanceKpi = computeBalanceKpi(data || {});
+    row.hidden = !BALANCE_ADJUST_OPEN;
+    if (BALANCE_ADJUST_OPEN) {
+      input.value = Number.isFinite(balanceKpi.balance) ? String(Math.round(balanceKpi.balance)) : "";
+      input.focus();
+      input.select();
+    }
+  });
+
+  saveBtn.addEventListener("click", () => {
+    const parsed = parseCurrencyInput(input.value);
+    if (!Number.isFinite(parsed)) {
+      input.setCustomValidity("Enter a valid number.");
+      input.reportValidity();
+      return;
+    }
+    input.setCustomValidity("");
+    setBalanceOverrideValue(parsed);
+    BALANCE_ADJUST_OPEN = false;
+    const data = window.XeroUI?.getRawData?.();
+    if (data) renderOverview(data);
+  });
+
+  resetBtn.addEventListener("click", () => {
+    setBalanceOverrideValue(null);
+    BALANCE_ADJUST_OPEN = false;
+    const data = window.XeroUI?.getRawData?.();
+    if (data) renderOverview(data);
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveBtn.click();
+    } else if (event.key === "Escape") {
+      BALANCE_ADJUST_OPEN = false;
+      const data = window.XeroUI?.getRawData?.();
+      if (data) renderOverview(data);
+    }
+  });
+
+  BALANCE_ADJUST_EVENTS_BOUND = true;
+}
+
+function renderBalanceAdjustState(balanceKpi, isPastFy) {
+  const toggleBtn = document.getElementById("dashboardBalanceAdjustToggle");
+  const row = document.getElementById("dashboardBalanceAdjustRow");
+  const sourceEl = document.getElementById("dashboardBalanceSource");
+
+  if (!toggleBtn || !row || !sourceEl) return;
+
+  toggleBtn.style.display = isPastFy ? "none" : "inline-flex";
+  if (isPastFy) BALANCE_ADJUST_OPEN = false;
+  row.hidden = !BALANCE_ADJUST_OPEN || isPastFy;
+
+  if (isPastFy) {
+    sourceEl.textContent = "";
+    return;
+  }
+
+  if (balanceKpi.hasManualOverride) {
+    sourceEl.textContent = "Manual override";
+  } else if (balanceKpi.source === "xero") {
+    sourceEl.textContent = "Live from Xero";
+  } else if (balanceKpi.source === "proxy") {
+    sourceEl.textContent = "Estimated from journal lines";
+  } else {
+    sourceEl.textContent = "";
+  }
+}
+
 function renderOverview(data) {
   const kpis = data?.kpis || {};
   setAppCurrency(data?.meta?.currency);
+  bindBalanceAdjustEvents();
   populateFySelect(data);
   const yearProfitKpi = computeYearProfitKpi(data);
   const balanceKpi = computeBalanceKpi(data);
   const companyName = selectedCompanyName();
   const greeting = document.getElementById("dashboardGreeting");
   if (greeting) greeting.textContent = `Hi, ${companyName}`;
+  const fyLabel = selectedFyLabelFromUiOrData(data);
+  const isPastFy = isPastFinancialYearSelection(data);
+  const secondKpiLabel = document.getElementById("dashboardSecondKpiLabel");
+  const thirdKpiLabel = document.getElementById("dashboardThirdKpiLabel");
+  if (secondKpiLabel) secondKpiLabel.textContent = isPastFy ? "Total Revenue" : "Current Balance";
+  if (thirdKpiLabel) thirdKpiLabel.textContent = isPastFy ? "Total Expenses" : "Out of Cash";
+  const graphFyCash = document.getElementById("graphFyLabelCashflow");
+  const graphFyRevenue = document.getElementById("graphFyLabelRevenue");
+  if (graphFyCash) graphFyCash.textContent = fyLabel;
+  if (graphFyRevenue) graphFyRevenue.textContent = fyLabel;
 
   const fyEndYear = data?.meta?.fy_end ? Number(String(data.meta.fy_end).slice(0, 4)) : null;
   const profitLabel = document.getElementById("dashboardProfitLabel");
@@ -579,16 +734,25 @@ function renderOverview(data) {
   const balanceValue = document.getElementById("dashboardBalanceValue");
   if (balanceValue) {
     balanceValue.classList.remove("positive", "negative");
-    balanceValue.textContent = Number.isFinite(balanceKpi.balance) ? fmtUSD(balanceKpi.balance) : "--";
-    if (Number.isFinite(balanceKpi.balance)) {
-      balanceValue.classList.add(balanceKpi.balance < 0 ? "negative" : "positive");
+    if (isPastFy) {
+      const totalRevenue = sumNumeric(data?.charts?.sales_fy?.actual_monthly || []);
+      balanceValue.textContent = fmtUSD(totalRevenue);
+      balanceValue.classList.add("positive");
+    } else {
+      balanceValue.textContent = Number.isFinite(balanceKpi.balance) ? fmtUSD(balanceKpi.balance) : "--";
+      if (Number.isFinite(balanceKpi.balance)) {
+        balanceValue.classList.add(balanceKpi.balance < 0 ? "negative" : "positive");
+      }
     }
   }
 
   const balanceTrend = document.getElementById("dashboardBalanceTrend");
   if (balanceTrend) {
     balanceTrend.classList.remove("up", "down", "flat");
-    if (Number.isFinite(balanceKpi.changePct)) {
+    if (isPastFy) {
+      balanceTrend.textContent = "FY total";
+      balanceTrend.classList.add("flat");
+    } else if (Number.isFinite(balanceKpi.changePct)) {
       const direction = balanceKpi.changePct > 0 ? "up" : (balanceKpi.changePct < 0 ? "down" : "flat");
       balanceTrend.textContent = `${direction === "up" ? "+" : (direction === "down" ? "-" : "=")} ${Math.round(Math.abs(balanceKpi.changePct))}% vs PM`;
       balanceTrend.classList.add(direction);
@@ -600,24 +764,39 @@ function renderOverview(data) {
 
   const balanceSparkline = document.getElementById("dashboardBalanceSparkline");
   if (balanceSparkline) {
-    const cumulativeBalanceSeries = cumulativeSeries(balanceKpi.monthlyNet || []);
+    const cumulativeBalanceSeries = isPastFy
+      ? cumulativeSeries(data?.charts?.sales_fy?.actual_monthly || [])
+      : cumulativeSeries(balanceKpi.monthlyNet || []);
     balanceSparkline.innerHTML = buildSparklineMarkup(cumulativeBalanceSeries);
   }
+  renderBalanceAdjustState(balanceKpi, isPastFy);
 
   const runwayValue = document.getElementById("dashboardRunwayValue");
   if (runwayValue) {
-    const runwayMonths = Number(kpis.runway_months);
     runwayValue.classList.remove("positive", "negative");
-    runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths)} Months` : "--";
-    if (Number.isFinite(runwayMonths)) {
-      runwayValue.classList.add(runwayMonths <= 3 ? "negative" : "positive");
+    if (isPastFy) {
+      const totalExpenses = sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []);
+      runwayValue.textContent = fmtUSD(totalExpenses);
+      runwayValue.classList.add("negative");
+    } else {
+      const runwayMonths = Number(kpis.runway_months);
+      runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths)} Months` : "--";
+      if (Number.isFinite(runwayMonths)) {
+        runwayValue.classList.add(runwayMonths <= 3 ? "negative" : "positive");
+      }
     }
   }
 
   const burnNote = document.getElementById("dashboardBurnNote");
   if (burnNote) {
-    const burn = Number(kpis.monthly_burn || 0);
-    burnNote.textContent = Number.isFinite(burn) && burn > 0 ? `At ${fmtUSD(burn)} per month` : "--";
+    burnNote.classList.remove("up", "down", "flat");
+    if (isPastFy) {
+      burnNote.textContent = "FY total";
+      burnNote.classList.add("flat");
+    } else {
+      const burn = Number(kpis.monthly_burn || 0);
+      burnNote.textContent = Number.isFinite(burn) && burn > 0 ? `At ${fmtUSD(burn)} per month` : "--";
+    }
   }
 
   const cashflow = data?.charts?.cashflow;
@@ -625,13 +804,14 @@ function renderOverview(data) {
     const cashInMonthly = (cashflow.cashIn || []).map(v => Number(v || 0));
     const cashOutMonthly = (cashflow.cashOut || []).map(v => Number(v || 0));
     const netMonthly = cashInMonthly.map((v, idx) => v - Number(cashOutMonthly[idx] || 0));
+    const runningNet = cumulativeSeries(netMonthly).map(v => Number(v || 0));
     XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
       labels: monthInitialLabels(cashflow.labels),
       datasets: [
         {
-          label: "Net Cash Flow",
-          data: netMonthly,
-          backgroundColor: netMonthly.map(v => Number(v || 0) < 0 ? "rgba(236, 72, 153, 0.84)" : "rgba(59, 130, 246, 0.82)"),
+          label: "Running Cash Flow",
+          data: runningNet,
+          backgroundColor: runningNet.map(v => Number(v || 0) < 0 ? "rgba(236, 72, 153, 0.84)" : "rgba(59, 130, 246, 0.82)"),
           borderRadius: 0
         }
       ]
@@ -655,6 +835,8 @@ function renderOverview(data) {
           data: sales.actual_monthly || [],
           borderColor: "#3b82f6",
           backgroundColor: "rgba(59, 130, 246, 0.18)",
+          pointBackgroundColor: "#3b82f6",
+          pointBorderColor: "#3b82f6",
           borderWidth: 3,
           pointRadius: 0,
           tension: 0.35
@@ -664,13 +846,48 @@ function renderOverview(data) {
           data: expenses.actual_monthly || [],
           borderColor: "#ec4899",
           backgroundColor: "rgba(236, 72, 153, 0.18)",
+          pointBackgroundColor: "#ec4899",
+          pointBorderColor: "#ec4899",
           borderWidth: 3,
           pointRadius: 0,
           tension: 0.35
         }
       ]
     }, {
-      plugins: { legend: { display: false } },
+      interaction: {
+        mode: "index",
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: "top",
+          align: "start",
+          labels: {
+            boxWidth: 10,
+            boxHeight: 10,
+            usePointStyle: true,
+            pointStyle: "circle",
+            padding: 12,
+            color: "#475569",
+            font: {
+              size: 11,
+              weight: "700"
+            }
+          }
+        },
+        tooltip: {
+          enabled: true,
+          backgroundColor: "rgba(15, 23, 42, 0.94)",
+          titleColor: "#ffffff",
+          bodyColor: "#e5e7eb",
+          padding: 10,
+          displayColors: true,
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${fmtUSD(Number(ctx.parsed?.y || 0))}`
+          }
+        }
+      },
       scales: {
         x: { grid: { display: false } },
         y: { beginAtZero: true }

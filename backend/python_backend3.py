@@ -565,6 +565,32 @@ def _xero_collection(resource: str, root_key: str, *, params: dict | None = None
     return resp.json().get(root_key, []) or []
 
 
+def _load_live_bank_balance_xero() -> float | None:
+    """Return summed live bank account balance from Xero Accounts, if available."""
+    try:
+        accounts = _xero_collection("Accounts", "Accounts")
+    except Exception:
+        return None
+
+    total = 0.0
+    found = False
+    for account in accounts:
+        if str(account.get("Type") or "").upper() != "BANK":
+            continue
+        if str(account.get("Status") or "").upper() not in {"", "ACTIVE"}:
+            continue
+
+        bal = account.get("Balance")
+        try:
+            bal_num = float(bal)
+        except (TypeError, ValueError):
+            continue
+        total += bal_num
+        found = True
+
+    return total if found else None
+
+
 def parse_xero_date(xero_date_str: str | None) -> datetime | None:
     """Handles Xero date formats.
 
@@ -1429,16 +1455,23 @@ def build_overview_payload(
     else:
         monthly_burn = None
 
+    live_cash_balance = _load_live_bank_balance_xero()
+    effective_cash_balance = (
+        float(live_cash_balance)
+        if live_cash_balance is not None
+        else (float(cash_balance) if cash_balance is not None else None)
+    )
+
     warnings = []
     runway_months = None
     if latest_actual_dt is not None and requested_month > datetime(latest_actual_dt.year, latest_actual_dt.month, 1):
         warnings.append(
             f"Selected month is beyond available actuals; using {latest_actual_dt.year}-{latest_actual_dt.month:02d} as the latest actual month."
         )
-    if cash_balance is None:
-        warnings.append("Cash balance not provided; runway_months unavailable.")
+    if effective_cash_balance is None:
+        warnings.append("Cash balance not available; runway_months unavailable.")
     elif monthly_burn and monthly_burn > 0:
-        runway_months = float(cash_balance) / monthly_burn
+        runway_months = float(effective_cash_balance) / monthly_burn
     else:
         warnings.append("Insufficient bank history to compute runway.")
 
@@ -1502,6 +1535,12 @@ def build_overview_payload(
             "profit_now_prev": round(float(profit_now_prev), 2) if profit_now_prev is not None else None,
             "future_profit": round(float(future_profit), 2) if future_profit is not None else None,
             "future_profit_prev": round(float(future_profit_prev), 2) if future_profit_prev is not None else None,
+            "cash_balance_live": (
+                round(float(live_cash_balance), 2) if live_cash_balance is not None else None
+            ),
+            "cash_balance_proxy": (
+                round(float(effective_cash_balance), 2) if effective_cash_balance is not None else None
+            ),
             "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
             "monthly_burn": round(float(monthly_burn), 2) if monthly_burn is not None else None,
             "monthly_burn_basis": "bank_net_outflow_3m",
