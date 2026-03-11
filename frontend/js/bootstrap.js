@@ -98,6 +98,13 @@ function setSalesMode(mode) {
 function fyEndDateFromYear(endYear) {
   const y = Number(endYear);
   if (!y) return null;
+  const now = new Date();
+  const currentFyEndYear = (now.getMonth() + 1) >= 7 ? now.getFullYear() + 1 : now.getFullYear();
+  if (y === currentFyEndYear) {
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    return `${now.getFullYear()}-${mm}-${dd}`;
+  }
   return `${y}-06-30`;
 }
 

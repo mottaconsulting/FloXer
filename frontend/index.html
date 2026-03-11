@@ -1178,240 +1178,181 @@
       font-weight: 700;
       letter-spacing: 0.02em;
     }
-    .tx-toolbar {
+    .tx-title-row {
       display: flex;
-      flex-wrap: wrap;
+      align-items: center;
       gap: 12px;
-      margin-bottom: 10px;
-      padding: 14px;
-      border: 1px solid rgba(148, 163, 184, 0.18);
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.72);
-      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-      align-items: flex-end;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
     }
-    .tx-filter-group {
-      min-width: 0;
-      display: grid;
-      gap: 10px;
-      padding-right: 14px;
-      border-right: 1px solid rgba(148, 163, 184, 0.16);
-    }
-    .tx-filter-group:last-of-type {
-      padding-right: 0;
-      border-right: none;
-    }
-    .tx-filter-group.search-group { grid-template-columns: minmax(220px, 280px); }
-    .tx-filter-group.filter-group,
-    .tx-filter-group.date-group { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
-    .tx-filter-group-title {
-      grid-column: 1 / -1;
-      color: #64748b;
-      font-size: 10px;
+    .tx-title {
+      margin: 0;
+      font-family: "Sora", "Space Grotesk", sans-serif;
+      font-size: 22px;
       font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      color: #0d1b4b;
+      letter-spacing: -0.02em;
     }
-    .tx-toolbar .field {
-      min-width: 0;
-    }
-    .tx-toolbar .field label {
-      display: block;
-      color: var(--ink-2);
-      font-size: 11px;
-      font-weight: 700;
-      margin-bottom: 5px;
-      letter-spacing: 0.01em;
-    }
-    .tx-toolbar input,
-    .tx-toolbar select {
-      width: 100%;
-      padding: 8px 10px;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--ink);
-      font-size: 13px;
-    }
-    .tx-toolbar .actions {
-      display: flex;
-      gap: 8px;
-      align-items: end;
-      margin-left: auto;
-      padding-left: 4px;
-    }
-    .tx-clear-link {
+    .tx-count-chip {
       display: inline-flex;
       align-items: center;
-      min-height: 40px;
-      width: auto;
-      padding: 0 2px;
-      border-radius: 0;
-      border: none;
-      background: transparent;
-      color: #64748b;
-      font-size: 12px;
-      font-weight: 700;
-      text-decoration: underline;
-      cursor: pointer;
-      box-shadow: none;
-    }
-    .tx-clear-link:hover {
-      transform: none;
-      box-shadow: none;
-      color: #334155;
-    }
-    .tx-active-filters {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      margin: 0 0 10px;
       min-height: 28px;
-    }
-    .tx-filter-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
+      padding: 0 10px;
       border-radius: 999px;
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      background: rgba(241, 245, 249, 0.9);
-      color: #334155;
+      background: #f4f6fa;
+      border: 1px solid #e8ebf3;
+      color: #8a94ad;
       font-size: 12px;
       font-weight: 700;
-    }
-    .tx-filter-chip button {
-      width: auto;
-      min-width: 18px;
-      height: 18px;
-      padding: 0;
-      border-radius: 999px;
-      border: none;
-      background: transparent;
-      color: #475569;
-      font-size: 14px;
-      line-height: 1;
-      box-shadow: none;
-    }
-    .tx-filter-chip button:hover {
-      transform: none;
-      box-shadow: none;
-      color: #0f172a;
-    }
-    .tx-active-filters .muted {
-      font-size: 12px;
-    }
-    .tx-active-filters .tx-clear-link {
-      min-height: auto;
-    }
-    .tx-meta-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin: 2px 0 2px;
-    }
-    .tx-page-size {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      color: #475569;
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .tx-page-size select {
-      border: 1px solid #dbe2ea;
-      background: #fff;
-      border-radius: 10px;
-      padding: 7px 10px;
-      font-size: 12px;
-      font-weight: 700;
-      color: #0f172a;
     }
     .tx-toolbar.tx-toolbar-minimal {
       display: grid;
-      grid-template-columns: minmax(220px, 1.6fr) minmax(140px, 0.8fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr) auto;
-      gap: 10px;
-      margin-bottom: 10px;
+      grid-template-columns: minmax(260px, 2.3fr) minmax(120px, 0.8fr) minmax(120px, 0.7fr) minmax(120px, 0.7fr) auto auto;
+      gap: 0;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border: 1px solid #e8ebf3;
+      border-radius: 12px;
+      background: #f4f6fa;
+      box-shadow: none;
+      align-items: center;
     }
     .tx-toolbar.tx-toolbar-minimal .tx-filter-group {
-      display: grid;
-      gap: 5px;
-      padding: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      padding: 0 14px;
       border: 0;
       margin: 0;
-      min-width: 0;
+      position: relative;
     }
-    .tx-toolbar.tx-toolbar-minimal .tx-filter-group label {
-      font-size: 11px;
-      font-weight: 700;
-      color: #64748b;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+    .tx-toolbar.tx-toolbar-minimal .tx-filter-group + .tx-filter-group::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 1px;
+      height: 22px;
+      transform: translateY(-50%);
+      background: #d8dfec;
+    }
+    .tx-toolbar.tx-toolbar-minimal .tx-filter-group label,
+    .tx-toolbar.tx-toolbar-minimal .tx-filter-group.minimal-hidden,
+    .tx-active-filters {
+      display: none;
     }
     .tx-toolbar.tx-toolbar-minimal .tx-filter-group input,
     .tx-toolbar.tx-toolbar-minimal .tx-filter-group select {
-      min-height: 40px;
-      border-radius: 10px;
-      border: 1px solid #dbe2ea;
-      background: #fff;
+      min-height: 38px;
+      border: 0;
+      background: transparent;
+      font-family: "Plus Jakarta Sans", "Sora", sans-serif;
       font-size: 13px;
       font-weight: 600;
-      color: #0f172a;
-      padding: 8px 10px;
+      color: #0b1840;
+      padding: 0;
+      box-shadow: none;
     }
-    .tx-toolbar.tx-toolbar-minimal .tx-filter-group.minimal-hidden {
-      display: none;
+    .tx-toolbar.tx-toolbar-minimal .tx-filter-group select {
+      appearance: none;
+    }
+    .tx-search-shell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+    }
+    .tx-search-icon {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 16px;
+      stroke: #8a94ad;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .tx-inline-label {
+      color: #8a94ad;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
     }
     .tx-toolbar.tx-toolbar-minimal .actions {
       display: inline-flex;
-      align-items: flex-end;
+      align-items: center;
       gap: 8px;
-      margin-left: 0;
-      padding-left: 0;
-      border-right: 0;
+      margin-left: 12px;
+      padding-left: 12px;
+      border-left: 1px solid #d8dfec;
     }
     .tx-toolbar.tx-toolbar-minimal .actions button {
-      min-height: 40px;
-      border-radius: 10px;
-      padding: 9px 12px;
+      min-height: 36px;
       width: auto;
+      box-shadow: none;
+    }
+    .tx-filter-apply {
+      border-radius: 999px;
+      padding: 8px 16px;
+      background: #0d1b4b;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .tx-filter-reset {
+      width: 36px;
+      min-width: 36px;
+      padding: 0;
+      border-radius: 999px;
+      background: #ffffff;
+      color: #7a84a0;
+      border: 1px solid #d8dfec;
+      font-size: 15px;
+      font-weight: 700;
     }
     .tx-panel-minimal .table-container {
-      margin-top: 8px;
-      border-radius: 10px;
-      border: 1px solid #e5e7eb;
-      background: #fff;
+      margin-top: 0;
+      border-radius: 16px;
+      border: 1px solid #e8ebf3;
+      background: #ffffff;
+      box-shadow: none;
+      overflow: hidden;
     }
     .tx-panel-minimal table {
       margin-top: 0;
       border: 0;
-      border-radius: 10px;
+      border-radius: 0;
       box-shadow: none;
+      background: #ffffff;
     }
     .tx-panel-minimal th {
-      background: #f8fafc;
-      color: #334155;
-      font-size: 12px;
+      background: #f8f9fc;
+      color: #8a94ad;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      border-bottom: 1px solid #edf1f7;
     }
-    .tx-panel-minimal .tx-pagination {
-      margin-top: 10px;
-      justify-content: flex-end;
-    }
-    .tx-panel-minimal .tx-pagination button {
-      border-radius: 10px;
-      padding: 8px 12px;
-      min-height: 38px;
+    .tx-panel-minimal td {
+      height: 52px;
+      padding-top: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #f0f2f7;
+      background: #ffffff;
     }
     @media (max-width: 1100px) {
       .tx-toolbar.tx-toolbar-minimal {
         grid-template-columns: 1fr 1fr;
+        gap: 10px;
       }
+      .tx-toolbar.tx-toolbar-minimal .tx-filter-group + .tx-filter-group::before { display: none; }
       .tx-toolbar.tx-toolbar-minimal .actions {
         justify-content: flex-start;
+        margin-left: 0;
+        padding-left: 0;
+        border-left: 0;
       }
     }
     .tx-quickview {
@@ -1496,50 +1437,168 @@
     .tx-quickview-money .tx-quickview-field {
       text-align: center;
     }
-    .tx-quickview-value.money-in { color: #047857; }
-    .tx-quickview-value.money-out { color: #b91c1c; }
+    .tx-quickview-value.money-in { color: #3b82f6; }
+    .tx-quickview-value.money-out { color: #ec4899; }
     .tx-pagination {
       display: flex;
       gap: 10px;
       align-items: center;
-      margin-bottom: 10px;
+      justify-content: space-between;
+      margin: 12px 0 0;
       flex-wrap: wrap;
+      position: sticky;
+      bottom: 0;
+      padding: 12px 14px;
+      border-top: 1px solid #edf1f7;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(8px);
     }
-    .tx-pagination .muted { margin-left: auto; }
-    #dataTable tbody tr:nth-child(even) { background: rgba(241, 245, 249, 0.55); }
+    .tx-pagination .muted {
+      margin-left: 0;
+      color: #8a94ad;
+      font-size: 12px;
+      font-weight: 600;
+    }
     #dataTable tbody tr {
       cursor: pointer;
       transition: background 120ms ease, box-shadow 120ms ease;
     }
     #dataTable tbody tr:hover {
-      background: rgba(226, 232, 240, 0.72);
+      background: #fafbfe;
     }
     #dataTable tbody tr.is-selected {
       background: rgba(37, 99, 235, 0.10) !important;
       box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.22);
     }
+    #dataTable tbody tr.tx-row-positive td:first-child {
+      box-shadow: inset 3px 0 0 #3b82f6;
+    }
+    #dataTable tbody tr.tx-row-negative td:first-child {
+      box-shadow: inset 3px 0 0 #e8187f;
+    }
     #dataTable th {
       position: sticky;
       top: 0;
       z-index: 6;
-      background: #f8fafc;
+      background: #f8f9fc;
       box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.16);
     }
-    .tx-account-cell strong { display: block; }
-    .tx-account-cell span,
+    .tx-date-cell {
+      color: #9aa3ba;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      white-space: nowrap;
+    }
+    .tx-account-cell strong {
+      display: block;
+      color: #0b1840;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .tx-type-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .tx-type-pill.revenue {
+      background: #eff6ff;
+      color: #3b82f6;
+    }
+    .tx-type-pill.expense {
+      background: #fff0f6;
+      color: #e8187f;
+    }
+    .tx-type-pill.liability {
+      background: #f4f6fa;
+      color: #6b7a99;
+    }
+    .tx-type-pill.other {
+      background: #f4f6fa;
+      color: #6b7a99;
+    }
     .tx-desc-cell {
       display: block;
-      color: var(--ink-2);
-      font-size: 12px;
+      max-width: 100%;
+      color: #7a84a0;
+      font-size: 12.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .tx-money {
       text-align: right;
+      font-weight: 600;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+    .tx-money.money-in { color: #3b82f6; }
+    .tx-money.money-out { color: #e8187f; }
+    .tx-pagination-right {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tx-page-size-toggle {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      border-radius: 999px;
+      background: #f4f6fa;
+      border: 1px solid #e8ebf3;
+    }
+    .tx-page-size-toggle button {
+      min-height: 28px;
+      min-width: 42px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: transparent;
+      color: #6b7a99;
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: none;
+      border: 0;
+    }
+    .tx-page-size-toggle button.is-active {
+      background: #ffffff;
+      color: #0d1b4b;
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+    }
+    .tx-page-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tx-page-nav button {
+      width: 32px;
+      min-width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: 999px;
+      background: #ffffff;
+      color: #0d1b4b;
+      border: 1px solid #e8ebf3;
+      box-shadow: none;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .tx-page-nav button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .tx-page-current {
+      color: #6b7a99;
+      font-size: 12px;
       font-weight: 700;
       white-space: nowrap;
-      font-size: 13px;
     }
-    .tx-money.money-in { color: #047857; }
-    .tx-money.money-out { color: #b91c1c; }
     details.kpi-tools {
       margin-top: 10px;
       border: 1px solid #d7dde8;
@@ -1851,42 +1910,36 @@
   <!-- TRANSACTIONS -->
   <div id="transactionsContainer" style="display:none;">
     <section class="rebuilt-dashboard">
-      <div class="rebuilt-hero">
-        <h1 class="rebuilt-title">Transactions</h1>
-        <div class="rebuilt-subtitle">All journal lines, minimal filters, 50 rows per page</div>
+      <div class="tx-title-row">
+        <h1 class="tx-title">Transactions</h1>
+        <div id="txHeaderCount" class="tx-count-chip">0 journal lines</div>
       </div>
 
       <section class="rebuilt-panel tx-panel-minimal">
         <div class="tx-toolbar tx-toolbar-minimal">
           <div class="tx-filter-group search-group">
-            <label for="filterAccount">Search</label>
-            <input id="filterAccount" type="text" placeholder="Account code, account name, or description">
+            <div class="tx-search-shell">
+              <svg viewBox="0 0 24 24" class="tx-search-icon" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+              <input id="filterAccount" type="text" placeholder="Search account, code, or description">
+            </div>
           </div>
           <div class="tx-filter-group">
-            <label for="filterType">Type</label>
+            <span class="tx-inline-label">Type</span>
             <select id="filterType">
               <option value="">All types</option>
             </select>
           </div>
-          <div class="tx-filter-group minimal-hidden">
-            <label for="filterDirection">Direction</label>
-            <select id="filterDirection">
-              <option value="">All</option>
-              <option value="in">Money in</option>
-              <option value="out">Money out</option>
-            </select>
-          </div>
           <div class="tx-filter-group">
-            <label for="filterFrom">From</label>
+            <span class="tx-inline-label">From</span>
             <input id="filterFrom" type="date">
           </div>
           <div class="tx-filter-group">
-            <label for="filterTo">To</label>
+            <span class="tx-inline-label">To</span>
             <input id="filterTo" type="date">
           </div>
           <div class="actions">
-            <button type="button" class="btn-muted" onclick="applyTransactionFilters()">Apply</button>
-            <button type="button" class="btn-muted" onclick="resetTransactionFilters()">Reset</button>
+            <button type="button" class="tx-filter-apply" onclick="applyTransactionFilters()">Filter</button>
+            <button type="button" class="tx-filter-reset" onclick="resetTransactionFilters()" aria-label="Reset filters">&times;</button>
           </div>
         </div>
 
@@ -1894,27 +1947,29 @@
 
         <div class="tx-meta-row">
           <div id="txCount" class="muted">Showing 0 of 0 lines</div>
-          <div class="tx-page-size">
-            <label for="txPageSize">Rows per page</label>
-            <select id="txPageSize" onchange="changeTransactionPageSize(this.value)">
-              <option value="50" selected>50</option>
-              <option value="100">100</option>
-              <option value="200">200</option>
-            </select>
-          </div>
         </div>
 
         <div class="table-container">
-          <table>
+          <table id="dataTable">
             <thead id="tableHeader"></thead>
             <tbody id="tableBody"></tbody>
           </table>
         </div>
 
         <div class="tx-pagination">
-          <button id="txPrevBtn" type="button" class="btn-muted" onclick="changeTransactionPage(-1)">Previous</button>
-          <div id="txPageInfo" class="muted">Page 1 of 1</div>
-          <button id="txNextBtn" type="button" class="btn-muted" onclick="changeTransactionPage(1)">Next</button>
+          <div id="txPageInfo" class="muted">Showing 0-0 of 0</div>
+          <div class="tx-pagination-right">
+            <div class="tx-page-size-toggle" role="group" aria-label="Rows per page">
+              <button type="button" data-size="25" onclick="changeTransactionPageSize(25)">25</button>
+              <button type="button" data-size="50" class="is-active" onclick="changeTransactionPageSize(50)">50</button>
+              <button type="button" data-size="100" onclick="changeTransactionPageSize(100)">100</button>
+            </div>
+            <div class="tx-page-nav">
+              <button id="txPrevBtn" type="button" onclick="changeTransactionPage(-1)" aria-label="Previous page">&#8249;</button>
+              <div id="txCurrentPage" class="tx-page-current">Page 1</div>
+              <button id="txNextBtn" type="button" onclick="changeTransactionPage(1)" aria-label="Next page">&#8250;</button>
+            </div>
+          </div>
         </div>
       </section>
     </section>

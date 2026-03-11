@@ -515,6 +515,15 @@ function monthInitialLabels(labels) {
   });
 }
 
+function maskFutureSeries(data, labels, values, fillValue = null) {
+  const series = Array.isArray(values) ? values.slice() : [];
+  if (isPastFinancialYearSelection(data)) return series;
+  const asOfMonth = data?.meta?.as_of_month || (data?.meta?.today ? String(data.meta.today).slice(0, 7) : null);
+  const cutoffIdx = asOfMonth ? (labels || []).indexOf(asOfMonth) : -1;
+  if (cutoffIdx < 0) return series;
+  return series.map((value, idx) => (idx > cutoffIdx ? fillValue : value));
+}
+
 function selectedFyLabelFromUiOrData(data) {
   const fySelect = document.getElementById("fySelect");
   const optionText = fySelect?.selectedOptions?.[0]?.textContent?.trim();
@@ -705,7 +714,8 @@ function renderOverview(data) {
 
   const profitSparkline = document.getElementById("dashboardProfitSparkline");
   if (profitSparkline) {
-    const profitSeries = data?.charts?.profit_fy?.actual_monthly_profit || [];
+    const profitLabels = data?.charts?.profit_fy?.labels || [];
+    const profitSeries = maskFutureSeries(data, profitLabels, data?.charts?.profit_fy?.actual_monthly_profit || [], null);
     const cumulativeProfitSeries = cumulativeSeries(profitSeries);
     profitSparkline.innerHTML = buildSparklineMarkup(cumulativeProfitSeries);
   }
@@ -791,7 +801,9 @@ function renderOverview(data) {
           label: "Running Cash Flow",
           data: runningNet,
           backgroundColor: runningNet.map(v => Number(v || 0) < 0 ? "rgba(236, 72, 153, 0.84)" : "rgba(59, 130, 246, 0.82)"),
-          borderRadius: 0
+          borderRadius: 0,
+          categoryPercentage: 0.46,
+          barPercentage: 0.72
         }
       ]
     }, {
@@ -806,12 +818,14 @@ function renderOverview(data) {
   const sales = data?.charts?.sales_fy;
   const expenses = data?.charts?.expenses_fy;
   if (sales?.labels?.length && expenses?.labels?.length) {
+    const maskedRevenue = maskFutureSeries(data, sales.labels, sales.actual_monthly || [], null);
+    const maskedExpenses = maskFutureSeries(data, expenses.labels, expenses.actual_monthly || [], null);
     XeroCharts.renderChart("dashboardRevenueExpenses", "dashboardRevenueExpensesChart", "line", {
       labels: monthInitialLabels(sales.labels),
       datasets: [
         {
           label: "Revenue",
-          data: sales.actual_monthly || [],
+          data: maskedRevenue,
           borderColor: "#3b82f6",
           backgroundColor: "rgba(59, 130, 246, 0.18)",
           pointBackgroundColor: "#3b82f6",
@@ -822,7 +836,7 @@ function renderOverview(data) {
         },
         {
           label: "Expenses",
-          data: expenses.actual_monthly || [],
+          data: maskedExpenses,
           borderColor: "#ec4899",
           backgroundColor: "rgba(236, 72, 153, 0.18)",
           pointBackgroundColor: "#ec4899",
@@ -1598,6 +1612,14 @@ function formatJournalTypeLabel(type) {
   return map[String(type || "").toUpperCase()] || String(type || "Other");
 }
 
+function transactionTypeTone(type) {
+  const normalized = String(type || "").toUpperCase();
+  if (normalized === "REVENUE") return "revenue";
+  if (normalized === "EXPENSE") return "expense";
+  if (normalized === "CURRLIAB") return "liability";
+  return "other";
+}
+
 function populateTransactionTypeFilter(lines) {
   const select = document.getElementById("filterType");
   if (!select) return;
@@ -1611,12 +1633,19 @@ function populateTransactionTypeFilter(lines) {
 
 function renderTransactionTable(lines) {
   const cols = [
-    { label: "Date", render: r => XeroTables.formatDate(r.date) },
+    { label: "Date", render: r => `<div class="tx-date-cell">${escapeHtmlText(XeroTables.formatDate(r.date))}</div>` },
     { label: "Account", render: r => `<div class="tx-account-cell"><strong>${escapeHtmlText(`${r.accountCode} ${r.accountName}`.trim())}</strong></div>` },
-    { label: "Type", render: r => escapeHtmlText(formatJournalTypeLabel(r.accountType)) },
+    { label: "Type", render: r => `<span class="tx-type-pill ${transactionTypeTone(r.accountType)}">${escapeHtmlText(formatJournalTypeLabel(r.accountType))}</span>` },
     { label: "Description", render: r => `<div class="tx-desc-cell">${escapeHtmlText(r.description || "—")}</div>` },
-    { label: "Money In", render: r => `<div class="tx-money money-in">${Number(r.net || 0) < 0 ? XeroTables.formatCurrency(Math.abs(Number(r.net || 0))) : "—"}</div>` },
-    { label: "Money Out", render: r => `<div class="tx-money money-out">${Number(r.net || 0) > 0 ? XeroTables.formatCurrency(Number(r.net || 0)) : "—"}</div>` }
+    {
+      label: "Amount",
+      render: r => {
+        const amount = Number(r.net || 0);
+        const isIn = amount < 0;
+        const displayAmount = isIn ? Math.abs(amount) : amount;
+        return `<div class="tx-money ${isIn ? "money-in" : "money-out"}">${escapeHtmlText(XeroTables.formatCurrency(displayAmount, APP_CURRENCY))}</div>`;
+      }
+    }
   ];
 
   const total = lines.length;
@@ -1634,6 +1663,9 @@ function renderTransactionTable(lines) {
     body.querySelectorAll("tr").forEach((rowEl, index) => {
       const rowData = slice[index];
       if (!rowData) return;
+      const rowAmount = Number(rowData.net || 0);
+      rowEl.classList.toggle("tx-row-positive", rowAmount < 0);
+      rowEl.classList.toggle("tx-row-negative", rowAmount > 0);
       rowEl.dataset.sourceIndex = String(start + index);
       rowEl.addEventListener("click", () => openTransactionQuickView(rowData));
       rowEl.addEventListener("keydown", (event) => {
@@ -1649,12 +1681,25 @@ function renderTransactionTable(lines) {
       ? `Showing ${start + 1}-${end} of ${total.toLocaleString()} lines`
       : "Showing 0 of 0 lines";
   }
+  const txHeaderCount = document.getElementById("txHeaderCount");
+  if (txHeaderCount) {
+    txHeaderCount.textContent = `${total.toLocaleString()} journal lines`;
+  }
   const txPageInfo = document.getElementById("txPageInfo");
-  if (txPageInfo) txPageInfo.textContent = `Page ${TX_CURRENT_PAGE} of ${totalPages}`;
+  if (txPageInfo) {
+    txPageInfo.textContent = total
+      ? `Showing ${start + 1}-${end} of ${total.toLocaleString()}`
+      : "Showing 0-0 of 0";
+  }
+  const txCurrentPage = document.getElementById("txCurrentPage");
+  if (txCurrentPage) txCurrentPage.textContent = `Page ${TX_CURRENT_PAGE}`;
   const prevBtn = document.getElementById("txPrevBtn");
   const nextBtn = document.getElementById("txNextBtn");
   if (prevBtn) prevBtn.disabled = TX_CURRENT_PAGE <= 1 || total === 0;
   if (nextBtn) nextBtn.disabled = TX_CURRENT_PAGE >= totalPages || total === 0;
+  document.querySelectorAll(".tx-page-size-toggle button[data-size]").forEach(button => {
+    button.classList.toggle("is-active", Number(button.dataset.size) === TX_PAGE_SIZE);
+  });
 }
 
 function applyTransactionFilters() {
@@ -1662,7 +1707,6 @@ function applyTransactionFilters() {
 
   const q = (document.getElementById("filterAccount").value || "").toLowerCase();
   const type = document.getElementById("filterType")?.value || "";
-  const direction = document.getElementById("filterDirection")?.value || "";
   const from = document.getElementById("filterFrom").value;
   const to = document.getElementById("filterTo").value;
 
@@ -1671,12 +1715,9 @@ function applyTransactionFilters() {
 
   const filtered = JOURNAL_LINES.filter(r => {
     const acc = `${r.accountCode} ${r.accountName}`.toLowerCase();
-    if (q && !acc.includes(q)) return false;
+    const description = String(r.description || "").toLowerCase();
+    if (q && !acc.includes(q) && !description.includes(q)) return false;
     if (type && String(r.accountType || "") !== type) return false;
-
-    const amount = Number(r.net || 0);
-    if (direction === "in" && !(amount < 0)) return false;
-    if (direction === "out" && !(amount > 0)) return false;
 
     const d = XeroTables.parseXeroDate(r.date);
     if (fromDate && d < fromDate) return false;
@@ -1700,9 +1741,7 @@ function resetTransactionFilters() {
     if (el) el.value = "";
   });
   const typeEl = document.getElementById("filterType");
-  const dirEl = document.getElementById("filterDirection");
   if (typeEl) typeEl.value = "";
-  if (dirEl) dirEl.value = "";
   FILTERED_JOURNAL_LINES = JOURNAL_LINES || [];
   TX_CURRENT_PAGE = 1;
   renderTransactionFilterChips();
@@ -1717,14 +1756,13 @@ function bindTransactionFilterEvents() {
 
   const search = document.getElementById("filterAccount");
   const type = document.getElementById("filterType");
-  const direction = document.getElementById("filterDirection");
   const from = document.getElementById("filterFrom");
   const to = document.getElementById("filterTo");
 
   if (search) {
     search.addEventListener("input", () => applyTransactionFilters());
   }
-  [type, direction, from, to].forEach(el => {
+  [type, from, to].forEach(el => {
     if (!el) return;
     el.addEventListener("change", () => applyTransactionFilters());
   });
@@ -1744,7 +1782,6 @@ function getTransactionFilterState() {
   return {
     account: document.getElementById("filterAccount")?.value || "",
     type: document.getElementById("filterType")?.value || "",
-    direction: document.getElementById("filterDirection")?.value || "",
     from: document.getElementById("filterFrom")?.value || "",
     to: document.getElementById("filterTo")?.value || ""
   };
@@ -1754,7 +1791,6 @@ function clearTransactionFilter(key) {
   const elementByKey = {
     account: "filterAccount",
     type: "filterType",
-    direction: "filterDirection",
     from: "filterFrom",
     to: "filterTo"
   };
@@ -1774,15 +1810,16 @@ function renderTransactionFilterChips() {
 
   if (state.account) chips.push({ key: "account", label: `Account: ${state.account}` });
   if (state.type) chips.push({ key: "type", label: `Type: ${formatJournalTypeLabel(state.type)}` });
-  if (state.direction) chips.push({ key: "direction", label: `Direction: ${state.direction === "in" ? "Money in" : "Money out"}` });
   if (state.from) chips.push({ key: "from", label: `From: ${state.from}` });
   if (state.to) chips.push({ key: "to", label: `To: ${state.to}` });
 
   if (!chips.length) {
-    container.innerHTML = `<span class="muted">No active filters</span>`;
+    container.innerHTML = "";
+    container.style.display = "none";
     return;
   }
 
+  container.style.display = "none";
   container.innerHTML = chips.map(chip => (
     `<span class="tx-filter-chip">${escapeHtmlText(chip.label)}<button type="button" aria-label="Remove ${escapeHtmlText(chip.label)}" onclick="clearTransactionFilter('${chip.key}')">&times;</button></span>`
   )).join("") + `<button type="button" class="tx-clear-link" onclick="resetTransactionFilters()">Clear all</button>`;
@@ -1902,8 +1939,6 @@ async function showTransactions() {
     FILTERED_JOURNAL_LINES = JOURNAL_LINES;
     TX_CURRENT_PAGE = 1;
     TX_PAGE_SIZE = 50;
-    const pageSizeSelect = document.getElementById("txPageSize");
-    if (pageSizeSelect) pageSizeSelect.value = "50";
     renderTransactionFilterChips();
     renderTransactionTable(FILTERED_JOURNAL_LINES);
   } catch (e) {
