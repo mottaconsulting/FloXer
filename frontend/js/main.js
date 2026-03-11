@@ -456,12 +456,15 @@ function computeBalanceKpi(data) {
   const manualOverride = isPastFy ? null : getBalanceOverrideValue(data);
   const hasManualOverride = Number.isFinite(manualOverride);
   const balance = hasManualOverride ? Number(manualOverride) : sourceBalance;
+  const previousMonthBalance = Number(data?.kpis?.cash_balance_prev_month);
   const cashflow = data?.charts?.cashflow || {};
   const cashIn = (cashflow.cashIn || []).map(v => Number(v || 0));
   const cashOut = (cashflow.cashOut || []).map(v => Number(v || 0));
   const monthlyNet = cashIn.map((v, idx) => v - Number(cashOut[idx] || 0));
   const currentNet = monthlyNet.length ? Number(monthlyNet[monthlyNet.length - 1] || 0) : NaN;
-  const previousBalance = Number.isFinite(balance) && Number.isFinite(currentNet) ? balance - currentNet : NaN;
+  const previousBalance = Number.isFinite(previousMonthBalance)
+    ? previousMonthBalance
+    : (Number.isFinite(balance) && Number.isFinite(currentNet) ? balance - currentNet : NaN);
   const changePct = Number.isFinite(balance) && Number.isFinite(previousBalance) && Math.abs(previousBalance) > 0.0001
     ? ((balance - previousBalance) / Math.abs(previousBalance)) * 100
     : NaN;
@@ -794,10 +797,16 @@ function renderOverview(data) {
 
   const cashflow = data?.charts?.cashflow;
   if (cashflow?.labels?.length) {
-    const cashInMonthly = (cashflow.cashIn || []).map(v => Number(v || 0));
-    const cashOutMonthly = (cashflow.cashOut || []).map(v => Number(v || 0));
-    const netMonthly = cashInMonthly.map((v, idx) => v - Number(cashOutMonthly[idx] || 0));
-    const runningNet = cumulativeSeries(netMonthly).map(v => Number(v || 0));
+    const cashInMonthly = maskFutureSeries(data, cashflow.labels, cashflow.cashIn || [], null)
+      .map(v => (v === null ? null : Number(v || 0)));
+    const cashOutMonthly = maskFutureSeries(data, cashflow.labels, cashflow.cashOut || [], null)
+      .map(v => (v === null ? null : Number(v || 0)));
+    let runningTotal = 0;
+    const runningNet = cashInMonthly.map((v, idx) => {
+      if (v === null || cashOutMonthly[idx] === null) return null;
+      runningTotal += Number(v || 0) - Number(cashOutMonthly[idx] || 0);
+      return runningTotal;
+    });
     XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
       labels: monthInitialLabels(cashflow.labels),
       datasets: [
@@ -857,21 +866,7 @@ function renderOverview(data) {
       },
       plugins: {
         legend: {
-          display: true,
-          position: "top",
-          align: "start",
-          labels: {
-            boxWidth: 10,
-            boxHeight: 10,
-            usePointStyle: true,
-            pointStyle: "circle",
-            padding: 12,
-            color: "#475569",
-            font: {
-              size: 11,
-              weight: "700"
-            }
-          }
+          display: false
         },
         tooltip: {
           enabled: true,

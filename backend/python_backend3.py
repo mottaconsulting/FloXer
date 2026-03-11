@@ -1449,6 +1449,7 @@ def build_overview_payload(
         cashflow_cash_out.append(max(0.0, -net_m))
 
     bank_burn_series: list[float] = []
+    previous_month_balance = None
     if len(bank_rows):
         bank_rows["MONTH"] = bank_rows["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
         # Keep sign convention aligned with frontend and KPI math:
@@ -1473,6 +1474,10 @@ def build_overview_payload(
         if live_cash_balance is not None
         else (float(cash_balance) if cash_balance is not None else None)
     )
+    if effective_cash_balance is not None and len(bank_rows):
+        current_month_inflow = float(bank_in.get(pd.Timestamp(current_month), 0.0))
+        current_month_outflow = float(bank_out.get(pd.Timestamp(current_month), 0.0))
+        previous_month_balance = float(effective_cash_balance) - (current_month_inflow - current_month_outflow)
 
     warnings = []
     runway_months = None
@@ -1552,6 +1557,9 @@ def build_overview_payload(
             ),
             "cash_balance_proxy": (
                 round(float(effective_cash_balance), 2) if effective_cash_balance is not None else None
+            ),
+            "cash_balance_prev_month": (
+                round(float(previous_month_balance), 2) if previous_month_balance is not None else None
             ),
             "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
             "monthly_burn": round(float(monthly_burn), 2) if monthly_burn is not None else None,

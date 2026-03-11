@@ -611,21 +611,17 @@
       font-size: 14px;
       font-weight: 700;
     }
-    .rebuilt-kpi-head-right {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-    }
     .rebuilt-kpi-adjust-btn {
       border: 1px solid #dbe2ea;
       background: #ffffff;
       color: #475569;
       border-radius: 999px;
-      padding: 2px 10px;
+      padding: 4px 10px;
       font-size: 11px;
       font-weight: 700;
       line-height: 1.4;
       cursor: pointer;
+      box-shadow: none;
       transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
     }
     .rebuilt-kpi-adjust-btn:hover {
@@ -674,6 +670,12 @@
       font-weight: 700;
       color: #64748b;
     }
+    .rebuilt-kpi-footer {
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
     .rebuilt-kpi-sparkline {
       width: 100%;
       min-height: 34px;
@@ -703,6 +705,14 @@
       align-items: center;
       gap: 8px;
     }
+    .rebuilt-panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
     .rebuilt-fy-chip {
       display: inline-flex;
       align-items: center;
@@ -714,6 +724,35 @@
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.02em;
+    }
+    .revenue-legend {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      padding-top: 2px;
+      flex-wrap: wrap;
+    }
+    .revenue-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .revenue-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      flex: 0 0 10px;
+      box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.7);
+    }
+    .revenue-legend-dot.revenue {
+      background: #3b82f6;
+    }
+    .revenue-legend-dot.expense {
+      background: #ec4899;
     }
     .rebuilt-chart-wrap {
       height: 240px;
@@ -1974,16 +2013,16 @@
         <div class="rebuilt-kpi-card">
           <div class="rebuilt-kpi-head">
             <span id="dashboardSecondKpiLabel">Current Balance</span>
-            <div class="rebuilt-kpi-head-right">
-              <button id="dashboardBalanceAdjustToggle" class="rebuilt-kpi-adjust-btn" type="button" aria-label="Edit current balance">Edit</button>
-              <span id="dashboardBalanceTrend" class="rebuilt-kpi-trend">--</span>
-            </div>
+            <span id="dashboardBalanceTrend" class="rebuilt-kpi-trend">--</span>
           </div>
           <div class="rebuilt-kpi-split">
             <div id="dashboardBalanceValue" class="rebuilt-kpi-value">--</div>
             <div id="dashboardBalanceSparkline" class="rebuilt-kpi-sparkline" aria-hidden="true"></div>
           </div>
           <div id="dashboardBalanceSource" class="rebuilt-kpi-adjust-source"></div>
+          <div class="rebuilt-kpi-footer">
+            <button id="dashboardBalanceAdjustToggle" class="rebuilt-kpi-adjust-btn" type="button" aria-label="Edit current balance">Edit</button>
+          </div>
         </div>
         <div class="rebuilt-kpi-card">
           <div class="rebuilt-kpi-head">
@@ -2004,7 +2043,13 @@
           </div>
         </section>
         <section class="rebuilt-panel">
-          <h3 class="rebuilt-panel-title">Revenue &amp; Expenses <span id="graphFyLabelRevenue" class="rebuilt-fy-chip">--</span></h3>
+          <div class="rebuilt-panel-header">
+            <h3 class="rebuilt-panel-title">Revenue &amp; Expenses <span id="graphFyLabelRevenue" class="rebuilt-fy-chip">--</span></h3>
+            <div class="revenue-legend" aria-label="Revenue and expenses legend">
+              <span class="revenue-legend-item"><span class="revenue-legend-dot revenue" aria-hidden="true"></span>Revenue</span>
+              <span class="revenue-legend-item"><span class="revenue-legend-dot expense" aria-hidden="true"></span>Expenses</span>
+            </div>
+          </div>
           <div class="rebuilt-chart-wrap">
             <canvas id="dashboardRevenueExpensesChart"></canvas>
           </div>
