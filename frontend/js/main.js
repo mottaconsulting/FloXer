@@ -1434,6 +1434,7 @@ function removeBudgetRow(idx) {
 
 async function showBudgetInput() {
   hideAllViews();
+  if (typeof setActiveSidebarNav === "function") setActiveSidebarNav("budget");
   document.getElementById("budgetContainer").style.display = "block";
   if (!document.getElementById("budgetBody")) {
     renderEmptyView("budgetContainer", "Budget Input", "This screen is not rebuilt yet.");
@@ -1841,6 +1842,7 @@ window.changeTransactionPageSize = changeTransactionPageSize;
 // ---------- Navigation ----------
 async function showDashboard() {
   hideAllViews();
+  if (typeof setActiveSidebarNav === "function") setActiveSidebarNav("dashboard");
   setLoading("Preparing dashboard...");
 
   try {
@@ -1875,6 +1877,7 @@ async function fetchOverview(todayStr, fyStartMonth = 7, cashBalance = null, bur
 
 async function showTransactions() {
   hideAllViews();
+  if (typeof setActiveSidebarNav === "function") setActiveSidebarNav("transactions");
   setLoading("Loading transactions...");
   try {
     if (!document.getElementById("tableHeader") || !document.getElementById("tableBody")) {

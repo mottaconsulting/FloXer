@@ -80,6 +80,12 @@ function hideAllViews() {
   hideError();
 }
 
+function setActiveSidebarNav(view) {
+  document.querySelectorAll(".nav-links button[data-view]").forEach(button => {
+    button.classList.toggle("is-active", button.dataset.view === view);
+  });
+}
+
 function setRawData(data) {
   _xeroUiCurrentData = data;
   const raw = document.getElementById("rawOutput");
@@ -140,6 +146,7 @@ window.XeroUI = {
   getRawData,
   hideAllViews,
   hideError,
+  setActiveSidebarNav,
   setLoading,
   setRawData,
   hideXeroConnectModal,
@@ -154,6 +161,7 @@ window.hideAllViews = hideAllViews;
 window.hideError = hideError;
 window.setLoading = setLoading;
 window.setRawData = setRawData;
+window.setActiveSidebarNav = setActiveSidebarNav;
 window.hideXeroConnectModal = hideXeroConnectModal;
 window.setXeroConnectionStatus = setXeroConnectionStatus;
 window.showXeroConnectModal = showXeroConnectModal;

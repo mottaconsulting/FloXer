@@ -4,7 +4,11 @@ async function logoutSession() {
   } catch (_) {
     // Even if the API call fails, force navigation to login.
   }
-  window.location.href = "/";
+  window.location.replace("/login");
+}
+
+function restartDashboard() {
+  window.location.replace("/dashboard");
 }
 
 function authorize() {
@@ -217,5 +221,6 @@ window.checkHealth = checkHealth;
 window.fyEndDateFromYear = fyEndDateFromYear;
 window.loadOrganizations = loadOrganizations;
 window.logoutSession = logoutSession;
+window.restartDashboard = restartDashboard;
 window.setSalesMode = setSalesMode;
 window.switchOrganization = switchOrganization;
