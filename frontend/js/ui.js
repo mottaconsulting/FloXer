@@ -1,5 +1,31 @@
 let _xeroUiCurrentData = null;
 let _xeroUiShowingRaw = false;
+let _xeroConnectModalLoadPromise = null;
+
+function ensureXeroConnectModalLoaded() {
+  const existing = document.getElementById("xeroConnectModal");
+  if (existing) return Promise.resolve(existing);
+  if (_xeroConnectModalLoadPromise) return _xeroConnectModalLoadPromise;
+
+  const mount = document.getElementById("xeroConnectModalMount");
+  if (!mount) return Promise.resolve(null);
+
+  _xeroConnectModalLoadPromise = fetch("/partials/xero-connect-modal.html", { cache: "no-store" })
+    .then(resp => {
+      if (!resp.ok) throw new Error(`modal load failed: ${resp.status}`);
+      return resp.text();
+    })
+    .then(html => {
+      mount.innerHTML = html;
+      return document.getElementById("xeroConnectModal");
+    })
+    .catch(() => null)
+    .finally(() => {
+      _xeroConnectModalLoadPromise = null;
+    });
+
+  return _xeroConnectModalLoadPromise;
+}
 
 function setLoading(msg) {
   const el = document.getElementById("loading");
@@ -26,10 +52,11 @@ function hideError() {
 }
 
 function showXeroConnectModal() {
-  const modal = document.getElementById("xeroConnectModal");
-  if (!modal) return;
-  modal.classList.add("is-open");
-  modal.setAttribute("aria-hidden", "false");
+  ensureXeroConnectModalLoaded().then(modal => {
+    if (!modal) return;
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+  });
 }
 
 function hideXeroConnectModal() {
@@ -38,6 +65,10 @@ function hideXeroConnectModal() {
   modal.classList.remove("is-open");
   modal.setAttribute("aria-hidden", "true");
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  ensureXeroConnectModalLoaded();
+});
 
 function hideAllViews() {
   ["dashboardContainer", "transactionsContainer", "liabilitiesContainer", "budgetContainer", "rawOutput"].forEach(id => {

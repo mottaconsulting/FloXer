@@ -363,150 +363,152 @@
       display: flex;
     }
     .xero-connect-card {
-      width: min(432px, 100%);
+      width: min(440px, 100%);
       background: #ffffff;
-      border-radius: 20px;
+      border-radius: 22px;
       box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(15, 23, 42, 0.03);
       border: 1px solid #e5e7eb;
-      padding: 0 36px 16px;
+      padding: 34px 34px 0;
       display: grid;
-      gap: 6px;
+      gap: 0;
       transform: scale(0.92);
       opacity: 0;
     }
     .xero-connect-modal.is-open .xero-connect-card {
       animation: modalPop 220ms ease-out forwards;
     }
-    .xero-connect-topbar {
-      height: 8px;
-      margin: 0 -36px;
-      border-radius: 20px 20px 0 0;
-      background: linear-gradient(90deg, #e91e8c 0%, #13b5ea 100%);
+    .xero-connect-icon-wrap {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto;
+      border-radius: 20px;
+      border: 1px solid #d8e1ee;
+      background: #eaf1fb;
+      display: grid;
+      place-items: center;
     }
-    .xero-connect-eyebrow {
-      margin: 12px 0 0;
-      display: inline-flex;
-      width: fit-content;
-      align-items: center;
-      gap: 6px;
-      color: #0d1b4b;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-    }
-    .xero-connect-eyebrow::before {
-      content: "";
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
-      background: #3b82f6;
-      display: inline-block;
+    .xero-connect-icon {
+      width: 38px;
+      height: 38px;
+      stroke: #0d1b4b;
+      fill: none;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .xero-connect-title {
-      margin: 0;
+      margin: 26px 0 0;
+      text-align: center;
       font-family: "Space Grotesk", sans-serif;
-      font-size: 32px;
+      font-size: 22px;
       font-weight: 800;
       letter-spacing: -0.03em;
       color: #0d1b4b;
-    }
-    .xero-connect-subhead {
-      margin: 0;
-      color: #0d1b4b;
-      font-size: 16px;
-      font-weight: 600;
-      line-height: 1.45;
+      line-height: 1.2;
     }
     .xero-connect-text {
-      margin: 1px 0 0;
-      color: #6b7280;
-      font-size: 14px;
-      line-height: 1.45;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 100%;
+      margin: 22px auto 0;
+      max-width: 420px;
+      text-align: center;
+      color: #64748b;
+      font-size: 16px;
+      line-height: 1.58;
     }
-    .xero-connect-separator {
-      border: 0;
-      border-top: 1px solid #e2e8f0;
-      margin: 8px 0 4px;
-    }
-    .xero-connect-actions {
-      display: flex;
-      gap: 12px;
-      justify-content: flex-end;
-      margin-top: 4px;
-      padding-left: 0;
-    }
-    .xero-connect-actions .xero-connect-secondary,
-    .xero-connect-actions .xero-connect-primary {
-      width: auto;
-      border-radius: 50px;
-      padding: 10px 16px;
-      font-size: 14px;
-      font-weight: 700;
-      border: 1px solid transparent;
-      cursor: pointer;
-      transition: background-color 200ms ease, color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
-    }
-    .xero-connect-actions .xero-connect-secondary {
-      background: transparent;
-      color: #0d1b4b;
-      border-color: transparent;
-      box-shadow: none;
-      border-radius: 0;
-      padding: 0;
-      font-size: 13px;
-    }
-    .xero-connect-actions .xero-connect-secondary:hover {
-      text-decoration: underline;
-      background: transparent;
-    }
-    .xero-connect-actions .xero-connect-primary {
+    .xero-connect-primary {
+      margin-top: 30px;
+      width: 100%;
+      border-radius: 14px;
+      border: none;
       background: #0d1b4b;
       color: #ffffff;
-      box-shadow: 0 10px 20px rgba(13, 27, 75, 0.22);
-    }
-    .xero-connect-actions .xero-connect-primary:hover {
-      background: #e91e8c;
-      box-shadow: 0 14px 24px rgba(233, 30, 140, 0.24);
-      transform: scale(1.03);
-    }
-    .xero-connect-actions .xero-connect-secondary:focus-visible,
-    .xero-connect-actions .xero-connect-primary:focus-visible {
-      outline: 2px solid #3b82f6;
-      outline-offset: 2px;
-    }
-    .xero-connect-lock {
-      width: 16px;
-      height: 16px;
-      margin-right: 6px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      vertical-align: text-bottom;
-    }
-    .xero-connect-footer {
-      margin: 8px 0 0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      width: 100%;
-      text-align: center;
-      color: #475569;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 20px 20px;
+      cursor: pointer;
+      transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+      box-shadow: 0 14px 32px rgba(13, 27, 75, 0.22);
+    }
+    .xero-connect-primary:hover {
+      background: #132b71;
+      transform: translateY(-1px);
+      box-shadow: 0 18px 36px rgba(13, 27, 75, 0.28);
+    }
+    .xero-connect-primary:focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
+    .xero-connect-button-text {
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .xero-connect-xero-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px 4px 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.12);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .xero-connect-xero-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: #13b5ea;
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .xero-connect-secondary {
+      margin: 22px auto 0;
+      width: fit-content;
+      border: 0;
+      background: transparent;
+      color: #97a3ba;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.16s ease, text-decoration-color 0.16s ease;
+    }
+    .xero-connect-secondary:hover {
+      color: #64748b;
+      text-decoration: underline;
+    }
+    .xero-connect-secondary:focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
+    .xero-connect-footer {
+      margin: 30px -34px 0;
+      border-top: 1px solid #e5e7eb;
+      padding: 14px 20px 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      width: calc(100% + 68px);
+      color: #a5b0c4;
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.01em;
+      text-align: center;
     }
     .xero-connect-footer-icon {
       width: 14px;
       height: 14px;
-      stroke: #13b5ea;
+      stroke: #b8c4d8;
       fill: none;
       stroke-width: 2;
       stroke-linecap: round;
@@ -642,45 +644,6 @@
       min-height: 34px;
       display: flex;
       align-items: center;
-    }
-    .rebuilt-kpi-adjust-row {
-      margin-top: 4px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .rebuilt-kpi-adjust-input {
-      width: 100%;
-      min-width: 0;
-      border: 1px solid #dbe2ea;
-      border-radius: 8px;
-      padding: 6px 8px;
-      font-size: 13px;
-      color: #111827;
-      background: #ffffff;
-    }
-    .rebuilt-kpi-adjust-input:focus-visible {
-      outline: 2px solid #93c5fd;
-      border-color: #60a5fa;
-      outline-offset: 0;
-    }
-    .rebuilt-kpi-adjust-action {
-      border: none;
-      border-radius: 8px;
-      padding: 6px 10px;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: opacity 0.15s ease;
-    }
-    .rebuilt-kpi-adjust-action:hover { opacity: 0.9; }
-    .rebuilt-kpi-adjust-action.primary {
-      background: #0d1b4b;
-      color: #ffffff;
-    }
-    .rebuilt-kpi-adjust-action.subtle {
-      background: #f1f5f9;
-      color: #475569;
     }
     .rebuilt-kpi-adjust-source {
       margin-top: 2px;
@@ -1769,23 +1732,7 @@
 
   <div id="loading" class="loading" style="display:none;">Preparing dashboard...</div>
   <div id="error" class="error"></div>
-  <div id="xeroConnectModal" class="xero-connect-modal" aria-hidden="true">
-    <section class="xero-connect-card" role="dialog" aria-modal="true" aria-labelledby="xeroConnectTitle">
-      <div class="xero-connect-topbar"></div>
-      <p class="xero-connect-eyebrow">Xero Connection</p>
-      <h2 id="xeroConnectTitle" class="xero-connect-title">Connect to Xero</h2>
-      <p class="xero-connect-subhead">Sync your organisation's financial data in seconds.</p>
-      <p class="xero-connect-text">
-        Authorize your Xero organization to load dashboard data. This uses the same authorization flow as the sidebar Authorize action.
-      </p>
-      <hr class="xero-connect-separator">
-      <div class="xero-connect-actions">
-        <button type="button" class="xero-connect-secondary" onclick="hideXeroConnectModal()">Not now</button>
-        <button type="button" class="xero-connect-primary" onclick="authorize()"><svg viewBox="0 0 24 24" class="xero-connect-lock" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>Authorise</button>
-      </div>
-      <p class="xero-connect-footer"><svg viewBox="0 0 24 24" class="xero-connect-footer-icon" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 7.3 7 10 4-2.7 7-5.5 7-10V6l-7-3z"></path><path d="m9.7 12.2 1.8 1.8 3-3.2"></path></svg>Secure OAuth 2.0 — Floxer never stores your Xero password</p>
-    </section>
-  </div>
+  <div id="xeroConnectModalMount"></div>
 
   <!-- DASHBOARD -->
   <div id="dashboardContainer" style="display:none;">
@@ -1817,18 +1764,13 @@
           <div class="rebuilt-kpi-head">
             <span id="dashboardSecondKpiLabel">Current Balance</span>
             <div class="rebuilt-kpi-head-right">
-              <button id="dashboardBalanceAdjustToggle" class="rebuilt-kpi-adjust-btn" type="button" aria-label="Adjust current balance">Adjust</button>
+              <button id="dashboardBalanceAdjustToggle" class="rebuilt-kpi-adjust-btn" type="button" aria-label="Edit current balance">Edit</button>
               <span id="dashboardBalanceTrend" class="rebuilt-kpi-trend">--</span>
             </div>
           </div>
           <div class="rebuilt-kpi-split">
             <div id="dashboardBalanceValue" class="rebuilt-kpi-value">--</div>
             <div id="dashboardBalanceSparkline" class="rebuilt-kpi-sparkline" aria-hidden="true"></div>
-          </div>
-          <div id="dashboardBalanceAdjustRow" class="rebuilt-kpi-adjust-row" hidden>
-            <input id="dashboardBalanceAdjustInput" class="rebuilt-kpi-adjust-input" type="text" inputmode="decimal" placeholder="Enter corrected balance" aria-label="Corrected balance amount">
-            <button id="dashboardBalanceAdjustSave" class="rebuilt-kpi-adjust-action primary" type="button">Save</button>
-            <button id="dashboardBalanceAdjustReset" class="rebuilt-kpi-adjust-action subtle" type="button">Reset</button>
           </div>
           <div id="dashboardBalanceSource" class="rebuilt-kpi-adjust-source"></div>
         </div>

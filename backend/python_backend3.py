@@ -1394,6 +1394,7 @@ def build_overview_payload(
         profit_now_prev = None
 
     actual_expense = _monthly_series(actuals_fy, months, "EXPENSE")
+    actual_revenue = _monthly_series(actuals_fy, months, "REVENUE")
     budget_expense = _monthly_series(budget_completed, months, "EXPENSE")
     projected_expense = [
         a if m <= current_month else (b if has_budget_projection else None)
@@ -1434,20 +1435,31 @@ def build_overview_payload(
         (actuals_fy["ACCOUNT_TYPE"] == "BANK")
         & (actuals_fy["JOURNAL_DATE"] < next_month)
     ].copy()
-    cashflow_cash_in = [0.0 for _ in months]
-    cashflow_cash_out = [0.0 for _ in months]
+    # Cashflow chart is aligned to P&L monthly net movement for consistency:
+    # net = revenue - expense, split into in/out bars.
+    cashflow_cash_in = []
+    cashflow_cash_out = []
+    for m, revenue_m, expense_m in zip(months, actual_revenue, actual_expense):
+        if m > current_month:
+            cashflow_cash_in.append(0.0)
+            cashflow_cash_out.append(0.0)
+            continue
+        net_m = float(revenue_m) - float(expense_m)
+        cashflow_cash_in.append(max(0.0, net_m))
+        cashflow_cash_out.append(max(0.0, -net_m))
+
     bank_burn_series: list[float] = []
     if len(bank_rows):
         bank_rows["MONTH"] = bank_rows["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
-        bank_out = bank_rows.loc[bank_rows["NET_AMOUNT"] > 0].groupby("MONTH")["NET_AMOUNT"].sum()
-        bank_in = bank_rows.loc[bank_rows["NET_AMOUNT"] < 0].groupby("MONTH")["NET_AMOUNT"].sum().abs()
+        # Keep sign convention aligned with frontend and KPI math:
+        # positive NET_AMOUNT = cash in, negative NET_AMOUNT = cash out.
+        bank_in = bank_rows.loc[bank_rows["NET_AMOUNT"] > 0].groupby("MONTH")["NET_AMOUNT"].sum()
+        bank_out = bank_rows.loc[bank_rows["NET_AMOUNT"] < 0].groupby("MONTH")["NET_AMOUNT"].sum().abs()
         for idx, m in enumerate(months):
             if m > current_month:
                 continue
-            outflow = float(bank_out.get(pd.Timestamp(m), 0.0))
             inflow = float(bank_in.get(pd.Timestamp(m), 0.0))
-            cashflow_cash_in[idx] = inflow
-            cashflow_cash_out[idx] = outflow
+            outflow = float(bank_out.get(pd.Timestamp(m), 0.0))
             bank_burn_series.append(max(0.0, outflow - inflow))
     if bank_burn_series:
         tail = bank_burn_series[-burn_months:] if burn_months > 0 else bank_burn_series

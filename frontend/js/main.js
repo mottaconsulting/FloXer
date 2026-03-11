@@ -6,9 +6,6 @@ let TX_PAGE_SIZE = 50;
 let TX_FILTER_EVENTS_BOUND = false;
 let APP_CURRENCY = "AUD";
 let BALANCE_ADJUST_EVENTS_BOUND = false;
-let BALANCE_ADJUST_OPEN = false;
-
-const BALANCE_OVERRIDE_STORAGE_KEY = "mmxero.balanceOverride";
 
 const INCOME_TYPES = new Set(["REVENUE"]);   // your org shows REVENUE
 const EXPENSE_TYPES = new Set(["EXPENSE"]);  // your org shows EXPENSE
@@ -405,9 +402,15 @@ function parseCurrencyInput(value) {
   return Number(cleaned);
 }
 
-function getBalanceOverrideValue() {
+function getBalanceOverrideStorageKey(data) {
+  const orgId = document.getElementById("orgSelect")?.value || "default";
+  const fyEnd = data?.meta?.fy_end ? String(data.meta.fy_end).slice(0, 4) : "current";
+  return `mmxero.balanceOverride.${orgId}.${fyEnd}`;
+}
+
+function getBalanceOverrideValue(data) {
   try {
-    const raw = window.localStorage.getItem(BALANCE_OVERRIDE_STORAGE_KEY);
+    const raw = window.localStorage.getItem(getBalanceOverrideStorageKey(data));
     if (raw === null || raw === "") return null;
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : null;
@@ -416,13 +419,14 @@ function getBalanceOverrideValue() {
   }
 }
 
-function setBalanceOverrideValue(value) {
+function setBalanceOverrideValue(data, value) {
+  const key = getBalanceOverrideStorageKey(data);
   try {
     if (value === null || value === undefined || value === "") {
-      window.localStorage.removeItem(BALANCE_OVERRIDE_STORAGE_KEY);
+      window.localStorage.removeItem(key);
       return;
     }
-    window.localStorage.setItem(BALANCE_OVERRIDE_STORAGE_KEY, String(Number(value)));
+    window.localStorage.setItem(key, String(Number(value)));
   } catch (_) {
     // ignore storage errors
   }
@@ -445,7 +449,7 @@ function computeYearProfitKpi(data) {
 function computeBalanceKpi(data) {
   const isPastFy = isPastFinancialYearSelection(data);
   const sourceBalance = Number(data?.kpis?.cash_balance_live ?? data?.kpis?.cash_balance_proxy);
-  const manualOverride = isPastFy ? null : getBalanceOverrideValue();
+  const manualOverride = isPastFy ? null : getBalanceOverrideValue(data);
   const hasManualOverride = Number.isFinite(manualOverride);
   const balance = hasManualOverride ? Number(manualOverride) : sourceBalance;
   const cashflow = data?.charts?.cashflow || {};
@@ -592,55 +596,33 @@ function bindBalanceAdjustEvents() {
   if (BALANCE_ADJUST_EVENTS_BOUND) return;
 
   const toggleBtn = document.getElementById("dashboardBalanceAdjustToggle");
-  const row = document.getElementById("dashboardBalanceAdjustRow");
-  const input = document.getElementById("dashboardBalanceAdjustInput");
-  const saveBtn = document.getElementById("dashboardBalanceAdjustSave");
-  const resetBtn = document.getElementById("dashboardBalanceAdjustReset");
-
-  if (!toggleBtn || !row || !input || !saveBtn || !resetBtn) return;
+  if (!toggleBtn) return;
 
   toggleBtn.addEventListener("click", () => {
-    BALANCE_ADJUST_OPEN = !BALANCE_ADJUST_OPEN;
     const data = window.XeroUI?.getRawData?.();
+    const isPastFy = isPastFinancialYearSelection(data || {});
+    if (isPastFy) return;
+
     const balanceKpi = computeBalanceKpi(data || {});
-    row.hidden = !BALANCE_ADJUST_OPEN;
-    if (BALANCE_ADJUST_OPEN) {
-      input.value = Number.isFinite(balanceKpi.balance) ? String(Math.round(balanceKpi.balance)) : "";
-      input.focus();
-      input.select();
-    }
-  });
+    const defaultValue = Number.isFinite(balanceKpi.balance) ? String(Math.round(balanceKpi.balance)) : "";
+    const raw = window.prompt(
+      "Edit Current Balance. Leave blank to reset to live Xero value.",
+      defaultValue
+    );
+    if (raw === null) return;
 
-  saveBtn.addEventListener("click", () => {
-    const parsed = parseCurrencyInput(input.value);
-    if (!Number.isFinite(parsed)) {
-      input.setCustomValidity("Enter a valid number.");
-      input.reportValidity();
-      return;
+    const next = String(raw).trim();
+    if (!next) {
+      setBalanceOverrideValue(data || {}, null);
+    } else {
+      const parsed = parseCurrencyInput(next);
+      if (!Number.isFinite(parsed)) {
+        showError("Enter a valid number for Current Balance.");
+        return;
+      }
+      setBalanceOverrideValue(data || {}, parsed);
     }
-    input.setCustomValidity("");
-    setBalanceOverrideValue(parsed);
-    BALANCE_ADJUST_OPEN = false;
-    const data = window.XeroUI?.getRawData?.();
     if (data) renderOverview(data);
-  });
-
-  resetBtn.addEventListener("click", () => {
-    setBalanceOverrideValue(null);
-    BALANCE_ADJUST_OPEN = false;
-    const data = window.XeroUI?.getRawData?.();
-    if (data) renderOverview(data);
-  });
-
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      saveBtn.click();
-    } else if (event.key === "Escape") {
-      BALANCE_ADJUST_OPEN = false;
-      const data = window.XeroUI?.getRawData?.();
-      if (data) renderOverview(data);
-    }
   });
 
   BALANCE_ADJUST_EVENTS_BOUND = true;
@@ -648,14 +630,11 @@ function bindBalanceAdjustEvents() {
 
 function renderBalanceAdjustState(balanceKpi, isPastFy) {
   const toggleBtn = document.getElementById("dashboardBalanceAdjustToggle");
-  const row = document.getElementById("dashboardBalanceAdjustRow");
   const sourceEl = document.getElementById("dashboardBalanceSource");
 
-  if (!toggleBtn || !row || !sourceEl) return;
+  if (!toggleBtn || !sourceEl) return;
 
   toggleBtn.style.display = isPastFy ? "none" : "inline-flex";
-  if (isPastFy) BALANCE_ADJUST_OPEN = false;
-  row.hidden = !BALANCE_ADJUST_OPEN || isPastFy;
 
   if (isPastFy) {
     sourceEl.textContent = "";
