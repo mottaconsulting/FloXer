@@ -815,8 +815,8 @@ function renderOverview(data) {
           data: runningNet,
           backgroundColor: runningNet.map(v => Number(v || 0) < 0 ? "rgba(236, 72, 153, 0.84)" : "rgba(59, 130, 246, 0.82)"),
           borderRadius: 0,
-          categoryPercentage: 0.46,
-          barPercentage: 0.72
+          categoryPercentage: 0.62,
+          barPercentage: 0.9
         }
       ]
     }, {
