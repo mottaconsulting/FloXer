@@ -1071,6 +1071,133 @@
       padding-top: 10px;
       padding-bottom: 10px;
     }
+    .budget-minimal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .budget-page-title {
+      margin: 0;
+      font-family: "Sora", "Space Grotesk", sans-serif;
+      font-size: 22px;
+      font-weight: 800;
+      color: #0d1b4b;
+      letter-spacing: -0.02em;
+    }
+    .budget-simple-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .budget-source-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid #e8ebf3;
+      background: #f4f6fa;
+      color: #6b7a99;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .budget-simple-note {
+      color: #7a84a0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .budget-simple-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .budget-simple-actions {
+      display: inline-flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .budget-simple-actions button {
+      min-height: 38px;
+      width: auto;
+      padding: 8px 14px;
+      border-radius: 999px;
+      box-shadow: none;
+    }
+    .budget-simple-actions .budget-save-btn {
+      background: #0d1b4b;
+      color: #ffffff;
+    }
+    .budget-simple-summary {
+      display: inline-flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .budget-simple-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid #e8ebf3;
+      background: #ffffff;
+      color: #6b7a99;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .budget-simple-pill strong {
+      color: #0d1b4b;
+      font-weight: 800;
+    }
+    .budget-screen-minimal .budget-table-wrap.simple {
+      padding: 0;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .budget-screen-minimal .budget-table-wrap.simple table {
+      border-radius: 0;
+    }
+    .budget-screen-minimal .budget-table-wrap.simple th {
+      background: #f8f9fc;
+      color: #8a94ad;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .budget-screen-minimal .budget-table-wrap.simple td {
+      border-bottom: 1px solid #f0f2f7;
+      padding: 12px;
+    }
+    .budget-row-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .budget-delete-btn {
+      width: 32px;
+      min-width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: 999px;
+      background: #fff0f6;
+      color: #e8187f;
+      border: 1px solid #f7c8dc;
+      box-shadow: none;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .budget-account-stack {
+      display: grid;
+      gap: 8px;
+      min-width: 220px;
+    }
     .budget-table-wrap table {
       margin-top: 0;
       box-shadow: none;
@@ -2029,39 +2156,29 @@
   <!-- BUDGET INPUT -->
   <div id="budgetContainer" style="display:none;">
     <section class="rebuilt-dashboard budget-screen budget-screen-minimal">
-      <div class="rebuilt-hero">
-        <h1 class="rebuilt-title">Budget Input</h1>
-        <div class="rebuilt-subtitle" id="budgetMeta">
-          Add monthly budget rows used for projected metrics. Revenue stays net of GST; revenue rows show a 10% GST preview.
+      <div class="budget-minimal-head">
+        <h1 class="budget-page-title">Budget Input</h1>
+        <div class="budget-simple-meta">
+          <div id="budgetBackendBadge" class="budget-source-chip">Source: --</div>
+          <div id="budgetMeta" class="budget-simple-note">Simple monthly budget saved to Supabase.</div>
         </div>
       </div>
 
       <section class="rebuilt-panel">
-        <div class="budget-head-row">
-          <div id="budgetBackendBadge" class="budget-backend-pill">Source: --</div>
-          <div class="budget-toolbar">
-            <button type="button" onclick="addBudgetRow()" class="btn-accent">Add row</button>
+        <div class="budget-simple-toolbar">
+          <div class="budget-simple-actions">
+            <button type="button" onclick="addBudgetRow()" class="btn-muted">Add row</button>
             <button type="button" onclick="loadBudgetRows()" class="btn-muted">Reload</button>
-            <button type="button" onclick="saveBudgetRows()">Save budget</button>
+            <button type="button" onclick="saveBudgetRows()" class="budget-save-btn">Save</button>
+          </div>
+          <div class="budget-simple-summary">
+            <div class="budget-simple-pill">Rows <strong id="budgetRowsCount">0</strong></div>
+            <div class="budget-simple-pill">Revenue <strong id="budgetRevenueTotal">&mdash;</strong></div>
+            <div class="budget-simple-pill">Expenses <strong id="budgetExpenseTotal">&mdash;</strong></div>
           </div>
         </div>
 
-        <div class="budget-summary-grid">
-          <div class="budget-summary-card">
-            <div class="label">Rows</div>
-            <div class="value" id="budgetRowsCount">0</div>
-          </div>
-          <div class="budget-summary-card">
-            <div class="label">Revenue (net)</div>
-            <div class="value" id="budgetRevenueTotal">&mdash;</div>
-          </div>
-          <div class="budget-summary-card">
-            <div class="label">GST on sales</div>
-            <div class="value" id="budgetGstTotal">&mdash;</div>
-          </div>
-        </div>
-
-        <div class="budget-table-wrap">
+        <div class="budget-table-wrap simple">
           <div class="table-container">
             <table>
               <thead>
@@ -2069,11 +2186,7 @@
                   <th>Month</th>
                   <th>Type</th>
                   <th>Account name</th>
-                  <th>Net amount</th>
-                  <th>Repeat</th>
-                  <th>End</th>
-                  <th>GST</th>
-                  <th>Total incl. GST</th>
+                  <th>Amount</th>
                   <th>Action</th>
                 </tr>
               </thead>

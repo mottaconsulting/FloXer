@@ -39,7 +39,11 @@ function flattenJournalLines(journals) {
       });
     }
   }
-  return rows;
+  return rows.sort((a, b) => {
+    const aTime = XeroTables.parseXeroDate(a.date)?.getTime?.() || 0;
+    const bTime = XeroTables.parseXeroDate(b.date)?.getTime?.() || 0;
+    return bTime - aTime;
+  });
 }
 
 function monthKey(dateStr) {
@@ -1134,11 +1138,6 @@ function budgetRowHtml(row = {}, idx = 0) {
   const matchesPreset = options.some(option => option.toLowerCase() === nameValue.toLowerCase() && option !== "Custom");
   const selectedName = matchesPreset ? options.find(option => option.toLowerCase() === nameValue.toLowerCase()) : (nameValue ? "Custom" : options[0]);
   const customVisible = selectedName === "Custom";
-  const derived = budgetRowDerivedValues({
-    accountType: typeValue,
-    accountName: customVisible ? nameValue : selectedName,
-    enteredAmount: amountValue
-  });
 
   return `
     <tr data-budget-idx="${idx}" data-row-id="${escapeAttr(rowId)}" data-generated-from="${escapeAttr(generatedFrom)}">
@@ -1150,27 +1149,17 @@ function budgetRowHtml(row = {}, idx = 0) {
         </select>
       </td>
       <td>
-        <select class="budget-name-select budget-select" onchange="updateBudgetRowUi(${idx})">
-          ${options.map(option => `<option value="${escapeAttr(option)}" ${option === selectedName ? "selected" : ""}>${escapeHtmlText(option)}</option>`).join("")}
-        </select>
-        <input type="text" class="budget-name budget-input budget-custom-name" value="${customVisible ? escapeAttr(nameValue) : ""}" placeholder="Custom account name" style="${customVisible ? "" : "display:none;"}">
+        <div class="budget-account-stack">
+          <select class="budget-name-select budget-select" onchange="updateBudgetRowUi(${idx})">
+            ${options.map(option => `<option value="${escapeAttr(option)}" ${option === selectedName ? "selected" : ""}>${escapeHtmlText(option)}</option>`).join("")}
+          </select>
+          <input type="text" class="budget-name budget-input budget-custom-name" value="${customVisible ? escapeAttr(nameValue) : ""}" placeholder="Custom account name" style="${customVisible ? "" : "display:none;"}">
+        </div>
       </td>
       <td><input type="number" class="budget-amount budget-input" value="${Number.isFinite(amountValue) ? amountValue : 0}" step="0.01" oninput="updateBudgetRowUi(${idx})"></td>
       <td>
-        <select class="budget-repeat budget-select" onchange="updateBudgetRowUi(${idx})">
-          <option value="ONE_OFF" ${repeatValue === "ONE_OFF" ? "selected" : ""}>One-off</option>
-          <option value="MONTHLY" ${repeatValue === "MONTHLY" ? "selected" : ""}>Monthly</option>
-          <option value="QUARTERLY" ${repeatValue === "QUARTERLY" ? "selected" : ""}>Quarterly</option>
-        </select>
-      </td>
-      <td><div class="budget-metric"><small>End</small><span>This FY</span></div></td>
-      <td><div class="budget-metric budget-gst"><small>GST (10%)</small><span class="budget-gst-value">${derived.isTaxableSale ? fmtUSD(derived.gstAmount) : "—"}</span></div></td>
-      <td><div class="budget-metric budget-gross"><small>Total</small><span class="budget-gross-value">${Number.isFinite(amountValue) ? fmtUSD(derived.grossAmount) : "—"}</span></div></td>
-      <td>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button type="button" class="btn-muted" onclick="copyBudgetFromPrevious(${idx})">Use previous month</button>
-          <button type="button" class="btn-muted" onclick="applyBudgetRepeat(${idx})">Apply repeat</button>
-          <button type="button" class="btn-muted" onclick="removeBudgetRow(${idx})">Delete</button>
+        <div class="budget-row-actions">
+          <button type="button" class="budget-delete-btn" onclick="removeBudgetRow(${idx})" aria-label="Delete row">&times;</button>
         </div>
       </td>
     </tr>`;
@@ -1249,15 +1238,14 @@ function updateBudgetSummary() {
   const rows = collectBudgetRowsFromTable();
   const rowCountEl = document.getElementById("budgetRowsCount");
   const revenueEl = document.getElementById("budgetRevenueTotal");
-  const gstEl = document.getElementById("budgetGstTotal");
+  const expenseEl = document.getElementById("budgetExpenseTotal");
   const revenueRows = rows.filter(row => row.ACCOUNT_TYPE === "REVENUE");
+  const expenseRows = rows.filter(row => row.ACCOUNT_TYPE === "EXPENSE");
   const revenueTotal = revenueRows.reduce((sum, row) => sum + Math.abs(Number(row.NET_AMOUNT || 0)), 0);
-  const gstTotal = revenueRows.reduce((sum, row) => {
-    return sum + (Math.abs(Number(row.NET_AMOUNT || 0)) * 0.1);
-  }, 0);
+  const expenseTotal = expenseRows.reduce((sum, row) => sum + Math.abs(Number(row.NET_AMOUNT || 0)), 0);
   if (rowCountEl) rowCountEl.innerText = String(rows.length);
   if (revenueEl) revenueEl.innerText = fmtUSD(revenueTotal);
-  if (gstEl) gstEl.innerText = fmtUSD(gstTotal);
+  if (expenseEl) expenseEl.innerText = fmtUSD(expenseTotal);
 }
 
 function updateBudgetRowUi(idx) {
@@ -1286,12 +1274,6 @@ function updateBudgetRowUi(idx) {
     else customInput.value = currentCustom;
   }
 
-  const state = budgetRowStateFromElement(tr);
-  const derived = budgetRowDerivedValues(state);
-  const gstValue = tr.querySelector(".budget-gst-value");
-  const grossValue = tr.querySelector(".budget-gross-value");
-  if (gstValue) gstValue.textContent = derived.isTaxableSale ? fmtUSD(derived.gstAmount) : "—";
-  if (grossValue) grossValue.textContent = fmtUSD(derived.grossAmount);
   updateBudgetSummary();
 }
 
@@ -1389,10 +1371,12 @@ async function loadBudgetRows() {
     const backend = String(data?.budget_backend || "--").toLowerCase();
     const source = data?.source || "--";
     if (meta) {
-      meta.innerText = `Revenue stays net of GST; revenue rows show a 10% GST preview. Backend: ${backend}. Source: ${source}`;
+      meta.innerText = backend === "supabase"
+        ? "Simple monthly budget saved to Supabase."
+        : `Simple monthly budget saved to ${source}.`;
     }
     if (backendBadge) {
-      backendBadge.textContent = `Source: ${backend === "supabase" ? "Supabase" : "Manual"} (${source})`;
+      backendBadge.textContent = backend === "supabase" ? "Supabase connected" : "Local budget";
     }
     renderBudgetRows(data.rows || []);
     stopLoading();
@@ -1416,9 +1400,8 @@ async function saveBudgetRows() {
     setRawData(data);
     const backendBadge = document.getElementById("budgetBackendBadge");
     const backend = String(data?.budget_backend || "--").toLowerCase();
-    const source = data?.source || "--";
     if (backendBadge) {
-      backendBadge.textContent = `Source: ${backend === "supabase" ? "Supabase" : "Manual"} (${source})`;
+      backendBadge.textContent = backend === "supabase" ? "Supabase connected" : "Local budget";
     }
     renderBudgetRows(data.rows || []);
     stopLoading();
