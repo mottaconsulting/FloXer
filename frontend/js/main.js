@@ -6,10 +6,52 @@ let TX_PAGE_SIZE = 50;
 let TX_FILTER_EVENTS_BOUND = false;
 let APP_CURRENCY = "AUD";
 let BALANCE_ADJUST_EVENTS_BOUND = false;
+let OVERVIEW_CACHE = new Map();
+
+const OVERVIEW_CACHE_TTL_MS = 180000;
 
 const INCOME_TYPES = new Set(["REVENUE"]);   // your org shows REVENUE
 const EXPENSE_TYPES = new Set(["EXPENSE"]);  // your org shows EXPENSE
 const BANK_TYPES = new Set(["BANK"]);        // your org shows BANK
+
+function buildOverviewQueryString(todayStr, fyStartMonth = 7, cashBalance = null, burnMonths = null) {
+  const params = new URLSearchParams();
+  if (todayStr) params.set("today", todayStr);
+  if (fyStartMonth) params.set("fy_start_month", String(fyStartMonth));
+  if (cashBalance !== null && cashBalance !== "" && Number.isFinite(Number(cashBalance))) {
+    params.set("cash_balance", String(cashBalance));
+  }
+  if (burnMonths !== null && burnMonths !== "" && Number.isFinite(Number(burnMonths))) {
+    params.set("burn_months", String(burnMonths));
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
+function getCachedOverview(qs = "") {
+  const entry = OVERVIEW_CACHE.get(qs || "");
+  if (!entry) return null;
+  if ((Date.now() - entry.cachedAt) > OVERVIEW_CACHE_TTL_MS) {
+    OVERVIEW_CACHE.delete(qs || "");
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedOverview(qs = "", data) {
+  OVERVIEW_CACHE.set(qs || "", { data, cachedAt: Date.now() });
+}
+
+function clearOverviewCache() {
+  OVERVIEW_CACHE.clear();
+}
+
+function selectedOverviewToday() {
+  const fySelect = document.getElementById("fySelect");
+  const endYear = fySelect?.value;
+  if (!endYear || typeof fyEndDateFromYear !== "function") return null;
+  return fyEndDateFromYear(endYear);
+}
 
 // ---------- Data helpers ----------
 async function getJournals() {
@@ -1855,13 +1897,25 @@ function changeTransactionPageSize(value) {
 window.changeTransactionPageSize = changeTransactionPageSize;
 
 // ---------- Navigation ----------
-async function showDashboard() {
+async function showDashboard(options = {}) {
   hideAllViews();
   if (typeof setActiveSidebarNav === "function") setActiveSidebarNav("dashboard");
+  const forceRefresh = Boolean(options?.forceRefresh);
+  const todayOverride = selectedOverviewToday();
+  const qs = buildOverviewQueryString(todayOverride, 7, null, null);
+  const cachedData = forceRefresh ? null : getCachedOverview(qs);
+
+  if (cachedData) {
+    setRawData(cachedData);
+    document.getElementById("dashboardContainer").style.display = "block";
+    renderOverview(cachedData);
+    return;
+  }
+
   setLoading("Preparing dashboard...");
 
   try {
-    const data = await fetchOverview();
+    const data = await fetchOverview(todayOverride, 7, null, null, { forceRefresh });
 
     stopLoading();
     document.getElementById("dashboardContainer").style.display = "block";
@@ -1873,19 +1927,19 @@ async function showDashboard() {
   }
 }
 
-async function fetchOverview(todayStr, fyStartMonth = 7, cashBalance = null, burnMonths = null) {
-  const params = new URLSearchParams();
-  if (todayStr) params.set("today", todayStr);
-  if (fyStartMonth) params.set("fy_start_month", String(fyStartMonth));
-  if (cashBalance !== null && cashBalance !== "" && Number.isFinite(Number(cashBalance))) {
-    params.set("cash_balance", String(cashBalance));
+async function fetchOverview(todayStr, fyStartMonth = 7, cashBalance = null, burnMonths = null, options = {}) {
+  const forceRefresh = Boolean(options?.forceRefresh);
+  const qs = buildOverviewQueryString(todayStr, fyStartMonth, cashBalance, burnMonths);
+  if (!forceRefresh) {
+    const cachedData = getCachedOverview(qs);
+    if (cachedData) {
+      setRawData(cachedData);
+      return cachedData;
+    }
   }
-  if (burnMonths !== null && burnMonths !== "" && Number.isFinite(Number(burnMonths))) {
-    params.set("burn_months", String(burnMonths));
-  }
-  const qs = params.toString() ? `?${params.toString()}` : "";
   const data = await XeroAPI.fetch_json(`/api/dashboard/overview${qs}`);
   setRawData(data);
+  setCachedOverview(qs, data);
   return data;
 }
 
@@ -1927,6 +1981,7 @@ async function showTransactions() {
 
 
 window.showDashboard = showDashboard;
+window.clearOverviewCache = clearOverviewCache;
 window.showTransactions = showTransactions;
 
 

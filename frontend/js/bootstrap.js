@@ -21,7 +21,8 @@ function authorize() {
     clearInterval(timer);
     setTimeout(async () => {
       await loadOrganizations();
-      await showDashboard();
+      if (typeof clearOverviewCache === "function") clearOverviewCache();
+      await showDashboard({ forceRefresh: true });
     }, 800);
   }, 800);
 }
@@ -73,7 +74,8 @@ async function switchOrganization(tenantId) {
   setLoading("Switching Xero organization...");
   try {
     await XeroAPI.fetch_json(`/set-tenant?tenantId=${encodeURIComponent(tenantId)}`);
-    await showDashboard();
+    if (typeof clearOverviewCache === "function") clearOverviewCache();
+    await showDashboard({ forceRefresh: true });
     stopLoading();
   } catch (e) {
     stopLoading();
@@ -112,7 +114,8 @@ window.addEventListener("message", async (event) => {
   if (event.origin !== window.location.origin) return;
   if (event.data?.type !== "xero-auth-success") return;
   await loadOrganizations();
-  await showDashboard();
+  if (typeof clearOverviewCache === "function") clearOverviewCache();
+  await showDashboard({ forceRefresh: true });
 });
 
 document.addEventListener("DOMContentLoaded", () => {
