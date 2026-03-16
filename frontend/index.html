@@ -652,7 +652,7 @@
       align-items: flex-end;
     }
     .rebuilt-kpi-value.positive {
-      color: #3b82f6;
+      color: #1e2a78;
     }
     .rebuilt-kpi-value.negative {
       color: #ec4899;
@@ -666,8 +666,13 @@
     }
     .rebuilt-kpi-body {
       min-height: 58px;
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 140px;
       align-items: end;
+    }
+    .rebuilt-kpi-body::after {
+      content: "";
+      display: block;
     }
     .rebuilt-kpi-adjust-source {
       display: none;
