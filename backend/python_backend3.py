@@ -51,6 +51,8 @@ IS_PRODUCTION = APP_ENV == "production"
 REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
 PROVISIONAL_LOGIN_EMAIL = os.getenv("PROVISIONAL_LOGIN_EMAIL", "demo@businesspulse.local").strip().lower()
 PROVISIONAL_LOGIN_PASSWORD = os.getenv("PROVISIONAL_LOGIN_PASSWORD", "demo123").strip()
+PRIMARY_BANK_ACCOUNT_CODE = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_CODE", "").strip()
+PRIMARY_BANK_ACCOUNT_NAME = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_NAME", "").strip().lower()
 
 
 def _origin_from_url(url: str) -> str:
@@ -568,8 +570,36 @@ def _xero_collection(resource: str, root_key: str, *, params: dict | None = None
     return resp.json().get(root_key, []) or []
 
 
+def _bank_account_matches(account: dict) -> bool:
+    if str(account.get("Type") or "").upper() != "BANK":
+        return False
+    if str(account.get("Status") or "").upper() not in {"", "ACTIVE"}:
+        return False
+
+    if PRIMARY_BANK_ACCOUNT_CODE:
+        return str(account.get("Code") or "").strip() == PRIMARY_BANK_ACCOUNT_CODE
+    if PRIMARY_BANK_ACCOUNT_NAME:
+        return str(account.get("Name") or "").strip().lower() == PRIMARY_BANK_ACCOUNT_NAME
+    return True
+
+
+def _filter_bank_rows_for_selected_account(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    if PRIMARY_BANK_ACCOUNT_CODE and "ACCOUNT_CODE" in out.columns:
+        out = out.loc[out["ACCOUNT_CODE"].fillna("").astype(str).str.strip() == PRIMARY_BANK_ACCOUNT_CODE]
+    elif PRIMARY_BANK_ACCOUNT_NAME and "ACCOUNT_NAME" in out.columns:
+        out = out.loc[out["ACCOUNT_NAME"].fillna("").astype(str).str.strip().str.lower() == PRIMARY_BANK_ACCOUNT_NAME]
+    return out
+
+
 def _load_live_bank_balance_xero() -> float | None:
-    """Return summed live bank account balance from Xero Accounts, if available."""
+    """Return live bank balance from Xero Accounts.
+
+    If XERO_PRIMARY_BANK_ACCOUNT_CODE or XERO_PRIMARY_BANK_ACCOUNT_NAME is set,
+    only that bank account is used. Otherwise all active bank accounts are summed.
+    """
     try:
         accounts = _xero_collection("Accounts", "Accounts")
     except Exception:
@@ -578,9 +608,7 @@ def _load_live_bank_balance_xero() -> float | None:
     total = 0.0
     found = False
     for account in accounts:
-        if str(account.get("Type") or "").upper() != "BANK":
-            continue
-        if str(account.get("Status") or "").upper() not in {"", "ACTIVE"}:
+        if not _bank_account_matches(account):
             continue
 
         bal = account.get("Balance")
@@ -1438,14 +1466,17 @@ def build_overview_payload(
         (actuals_fy["ACCOUNT_TYPE"] == "BANK")
         & (actuals_fy["JOURNAL_DATE"] < next_month)
     ].copy()
+    bank_rows = _filter_bank_rows_for_selected_account(bank_rows)
     bank_rows_all = actuals[
         (actuals["ACCOUNT_TYPE"] == "BANK")
         & (actuals["JOURNAL_DATE"] < next_month)
     ].copy()
+    bank_rows_all = _filter_bank_rows_for_selected_account(bank_rows_all)
     bank_rows_before_current = actuals[
         (actuals["ACCOUNT_TYPE"] == "BANK")
         & (actuals["JOURNAL_DATE"] < current_month)
     ].copy()
+    bank_rows_before_current = _filter_bank_rows_for_selected_account(bank_rows_before_current)
     # Cashflow chart is aligned to P&L monthly net movement for consistency:
     # net = revenue - expense, split into in/out bars.
     cashflow_cash_in = []
