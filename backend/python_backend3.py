@@ -1435,6 +1435,14 @@ def build_overview_payload(
         (actuals_fy["ACCOUNT_TYPE"] == "BANK")
         & (actuals_fy["JOURNAL_DATE"] < next_month)
     ].copy()
+    bank_rows_all = actuals[
+        (actuals["ACCOUNT_TYPE"] == "BANK")
+        & (actuals["JOURNAL_DATE"] < next_month)
+    ].copy()
+    bank_rows_before_current = actuals[
+        (actuals["ACCOUNT_TYPE"] == "BANK")
+        & (actuals["JOURNAL_DATE"] < current_month)
+    ].copy()
     # Cashflow chart is aligned to P&L monthly net movement for consistency:
     # net = revenue - expense, split into in/out bars.
     cashflow_cash_in = []
@@ -1449,7 +1457,9 @@ def build_overview_payload(
         cashflow_cash_out.append(max(0.0, -net_m))
 
     bank_burn_series: list[float] = []
+    bank_monthly_net: list[float | None] = []
     previous_month_balance = None
+    bank_balance_proxy = None
     if len(bank_rows):
         bank_rows["MONTH"] = bank_rows["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
         # Keep sign convention aligned with frontend and KPI math:
@@ -1458,10 +1468,16 @@ def build_overview_payload(
         bank_out = bank_rows.loc[bank_rows["NET_AMOUNT"] < 0].groupby("MONTH")["NET_AMOUNT"].sum().abs()
         for idx, m in enumerate(months):
             if m > current_month:
+                bank_monthly_net.append(None)
                 continue
             inflow = float(bank_in.get(pd.Timestamp(m), 0.0))
             outflow = float(bank_out.get(pd.Timestamp(m), 0.0))
+            bank_monthly_net.append(inflow - outflow)
             bank_burn_series.append(max(0.0, outflow - inflow))
+    if len(bank_rows_all):
+        bank_balance_proxy = float(bank_rows_all["NET_AMOUNT"].sum())
+    if len(bank_rows_before_current):
+        previous_month_balance = float(bank_rows_before_current["NET_AMOUNT"].sum())
     if bank_burn_series:
         tail = bank_burn_series[-burn_months:] if burn_months > 0 else bank_burn_series
         monthly_burn = float(np.mean(tail))
@@ -1472,12 +1488,18 @@ def build_overview_payload(
     effective_cash_balance = (
         float(live_cash_balance)
         if live_cash_balance is not None
-        else (float(cash_balance) if cash_balance is not None else None)
+        else (
+            float(cash_balance)
+            if cash_balance is not None
+            else bank_balance_proxy
+        )
     )
     if effective_cash_balance is not None and len(bank_rows):
         current_month_inflow = float(bank_in.get(pd.Timestamp(current_month), 0.0))
         current_month_outflow = float(bank_out.get(pd.Timestamp(current_month), 0.0))
-        previous_month_balance = float(effective_cash_balance) - (current_month_inflow - current_month_outflow)
+        current_month_net = current_month_inflow - current_month_outflow
+        if live_cash_balance is not None:
+            previous_month_balance = float(effective_cash_balance) - current_month_net
 
     warnings = []
     runway_months = None
@@ -1571,6 +1593,10 @@ def build_overview_payload(
         },
         "charts": {
             "cashflow": cashflow,
+            "cash_balance": {
+                "labels": sales_series["labels"],
+                "monthly_net": [round(float(v), 2) if v is not None else None for v in bank_monthly_net],
+            },
             "sales_fy": sales_series,
             "profit_fy": profit_fy,
             "expenses_fy": expenses_fy,

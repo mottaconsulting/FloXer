@@ -7,8 +7,11 @@ let TX_FILTER_EVENTS_BOUND = false;
 let APP_CURRENCY = "AUD";
 let BALANCE_ADJUST_EVENTS_BOUND = false;
 let OVERVIEW_CACHE = new Map();
+let BUDGET_CACHE = null;
+let BUDGET_CACHE_AT = 0;
 
 const OVERVIEW_CACHE_TTL_MS = 180000;
+const BUDGET_CACHE_TTL_MS = 180000;
 
 const INCOME_TYPES = new Set(["REVENUE"]);   // your org shows REVENUE
 const EXPENSE_TYPES = new Set(["EXPENSE"]);  // your org shows EXPENSE
@@ -38,6 +41,16 @@ function getCachedOverview(qs = "") {
   return entry.data;
 }
 
+function getCachedOverviewEntry(qs = "") {
+  const entry = OVERVIEW_CACHE.get(qs || "");
+  if (!entry) return null;
+  if ((Date.now() - entry.cachedAt) > OVERVIEW_CACHE_TTL_MS) {
+    OVERVIEW_CACHE.delete(qs || "");
+    return null;
+  }
+  return entry;
+}
+
 function setCachedOverview(qs = "", data) {
   OVERVIEW_CACHE.set(qs || "", { data, cachedAt: Date.now() });
 }
@@ -46,11 +59,54 @@ function clearOverviewCache() {
   OVERVIEW_CACHE.clear();
 }
 
+function getCachedBudget() {
+  if (!BUDGET_CACHE) return null;
+  if ((Date.now() - BUDGET_CACHE_AT) > BUDGET_CACHE_TTL_MS) {
+    BUDGET_CACHE = null;
+    BUDGET_CACHE_AT = 0;
+    return null;
+  }
+  return BUDGET_CACHE;
+}
+
+function setCachedBudget(data) {
+  BUDGET_CACHE = data;
+  BUDGET_CACHE_AT = Date.now();
+}
+
+function clearBudgetCache() {
+  BUDGET_CACHE = null;
+  BUDGET_CACHE_AT = 0;
+}
+
 function selectedOverviewToday() {
   const fySelect = document.getElementById("fySelect");
-  const endYear = fySelect?.value;
-  if (!endYear || typeof fyEndDateFromYear !== "function") return null;
+  if (typeof fyEndDateFromYear !== "function") return null;
+
+  let endYear = fySelect?.value;
+  if (!endYear) {
+    const now = new Date();
+    endYear = String((now.getMonth() + 1) >= 7 ? now.getFullYear() + 1 : now.getFullYear());
+  }
+
   return fyEndDateFromYear(endYear);
+}
+
+function applyBudgetUiState(data) {
+  setRawData(data);
+  const meta = document.getElementById("budgetMeta");
+  const backendBadge = document.getElementById("budgetBackendBadge");
+  const backend = String(data?.budget_backend || "--").toLowerCase();
+  const source = data?.source || "--";
+  if (meta) {
+    meta.innerText = backend === "supabase"
+      ? "Simple monthly budget saved to Supabase."
+      : `Simple monthly budget saved to ${source}.`;
+  }
+  if (backendBadge) {
+    backendBadge.textContent = backend === "supabase" ? "Supabase connected" : "Local budget";
+  }
+  renderBudgetRows(data?.rows || []);
 }
 
 // ---------- Data helpers ----------
@@ -448,6 +504,12 @@ function parseCurrencyInput(value) {
   return Number(cleaned);
 }
 
+function finiteNumberOrNaN(value) {
+  if (value === null || value === undefined || value === "") return NaN;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 function getBalanceOverrideStorageKey(data) {
   const orgId = document.getElementById("orgSelect")?.value || "default";
   const fyEnd = data?.meta?.fy_end ? String(data.meta.fy_end).slice(0, 4) : "current";
@@ -494,15 +556,15 @@ function computeYearProfitKpi(data) {
 
 function computeBalanceKpi(data) {
   const isPastFy = isPastFinancialYearSelection(data);
-  const sourceBalance = Number(data?.kpis?.cash_balance_live ?? data?.kpis?.cash_balance_proxy);
+  const liveBalance = finiteNumberOrNaN(data?.kpis?.cash_balance_live);
+  const proxyBalance = finiteNumberOrNaN(data?.kpis?.cash_balance_proxy);
+  const sourceBalance = Number.isFinite(liveBalance) ? liveBalance : proxyBalance;
   const manualOverride = isPastFy ? null : getBalanceOverrideValue(data);
   const hasManualOverride = Number.isFinite(manualOverride);
   const balance = hasManualOverride ? Number(manualOverride) : sourceBalance;
-  const previousMonthBalance = Number(data?.kpis?.cash_balance_prev_month);
-  const cashflow = data?.charts?.cashflow || {};
-  const cashIn = (cashflow.cashIn || []).map(v => Number(v || 0));
-  const cashOut = (cashflow.cashOut || []).map(v => Number(v || 0));
-  const monthlyNet = cashIn.map((v, idx) => v - Number(cashOut[idx] || 0));
+  const previousMonthBalance = finiteNumberOrNaN(data?.kpis?.cash_balance_prev_month);
+  const balanceSeries = data?.charts?.cash_balance || {};
+  const monthlyNet = (balanceSeries.monthly_net || []).map(v => finiteNumberOrNaN(v)).filter(v => Number.isFinite(v));
   const currentNet = monthlyNet.length ? Number(monthlyNet[monthlyNet.length - 1] || 0) : NaN;
   const previousBalance = Number.isFinite(previousMonthBalance)
     ? previousMonthBalance
@@ -512,8 +574,8 @@ function computeBalanceKpi(data) {
     : NaN;
   let source = "unavailable";
   if (hasManualOverride) source = "manual";
-  else if (Number.isFinite(Number(data?.kpis?.cash_balance_live))) source = "xero";
-  else if (Number.isFinite(Number(data?.kpis?.cash_balance_proxy))) source = "proxy";
+  else if (Number.isFinite(liveBalance)) source = "xero";
+  else if (Number.isFinite(proxyBalance)) source = "proxy";
   return { balance, previousBalance, changePct, monthlyNet, hasManualOverride, source };
 }
 
@@ -1393,29 +1455,23 @@ function renderBudgetRows(rows) {
   syncBudgetRowsUi();
 }
 
-async function loadBudgetRows() {
+async function loadBudgetRows(options = {}) {
   if (!document.getElementById("budgetBody")) {
     renderEmptyView("budgetContainer", "Budget Input", "This screen is not rebuilt yet.");
     stopLoading();
     return null;
   }
+  const forceRefresh = Boolean(options?.forceRefresh);
+  const cachedData = forceRefresh ? null : getCachedBudget();
+  if (cachedData) {
+    applyBudgetUiState(cachedData);
+    return cachedData;
+  }
   setLoading("Loading budget workspace...");
   try {
     const data = await XeroAPI.fetch_json("/api/budget");
-    setRawData(data);
-    const meta = document.getElementById("budgetMeta");
-    const backendBadge = document.getElementById("budgetBackendBadge");
-    const backend = String(data?.budget_backend || "--").toLowerCase();
-    const source = data?.source || "--";
-    if (meta) {
-      meta.innerText = backend === "supabase"
-        ? "Simple monthly budget saved to Supabase."
-        : `Simple monthly budget saved to ${source}.`;
-    }
-    if (backendBadge) {
-      backendBadge.textContent = backend === "supabase" ? "Supabase connected" : "Local budget";
-    }
-    renderBudgetRows(data.rows || []);
+    setCachedBudget(data);
+    applyBudgetUiState(data);
     stopLoading();
     return data;
   } catch (e) {
@@ -1434,13 +1490,8 @@ async function saveBudgetRows() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rows })
     });
-    setRawData(data);
-    const backendBadge = document.getElementById("budgetBackendBadge");
-    const backend = String(data?.budget_backend || "--").toLowerCase();
-    if (backendBadge) {
-      backendBadge.textContent = backend === "supabase" ? "Supabase connected" : "Local budget";
-    }
-    renderBudgetRows(data.rows || []);
+    setCachedBudget(data);
+    applyBudgetUiState(data);
     stopLoading();
   } catch (e) {
     stopLoading();
@@ -1478,6 +1529,7 @@ async function showBudgetInput() {
 }
 
 window.showBudgetInput = showBudgetInput;
+window.clearBudgetCache = clearBudgetCache;
 window.loadBudgetRows = loadBudgetRows;
 window.saveBudgetRows = saveBudgetRows;
 window.addBudgetRow = addBudgetRow;
@@ -1903,12 +1955,22 @@ async function showDashboard(options = {}) {
   const forceRefresh = Boolean(options?.forceRefresh);
   const todayOverride = selectedOverviewToday();
   const qs = buildOverviewQueryString(todayOverride, 7, null, null);
-  const cachedData = forceRefresh ? null : getCachedOverview(qs);
+  const cachedEntry = forceRefresh ? null : getCachedOverviewEntry(qs);
+  const cachedData = cachedEntry?.data || null;
 
   if (cachedData) {
     setRawData(cachedData);
     document.getElementById("dashboardContainer").style.display = "block";
     renderOverview(cachedData);
+    const shouldRefreshInBackground = (Date.now() - Number(cachedEntry?.cachedAt || 0)) > 30000;
+    if (shouldRefreshInBackground) {
+      fetchOverview(todayOverride, 7, null, null, { forceRefresh: true })
+        .then((freshData) => {
+          const dashboardVisible = document.getElementById("dashboardContainer")?.style.display !== "none";
+          if (dashboardVisible && freshData) renderOverview(freshData);
+        })
+        .catch(() => {});
+    }
     return;
   }
 
