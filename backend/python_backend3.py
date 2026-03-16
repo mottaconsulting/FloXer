@@ -24,7 +24,10 @@ except ModuleNotFoundError:
     psycopg2 = None
 
 load_dotenv()
-load_dotenv(Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / ".env.local", override=True)
+_repo_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_env_local_path = _repo_root / ".env.local"
+if os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower() != "production":
+    load_dotenv(_env_local_path, override=True)
 
 
 # ----------------------------
