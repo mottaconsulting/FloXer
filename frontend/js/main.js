@@ -790,21 +790,7 @@ function renderBalanceAdjustState(balanceKpi, isPastFy) {
   if (!toggleBtn || !sourceEl) return;
 
   toggleBtn.style.display = isPastFy ? "none" : "inline-flex";
-
-  if (isPastFy) {
-    sourceEl.textContent = "";
-    return;
-  }
-
-  if (balanceKpi.hasManualOverride) {
-    sourceEl.textContent = "Manual override";
-  } else if (balanceKpi.source === "xero") {
-    sourceEl.textContent = "Live from Xero";
-  } else if (balanceKpi.source === "proxy") {
-    sourceEl.textContent = "Estimated from journal lines";
-  } else {
-    sourceEl.textContent = "";
-  }
+  sourceEl.textContent = "";
 }
 
 function renderOverview(data) {
@@ -1558,6 +1544,16 @@ async function saveBudgetRows() {
     });
     setCachedBudget(data);
     applyBudgetUiState(data);
+    clearOverviewCache();
+    try {
+      const freshOverview = await fetchOverview(selectedOverviewToday(), 7, null, null, { forceRefresh: true });
+      const dashboardVisible = document.getElementById("dashboardContainer")?.style.display !== "none";
+      if (dashboardVisible && freshOverview) {
+        renderOverview(freshOverview);
+      }
+    } catch (_) {
+      // Keep budget save successful even if overview prefetch fails.
+    }
     stopLoading();
   } catch (e) {
     stopLoading();
