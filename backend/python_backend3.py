@@ -1214,6 +1214,7 @@ def build_forecast_payload(
     budget_fy = budget[(budget["JOURNAL_DATE"] >= fy_start) & (budget["JOURNAL_DATE"] <= fy_end)]
 
     budget_completed, filled_count = complete_budget_to_fy(budget_fy, fy_start, fy_end)
+    budget_projection = budget_fy.copy()
 
     current_month = datetime(today.year, today.month, 1)
 
@@ -1395,11 +1396,11 @@ def build_overview_payload(
     budget_profit = [
         r - e
         for r, e in zip(
-            _monthly_series(budget_completed, months, "REVENUE"),
-            _monthly_series(budget_completed, months, "EXPENSE"),
+            _monthly_series(budget_projection, months, "REVENUE"),
+            _monthly_series(budget_projection, months, "EXPENSE"),
         )
     ]
-    has_budget_projection = not budget.empty
+    has_budget_projection = not budget_projection.empty
     projected_profit = [
         a if m <= current_month else (b if has_budget_projection else None)
         for m, a, b in zip(months, actual_profit, budget_profit)
@@ -1426,13 +1427,13 @@ def build_overview_payload(
 
     actual_expense = _monthly_series(actuals_fy, months, "EXPENSE")
     actual_revenue = _monthly_series(actuals_fy, months, "REVENUE")
-    budget_expense = _monthly_series(budget_completed, months, "EXPENSE")
+    budget_expense = _monthly_series(budget_projection, months, "EXPENSE")
     projected_expense = [
         a if m <= current_month else (b if has_budget_projection else None)
         for m, a, b in zip(months, actual_expense, budget_expense)
     ]
 
-    sales_series = _build_sales_series(actuals_fy, budget_completed, fy_start, fy_end, today)
+    sales_series = _build_sales_series(actuals_fy, budget_projection, fy_start, fy_end, today)
     available_months = []
     if "JOURNAL_DATE" in actuals_fy.columns and len(actuals_fy):
         months_set = {
@@ -1548,8 +1549,6 @@ def build_overview_payload(
     else:
         warnings.append("Insufficient bank history to compute runway.")
 
-    if filled_count:
-        warnings.append(f"Budget missing months; filled {filled_count} rows using recent averages.")
     if budget.empty:
         warnings.append("No manual budget yet. Future Profit is unavailable until budget rows are added.")
 

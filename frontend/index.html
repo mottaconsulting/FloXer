@@ -2160,51 +2160,12 @@
     </div>
     <div id="txQuickViewBody"></div>
   </aside>
-  <!-- LIABILITIES -->
-  <div id="liabilitiesContainer" style="display:none;"></div>
-  <template id="liabilitiesLegacy">
-  <h2 style="margin:0 0 10px 0;">What should I worry about next?</h2>
-  <div class="muted" style="margin-bottom:10px;">
-    Liability summary based on journal postings (credits create obligations, debits reduce them).
-  </div>
-  <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
-    <select id="liabFySelect" style="padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#0f172a;">
+  <!--
+  
       <option value="2024">FY 2023–2024</option>
       <option value="2025">FY 2024–2025</option>
-    </select>
-  </div>
 
-  <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px;">
-    <div class="card" style="border-left-color:#ef4444;">
-      <div class="muted">Total liabilities (estimated)</div>
-      <div id="kpiCurLiab" class="big">$0.00</div>
-    </div>
-    <div class="card" style="border-left-color:#f59e0b;">
-      <div class="muted">Taxes due soon (estimated)</div>
-      <div id="kpiTaxLiab" class="big">$0.00</div>
-    </div>
-    <div class="card" style="border-left-color:#6b7280;">
-      <div class="muted">Other liabilities (estimated)</div>
-      <div id="kpiOtherLiab" class="big">$0.00</div>
-    </div>
-  </div>
-
-  <h3 style="margin:0 0 8px 0;">Liability summary (current period)</h3>
-  <div class="table-container">
-    <table>
-      <thead id="liabHeader"></thead>
-      <tbody id="liabBody"></tbody>
-    </table>
-  </div>
-
-  <div class="table-container" style="display:none;">
-    <table>
-      <thead id="liabOtherHeader"></thead>
-      <tbody id="liabOtherBody"></tbody>
-    </table>
-  </div>
-</template>
-  
+  -->
   <!-- BUDGET INPUT -->
   <div id="budgetContainer" style="display:none;">
     <section class="rebuilt-dashboard budget-screen budget-screen-minimal">
@@ -2255,6 +2216,9 @@
   <script defer src="/js/tables.js"></script>
   <script defer src="/js/charts.js"></script>
   <script defer src="/js/main.js"></script>
+  <script defer src="/js/features/dashboard.js"></script>
+  <script defer src="/js/features/transactions.js"></script>
+  <script defer src="/js/features/budget.js"></script>
   <script defer src="/js/ui.js"></script>
   <script defer src="/js/bootstrap.js"></script>
 </body>

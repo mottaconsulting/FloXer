@@ -125,7 +125,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const fySelect = document.getElementById("fySelect");
   const cashInput = document.getElementById("cashBalanceInput");
   const burnMonthsInput = document.getElementById("burnMonthsInput");
-  const liabFySelect = document.getElementById("liabFySelect");
   const orgSelect = document.getElementById("orgSelect");
 
   if (monthlyBtn) monthlyBtn.addEventListener("click", () => setSalesMode("monthly"));
@@ -195,19 +194,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
     burnMonthsInput.addEventListener("change", handler);
-  }
-
-  if (liabFySelect) {
-    liabFySelect.addEventListener("change", async () => {
-      setLoading("Updating risk view...");
-      try {
-        await showLiabilities();
-        stopLoading();
-      } catch (err) {
-        stopLoading();
-        showError(err.message);
-      }
-    });
   }
 
   if (orgSelect) {
