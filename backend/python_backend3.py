@@ -1233,21 +1233,22 @@ def build_forecast_payload(
     budget_profit = [
         r - e
         for r, e in zip(
-            _monthly_series(budget_completed, months, "REVENUE"),
-            _monthly_series(budget_completed, months, "EXPENSE"),
+            _monthly_series(budget_projection, months, "REVENUE"),
+            _monthly_series(budget_projection, months, "EXPENSE"),
         )
     ]
+    has_budget_projection = not budget_projection.empty
     projected_profit = [
-        a if m <= current_month else b
+        a if m <= current_month else (b if has_budget_projection else None)
         for m, a, b in zip(months, actual_profit, budget_profit)
     ]
-    future_profit = float(np.sum(projected_profit))
+    future_profit = float(np.sum([v for v in projected_profit if v is not None])) if has_budget_projection else None
 
     # Expenses come from actual journal lines (actuals_fy) and budget for future months.
     actual_expense = _monthly_series(actuals_fy, months, "EXPENSE")
-    budget_expense = _monthly_series(budget_completed, months, "EXPENSE")
+    budget_expense = _monthly_series(budget_projection, months, "EXPENSE")
     projected_expense = [
-        a if m <= current_month else b
+        a if m <= current_month else (b if has_budget_projection else None)
         for m, a, b in zip(months, actual_expense, budget_expense)
     ]
 
@@ -1268,10 +1269,7 @@ def build_forecast_payload(
     else:
         warnings.append("Insufficient expense history to compute runway.")
 
-    if filled_count:
-        warnings.append(f"Budget missing months; filled {filled_count} rows using recent averages.")
-
-    sales_series = _build_sales_series(actuals_fy, budget_completed, fy_start, fy_end, today)
+    sales_series = _build_sales_series(actuals_fy, budget_projection, fy_start, fy_end, today)
     if not has_budget_projection:
         sales_series["projected_monthly"] = [
             float(v) if m <= current_month else None
@@ -1349,6 +1347,7 @@ def build_overview_payload(
             today = month_end_candidate
 
     budget_completed, filled_count = complete_budget_to_fy(budget_fy, fy_start, fy_end)
+    budget_projection = budget_fy.copy()
 
     current_month = anchor_month
     next_month = (pd.Timestamp(current_month) + pd.DateOffset(months=1)).to_pydatetime()
