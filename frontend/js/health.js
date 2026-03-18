@@ -67,7 +67,7 @@ function renderHealthStrip(health) {
   if (health.runwayMonths === null) {
     runway.textContent = "--";
   } else {
-    runway.textContent = `${health.runwayMonths.toFixed(1)} months`;
+    runway.textContent = `${Math.round(health.runwayMonths * 30)} days`;
   }
 
   if (health.nextTax) {

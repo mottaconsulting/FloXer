@@ -158,10 +158,10 @@ function renderOverview(data) {
         ? Number(forwardRunway.runwayMonths)
         : Number(kpis.runway_months);
       if (runwayMonths === Number.POSITIVE_INFINITY) {
-        runwayValue.textContent = "12+ Months";
+        runwayValue.textContent = "365+ Days";
         runwayValue.classList.add("positive");
       } else {
-        runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths)} Months` : "--";
+        runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths * 30)} Days` : "--";
         if (Number.isFinite(runwayMonths)) runwayValue.classList.add(runwayMonths <= 3 ? "negative" : "positive");
       }
     }
