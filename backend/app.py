@@ -10,7 +10,7 @@ from pathlib import Path
 import math
 import numpy as np
 from functools import wraps
-from uuid import uuid4
+
 import secrets
 from collections import defaultdict, deque
 from threading import Lock
@@ -42,8 +42,6 @@ if os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower() !
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-MANUAL_BUDGET_FILE = Path(os.getenv("MANUAL_BUDGET_FILE", str(Path(BASE_DIR) / "data" / "manual_budget.csv")))
-BUDGET_BACKEND = os.getenv("BUDGET_BACKEND", "supabase").strip().lower()
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
@@ -251,43 +249,6 @@ def add_secure_headers(resp):
 # ----------------------------
 # DB + token helpers (Supabase)
 # ----------------------------
-def _ensure_token_tables() -> None:
-    with _supabase_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS xero_tokens (
-                    user_id TEXT NOT NULL REFERENCES users(id),
-                    tenant_id TEXT NOT NULL,
-                    refresh_token TEXT,
-                    access_token TEXT,
-                    expires_at BIGINT,
-                    scope TEXT,
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    PRIMARY KEY (user_id, tenant_id)
-                )
-                """
-            )
-        conn.commit()
-
-
-def ensure_user(user_id: str) -> None:
-    with _supabase_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO users (id) VALUES (%s) ON CONFLICT DO NOTHING",
-                (user_id,),
-            )
-        conn.commit()
-
 
 def _find_existing_user_id_for_tenants(tenant_ids: list[str]) -> str | None:
     if not tenant_ids:
@@ -304,7 +265,6 @@ def _find_existing_user_id_for_tenants(tenant_ids: list[str]) -> str | None:
 
 
 def _persist_tokens_for_tenant(user_id: str, tenant_id: str, tokens: dict) -> None:
-    ensure_user(user_id)
     with _supabase_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -645,7 +605,7 @@ def parse_xero_date(xero_date_str: str | None) -> datetime | None:
         return None
 
 
-_ensure_token_tables()
+
 
 # ----------------------------
 # Legacy CSV helpers (no longer used in runtime mode)
@@ -783,61 +743,19 @@ def _enforce_sign_convention(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _save_budget_rows_manual(rows: list[dict]) -> pd.DataFrame:
-    incoming = pd.DataFrame(rows or [])
-    if incoming.empty:
-        clean = _empty_canonical_df()
-    else:
-        incoming.columns = [_normalize_col(c) for c in incoming.columns]
-        clean = _normalize_schema(incoming)
-        clean = _enforce_sign_convention(clean)
-        if "DATA_CATEGORY" in clean.columns:
-            clean["DATA_CATEGORY"] = clean["DATA_CATEGORY"].replace("", "Budget")
-        else:
-            clean["DATA_CATEGORY"] = "Budget"
-
-    MANUAL_BUDGET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    out = clean.copy()
-    if "JOURNAL_DATE" in out.columns:
-        out["JOURNAL_DATE"] = pd.to_datetime(out["JOURNAL_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
-    out.to_csv(MANUAL_BUDGET_FILE, index=False)
-    return clean
-
 
 def _supabase_conn():
     return psycopg2.connect(SUPABASE_DB_URL)
 
 
-def _ensure_supabase_budget_table() -> None:
-    with _supabase_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS manual_budget (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id TEXT NOT NULL,
-                    journal_date DATE NOT NULL,
-                    account_type TEXT NOT NULL,
-                    account_name TEXT NOT NULL,
-                    net_amount NUMERIC NOT NULL,
-                    data_category TEXT NOT NULL DEFAULT 'Budget',
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-        conn.commit()
-
-
 def _budget_session_user_id() -> str:
     user_id = session.get("user_id") if has_request_context() else None
     if not user_id:
-        raise RuntimeError("Login required before accessing Supabase budget storage.")
+        raise RuntimeError("Login required before accessing budget storage.")
     return str(user_id)
 
 
 def _load_budget_df_supabase() -> pd.DataFrame:
-    _ensure_supabase_budget_table()
     user_id = _budget_session_user_id()
     with _supabase_conn() as conn:
         with conn.cursor() as cur:
@@ -846,11 +764,11 @@ def _load_budget_df_supabase() -> pd.DataFrame:
                 SELECT
                     account_type AS ACCOUNT_TYPE,
                     account_name AS ACCOUNT_NAME,
-                    '' AS ACCOUNT_CODE,
+                    COALESCE(account_code, '') AS ACCOUNT_CODE,
                     COALESCE(data_category, 'Budget') AS DATA_CATEGORY,
                     journal_date AS JOURNAL_DATE,
                     net_amount AS NET_AMOUNT
-                FROM manual_budget
+                FROM budget_rows
                 WHERE user_id = %s
                 ORDER BY journal_date, account_type, account_name
                 """,
@@ -882,11 +800,10 @@ def _save_budget_rows_supabase(rows: list[dict]) -> pd.DataFrame:
         else:
             clean["DATA_CATEGORY"] = "Budget"
 
-    _ensure_supabase_budget_table()
     user_id = _budget_session_user_id()
     with _supabase_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM manual_budget WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM budget_rows WHERE user_id = %s", (user_id,))
             if not clean.empty:
                 payload = clean.copy()
                 payload["JOURNAL_DATE"] = pd.to_datetime(payload["JOURNAL_DATE"], errors="coerce").dt.date
@@ -896,6 +813,7 @@ def _save_budget_rows_supabase(rows: list[dict]) -> pd.DataFrame:
                         row["JOURNAL_DATE"],
                         str(row.get("ACCOUNT_TYPE") or ""),
                         str(row.get("ACCOUNT_NAME") or ""),
+                        str(row.get("ACCOUNT_CODE") or ""),
                         float(row.get("NET_AMOUNT") or 0),
                         str(row.get("DATA_CATEGORY") or "Budget"),
                     )
@@ -905,9 +823,9 @@ def _save_budget_rows_supabase(rows: list[dict]) -> pd.DataFrame:
                 if records:
                     cur.executemany(
                         """
-                        INSERT INTO manual_budget
-                            (user_id, journal_date, account_type, account_name, net_amount, data_category)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO budget_rows
+                            (user_id, journal_date, account_type, account_name, account_code, net_amount, data_category)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """,
                         records,
                     )
@@ -1761,7 +1679,7 @@ def debug_config():
         {
             "mode": "xero-with-supabase",
             "note": "This API integrates Xero accounting data with Supabase budget storage.",
-            "budget_backend": BUDGET_BACKEND,
+            "budget_backend": "supabase",
             "supabase_url_set": bool(SUPABASE_DB_URL),
         }
     )
@@ -1893,13 +1811,13 @@ def callback():
     if not tenant_ids:
         return jsonify({"error": "No tenant_id found in Xero connections"}), 400
 
-    # Reuse any existing logical user mapped to these tenants so budgets and tokens remain stable across logins.
-    user_id = session.get("user_id") or _find_existing_user_id_for_tenants(tenant_ids) or str(uuid4())
-    session["user_id"] = str(user_id)
+    # user_id must come from Supabase Auth session — no fallback to random UUID
+    # since xero_tokens.user_id references auth.users(id).
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect("/login")
     session["tenant_id"] = tenant_ids[0]
 
-    # Persist user and tokens only after successful OAuth + tenant resolution.
-    ensure_user(str(user_id))
     _persist_tokens_for_tenants(user_id, tenant_ids, tokens)
     return redirect("/dashboard")
 
@@ -2017,7 +1935,6 @@ def login_page():
             return redirect("/login?error=invalid")
 
         session["user_id"] = user_id
-        ensure_user(user_id)
         return redirect("/dashboard")
 
     return app.send_static_file("login.html")
@@ -2090,8 +2007,7 @@ def health():
             "token_expires_in": int(tokens.get("expires_at", 0)) - now,
             "note": "If token expired and no refresh_token, go to /auth to re-authorize",
             "data_mode": "xero",
-            "budget_backend": BUDGET_BACKEND,
-            "manual_budget_file": str(MANUAL_BUDGET_FILE),
+            "budget_backend": "supabase",
         }
     )
 
@@ -2164,7 +2080,6 @@ def api_liabilities_alias():
 @login_required
 def api_budget():
     try:
-        budget_source = "supabase:manual_budget" if BUDGET_BACKEND == "supabase" else str(MANUAL_BUDGET_FILE)
         if request.method == "GET":
             budget_df = _load_budget_df_active()
             rows = budget_df.copy()
@@ -2173,8 +2088,7 @@ def api_budget():
             return jsonify(
                 {
                     "mode": "xero",
-                    "budget_backend": BUDGET_BACKEND,
-                    "source": budget_source,
+                    "budget_backend": "supabase",
                     "rows": _clean_nan_values(rows.to_dict(orient="records")),
                 }
             )
@@ -2184,7 +2098,7 @@ def api_budget():
         if not isinstance(rows, list):
             return jsonify({"error": "rows must be a list"}), 400
 
-        clean = _save_budget_rows_supabase(rows) if BUDGET_BACKEND == "supabase" else _save_budget_rows_manual(rows)
+        clean = _save_budget_rows_supabase(rows)
         out = clean.copy()
         if "JOURNAL_DATE" in out.columns:
             out["JOURNAL_DATE"] = pd.to_datetime(out["JOURNAL_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
@@ -2192,8 +2106,7 @@ def api_budget():
             {
                 "ok": True,
                 "saved_rows": int(len(out)),
-                "budget_backend": BUDGET_BACKEND,
-                "source": budget_source,
+                "budget_backend": "supabase",
                 "rows": _clean_nan_values(out.to_dict(orient="records")),
             }
         )
