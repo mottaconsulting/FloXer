@@ -48,8 +48,10 @@ FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development")).strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
 REDIRECT_URI = os.getenv("XERO_REDIRECT_URI")
-PROVISIONAL_LOGIN_EMAIL = os.getenv("PROVISIONAL_LOGIN_EMAIL", "demo@businesspulse.local").strip().lower()
-PROVISIONAL_LOGIN_PASSWORD = os.getenv("PROVISIONAL_LOGIN_PASSWORD", "demo123").strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
+if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+    raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set.")
 PRIMARY_BANK_ACCOUNT_CODE = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_CODE", "").strip()
 PRIMARY_BANK_ACCOUNT_NAME = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_NAME", "").strip().lower()
 PRIMARY_BANK_ACCOUNT_NUMBER = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_NUMBER", "").strip()
@@ -1989,21 +1991,54 @@ def index():
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
+    if session.get("user_id"):
+        return redirect("/dashboard")
+
     if request.method == "POST":
         email = str(request.form.get("email", "")).strip().lower()
         password = str(request.form.get("password", "")).strip()
 
-        if email != PROVISIONAL_LOGIN_EMAIL or password != PROVISIONAL_LOGIN_PASSWORD:
+        try:
+            resp = requests.post(
+                f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+                json={"email": email, "password": password},
+                headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+                timeout=10,
+            )
+        except requests.RequestException:
+            return redirect("/login?error=unavailable")
+
+        if resp.status_code != 200:
             return redirect("/login?error=invalid")
 
-        user_id = f"local:{email}"
+        data = resp.json()
+        user_id = data.get("user", {}).get("id")
+        if not user_id:
+            return redirect("/login?error=invalid")
+
         session["user_id"] = user_id
         ensure_user(user_id)
         return redirect("/dashboard")
 
-    if session.get("user_id"):
-        return redirect("/dashboard")
     return app.send_static_file("login.html")
+
+
+@app.route("/login/forgot", methods=["POST"])
+def login_forgot():
+    """Send a Supabase password-reset email."""
+    email = str(request.form.get("email", "")).strip().lower()
+    if not email:
+        return redirect("/login?error=forgot_missing")
+    try:
+        requests.post(
+            f"{SUPABASE_URL}/auth/v1/recover",
+            json={"email": email},
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        pass  # fail silently — don't leak whether email exists
+    return redirect("/login?forgot=sent")
 
 
 @app.route("/dashboard")

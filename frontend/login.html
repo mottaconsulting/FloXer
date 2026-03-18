@@ -249,21 +249,35 @@
             <input id="password" name="password" type="password" required autocomplete="current-password" placeholder="Enter your password">
             <button id="togglePassword" class="toggle-password" type="button" aria-label="Show password">Show</button>
           </div>
-          <div class="forgot"><a href="#" tabindex="0">Forgot password?</a></div>
+          <div class="forgot"><a href="#" id="forgotLink" tabindex="0">Forgot password?</a></div>
           <button class="btn" type="submit">Sign In</button>
           <div id="loginError" class="error">Invalid email or password.</div>
+          <div id="loginUnavailable" class="error">Service unavailable. Please try again.</div>
+          <div id="forgotSent" class="error" style="color:#2f6e5f;">If that email exists, a reset link has been sent.</div>
         </form>
-        <div class="signup">Don't have an account? <a href="#">Get started</a></div>
+        <form id="forgotForm" class="form" method="post" action="/login/forgot" style="display:none;">
+          <div id="forgotEmailField" class="field">
+            <label for="forgotEmail">Your email</label>
+            <input id="forgotEmail" name="email" type="email" required autocomplete="email" placeholder="you@company.com">
+          </div>
+          <button class="btn" type="submit">Send reset link</button>
+          <button class="btn" id="cancelForgot" type="button" style="background:#64748b;margin-top:4px;">Cancel</button>
+        </form>
+        <div class="signup">Need access? Contact your administrator.</div>
       </div>
     </section>
   </main>
   <script>
     const params = new URLSearchParams(window.location.search);
     if (params.get("error") === "invalid") {
-      const box = document.getElementById("loginError");
-      if (box) box.style.display = "block";
-      const emailField = document.getElementById("emailField");
-      if (emailField) emailField.classList.add("invalid");
+      document.getElementById("loginError").style.display = "block";
+      document.getElementById("emailField").classList.add("invalid");
+    }
+    if (params.get("error") === "unavailable") {
+      document.getElementById("loginUnavailable").style.display = "block";
+    }
+    if (params.get("forgot") === "sent") {
+      document.getElementById("forgotSent").style.display = "block";
     }
 
     const passwordInput = document.getElementById("password");
@@ -276,6 +290,20 @@
         toggle.setAttribute("aria-label", show ? "Hide password" : "Show password");
       });
     }
+
+    const forgotLink = document.getElementById("forgotLink");
+    const loginForm = document.querySelector("form.form");
+    const forgotForm = document.getElementById("forgotForm");
+    const cancelForgot = document.getElementById("cancelForgot");
+    forgotLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      loginForm.style.display = "none";
+      forgotForm.style.display = "grid";
+    });
+    cancelForgot.addEventListener("click", () => {
+      forgotForm.style.display = "none";
+      loginForm.style.display = "grid";
+    });
   </script>
 </body>
 </html>
