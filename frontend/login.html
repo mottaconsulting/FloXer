@@ -274,7 +274,6 @@
     const params = new URLSearchParams(window.location.search);
     if (params.get("error") === "invalid") {
       document.getElementById("loginError").style.display = "block";
-      document.getElementById("emailField").classList.add("invalid");
     }
     if (params.get("error") === "unconfirmed") {
       document.getElementById("loginUnconfirmed").style.display = "block";
