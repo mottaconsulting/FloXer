@@ -5,7 +5,7 @@ function selectedCompanyName() {
 }
 
 async function renderDashboardRecentTransactions() {
-  const body = document.getElementById("dashboardRecentTransactions");
+  const body = document.getElementById("dashboardRecentTransactionsBody");
   if (!body) return;
   try {
     const journals = JOURNAL_LINES || flattenJournalLines(await getJournals());
