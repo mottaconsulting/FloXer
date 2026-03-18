@@ -1946,16 +1946,72 @@ def login_forgot():
     email = str(request.form.get("email", "")).strip().lower()
     if not email:
         return redirect("/login?error=forgot_missing")
+    reset_url = f"{request.url_root.rstrip('/')}/login/reset"
     try:
         requests.post(
             f"{SUPABASE_URL}/auth/v1/recover",
-            json={"email": email},
+            json={"email": email, "redirect_to": reset_url},
             headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
             timeout=10,
         )
     except requests.RequestException:
         pass  # fail silently — don't leak whether email exists
     return redirect("/login?forgot=sent")
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup_page():
+    if session.get("user_id"):
+        return redirect("/dashboard")
+    if request.method == "POST":
+        email = str(request.form.get("email", "")).strip().lower()
+        password = str(request.form.get("password", "")).strip()
+        if not email or not password:
+            return redirect("/signup?error=missing")
+        try:
+            resp = requests.post(
+                f"{SUPABASE_URL}/auth/v1/signup",
+                json={"email": email, "password": password},
+                headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+                timeout=10,
+            )
+        except requests.RequestException:
+            return redirect("/signup?error=unavailable")
+        if resp.status_code not in (200, 201):
+            data = resp.json()
+            msg = data.get("msg") or data.get("message") or data.get("error_description") or "error"
+            if "already" in msg.lower() or "exists" in msg.lower():
+                return redirect("/signup?error=exists")
+            return redirect("/signup?error=failed")
+        return redirect("/login?signup=confirm")
+    return app.send_static_file("signup.html")
+
+
+@app.route("/login/reset", methods=["GET", "POST"])
+def login_reset():
+    """Password reset: GET serves the reset page; POST updates the password."""
+    if request.method == "POST":
+        access_token = str(request.form.get("access_token", "")).strip()
+        new_password = str(request.form.get("password", "")).strip()
+        if not access_token or not new_password:
+            return redirect("/login/reset?error=missing")
+        try:
+            resp = requests.put(
+                f"{SUPABASE_URL}/auth/v1/user",
+                json={"password": new_password},
+                headers={
+                    "apikey": SUPABASE_ANON_KEY,
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                timeout=10,
+            )
+        except requests.RequestException:
+            return redirect("/login/reset?error=unavailable")
+        if resp.status_code != 200:
+            return redirect("/login/reset?error=failed")
+        return redirect("/login?reset=done")
+    return app.send_static_file("reset.html")
 
 
 @app.route("/dashboard")
