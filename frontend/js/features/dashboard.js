@@ -59,6 +59,60 @@ function bindBalanceAdjustEvents() {
   BALANCE_ADJUST_EVENTS_BOUND = true;
 }
 
+let BURN_NOTE_EVENTS_BOUND = false;
+function bindBurnNotePopover() {
+  if (BURN_NOTE_EVENTS_BOUND) return;
+  const note = document.getElementById("dashboardBurnNote");
+  if (!note) return;
+
+  // Create popover element once
+  const pop = document.createElement("div");
+  pop.id = "burnNotePopover";
+  pop.style.cssText = [
+    "position:fixed", "z-index:9999", "background:#fff",
+    "border:1px solid #dbe2ea", "border-radius:10px",
+    "padding:14px 16px", "box-shadow:0 8px 24px rgba(15,23,42,0.12)",
+    "font-size:13px", "font-family:Inter,sans-serif", "min-width:200px",
+    "display:none", "line-height:1.7"
+  ].join(";");
+  document.body.appendChild(pop);
+
+  note.style.cursor = "pointer";
+  note.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pop.style.display !== "none") { pop.style.display = "none"; return; }
+    const rev        = Number(note.dataset.fyRevenue);
+    const exp        = Number(note.dataset.fyExpense);
+    const net        = Number(note.dataset.fyNet);
+    const monthsLeft = Number(note.dataset.monthsLeft) || 0;
+    const fmtNum     = v => Number.isFinite(v) ? fmtCurrency(Math.abs(v)) : "--";
+    const netSign    = net >= 0 ? "+" : "-";
+    const netCol     = net >= 0 ? "#3b82f6" : "#ec4899";
+    const sentence   = net >= 0
+      ? `Budget projects a surplus over the next ${monthsLeft} month${monthsLeft !== 1 ? "s" : ""}.`
+      : `Budget projects a shortfall over the next ${monthsLeft} month${monthsLeft !== 1 ? "s" : ""}.`;
+    pop.innerHTML = `
+      <div style="font-weight:700;color:#0d1b4b;margin-bottom:6px">Remaining FY budget</div>
+      <div style="color:#6b7280;font-size:12px;margin-bottom:10px">${sentence}</div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:2px 16px;color:#374151">
+        <span>Revenue</span><span style="color:#3b82f6;font-weight:700">+${fmtNum(rev)}</span>
+        <span>Expenses</span><span style="color:#ec4899;font-weight:700">-${fmtNum(exp)}</span>
+        <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:700">Net</span>
+        <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:800;color:${netCol}">${netSign}${fmtNum(net)}</span>
+      </div>`;
+    const rect = note.getBoundingClientRect();
+    pop.style.display = "block";
+    const pw = pop.offsetWidth;
+    let left = rect.right - pw;
+    if (left < 8) left = 8;
+    pop.style.top  = `${rect.bottom + 6}px`;
+    pop.style.left = `${left}px`;
+  });
+
+  document.addEventListener("click", () => { pop.style.display = "none"; });
+  BURN_NOTE_EVENTS_BOUND = true;
+}
+
 function renderBalanceAdjustState(balanceKpi, isPastFy) {
   const toggleBtn = document.getElementById("dashboardBalanceAdjustToggle");
   const sourceEl = document.getElementById("dashboardBalanceSource");
@@ -71,6 +125,7 @@ function renderOverview(data) {
   const kpis = data?.kpis || {};
   setAppCurrency(data?.meta?.currency);
   bindBalanceAdjustEvents();
+  bindBurnNotePopover();
   populateFySelect(data);
   const yearProfitKpi = computeYearProfitKpi(data);
   const balanceKpi = computeBalanceKpi(data);
@@ -173,13 +228,32 @@ function renderOverview(data) {
       burnNote.textContent = "FY total";
       burnNote.classList.add("flat");
     } else {
-      const shortfall = Number(forwardRunway?.avgMonthlyShortfall);
-      if (forwardRunway?.basis === "budget-surplus") {
-        burnNote.textContent = "Budget projects positive cash flow";
+      const futureNet = forwardRunway?.futureNet || [];
+      const fyNet = futureNet.reduce((a, b) => a + b, 0);
+      // Compute FY totals for popover
+      const labels = data?.charts?.sales_fy?.labels || data?.charts?.expenses_fy?.labels || [];
+      const asOfMonth = data?.meta?.as_of_month;
+      const cutoffIdx = asOfMonth ? labels.indexOf(asOfMonth) : -1;
+      const nextIdx = cutoffIdx + 1;
+      const futureRevenues = (data?.charts?.sales_fy?.projected_monthly || []).slice(nextIdx).map(Number);
+      const futureExpenses = (data?.charts?.expenses_fy?.projected_monthly || []).slice(nextIdx).map(Number);
+      const fyRevenue = futureRevenues.filter(Number.isFinite).reduce((a, b) => a + b, 0);
+      const fyExpense = futureExpenses.filter(Number.isFinite).reduce((a, b) => a + b, 0);
+      const monthsLeft = futureNet.length;
+      burnNote.dataset.fyRevenue  = fyRevenue;
+      burnNote.dataset.fyExpense  = fyExpense;
+      burnNote.dataset.fyNet      = fyNet;
+      burnNote.dataset.monthsLeft = monthsLeft;
+      burnNote.style.color = "";
+      if (!futureNet.length) {
+        burnNote.textContent = "No budget data";
+        burnNote.classList.add("flat");
+      } else if (fyNet >= 0) {
+        burnNote.textContent = `Projected net +${fmtCurrency(fyNet)} to FY end`;
+        burnNote.style.color = "#3b82f6";
       } else {
-        burnNote.textContent = Number.isFinite(shortfall) && shortfall > 0
-          ? `At ${fmtCurrency(shortfall)} projected net outflow`
-          : "Based on budget";
+        burnNote.textContent = `Projected net -${fmtCurrency(Math.abs(fyNet))} to FY end`;
+        burnNote.style.color = "#ec4899";
       }
     }
   }
