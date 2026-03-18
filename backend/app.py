@@ -1983,6 +1983,7 @@ def signup_page():
         data = resp.json()
         if resp.status_code not in (200, 201):
             msg = data.get("msg") or data.get("message") or data.get("error_description") or ""
+            print(f"[signup] Supabase error {resp.status_code}: {data}", flush=True)
             if "already" in msg.lower() or "exists" in msg.lower():
                 return redirect("/signup?error=exists")
             return redirect("/signup?error=failed")
