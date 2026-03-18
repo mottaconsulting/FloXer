@@ -8,3 +8,11 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: ALLOWED_ORIGINS
+        value: https://mmxeroapi.onrender.com
+      - key: CSP_EXTRA_SCRIPT_SRC
+        value: https://cdn.jsdelivr.net
+      - key: CSP_EXTRA_STYLE_SRC
+        value: https://fonts.googleapis.com
+      - key: CSP_EXTRA_FONT_SRC
+        value: https://fonts.gstatic.com
