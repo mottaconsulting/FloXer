@@ -773,12 +773,12 @@ def _normalize_schema(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 def _enforce_sign_convention(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure REVENUE is negative and EXPENSE is positive."""
+    """Ensure income is negative and expense-like types are positive."""
     df = df.copy()
     if "ACCOUNT_TYPE" not in df.columns:
         return df
     is_revenue = df["ACCOUNT_TYPE"] == "REVENUE"
-    is_expense = df["ACCOUNT_TYPE"] == "EXPENSE"
+    is_expense = df["ACCOUNT_TYPE"].isin(["EXPENSE", "OVERHEADS", "DIRECTCOSTS", "DEPRECIATION"])
     if is_revenue.any():
         rev = pd.to_numeric(df.loc[is_revenue, "NET_AMOUNT"], errors="coerce")
         if (rev >= 0).all():
@@ -1143,14 +1143,20 @@ def _calc_revenue_expense(df: pd.DataFrame) -> tuple[float, float]:
     if "ACCOUNT_TYPE" not in df.columns or "NET_AMOUNT" not in df.columns:
         return 0.0, 0.0
     revenue_value = -df.loc[df["ACCOUNT_TYPE"] == "REVENUE", "NET_AMOUNT"].sum()
-    expense_value = df.loc[df["ACCOUNT_TYPE"] == "EXPENSE", "NET_AMOUNT"].sum()
+    expense_value = df.loc[
+        df["ACCOUNT_TYPE"].isin(["EXPENSE", "OVERHEADS", "DIRECTCOSTS", "DEPRECIATION"]),
+        "NET_AMOUNT",
+    ].sum()
     return float(revenue_value), float(expense_value)
 
 
 def _monthly_series(df: pd.DataFrame, months: list[datetime], account_type: str) -> list[float]:
     if "ACCOUNT_TYPE" not in df.columns or "NET_AMOUNT" not in df.columns:
         return [0.0 for _ in months]
-    df = df[df["ACCOUNT_TYPE"] == account_type].copy()
+    if account_type == "EXPENSE":
+        df = df[df["ACCOUNT_TYPE"].isin(["EXPENSE", "OVERHEADS", "DIRECTCOSTS", "DEPRECIATION"])].copy()
+    else:
+        df = df[df["ACCOUNT_TYPE"] == account_type].copy()
     df["MONTH"] = df["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
     monthly = df.groupby("MONTH")["NET_AMOUNT"].sum()
     series = []
