@@ -12,7 +12,6 @@ import numpy as np
 from functools import wraps
 from uuid import uuid4
 import secrets
-import sqlite3
 from collections import defaultdict, deque
 from threading import Lock
 from werkzeug.exceptions import HTTPException
@@ -159,12 +158,10 @@ XERO_TOKEN_URL = "https://identity.xero.com/connect/token"
 XERO_CONNECTIONS_URL = "https://api.xero.com/connections"
 XERO_API_BASE = "https://api.xero.com/api.xro/2.0"
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "").strip()
-if BUDGET_BACKEND == "supabase":
-    if psycopg2 is None:
-        raise RuntimeError("psycopg2 is required when BUDGET_BACKEND=supabase. Install dependencies from backend/requirements.txt.")
-    if not SUPABASE_DB_URL:
-        raise RuntimeError("SUPABASE_DB_URL must be set when BUDGET_BACKEND=supabase.")
-DB_FILE = os.getenv("DB_FILE", "app.db")
+if psycopg2 is None:
+    raise RuntimeError("psycopg2 is required. Install dependencies from backend/requirements.txt.")
+if not SUPABASE_DB_URL:
+    raise RuntimeError("SUPABASE_DB_URL must be set.")
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "120"))
 
@@ -250,91 +247,85 @@ def add_secure_headers(resp):
 
 
 # ----------------------------
-# DB + token helpers
+# DB + token helpers (Supabase)
 # ----------------------------
-def _db_conn() -> sqlite3.Connection:
-    Path(DB_FILE).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
-
-def init_db() -> None:
-    with _db_conn() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                created_at TEXT NOT NULL
+def _ensure_token_tables() -> None:
+    with _supabase_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
             )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS xero_tokens (
-                user_id TEXT NOT NULL,
-                tenant_id TEXT NOT NULL,
-                refresh_token TEXT,
-                access_token TEXT,
-                expires_at INTEGER,
-                scope TEXT,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, tenant_id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS xero_tokens (
+                    user_id TEXT NOT NULL REFERENCES users(id),
+                    tenant_id TEXT NOT NULL,
+                    refresh_token TEXT,
+                    access_token TEXT,
+                    expires_at BIGINT,
+                    scope TEXT,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (user_id, tenant_id)
+                )
+                """
             )
-            """
-        )
-
-
-def _utc_now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        conn.commit()
 
 
 def ensure_user(user_id: str) -> None:
-    with _db_conn() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO users (id, created_at) VALUES (?, ?)",
-            (user_id, _utc_now_iso()),
-        )
+    with _supabase_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (id) VALUES (%s) ON CONFLICT DO NOTHING",
+                (user_id,),
+            )
+        conn.commit()
 
 
 def _find_existing_user_id_for_tenants(tenant_ids: list[str]) -> str | None:
     if not tenant_ids:
         return None
-    placeholders = ", ".join("?" for _ in tenant_ids)
-    with _db_conn() as conn:
-        row = conn.execute(
-            f"SELECT user_id FROM xero_tokens WHERE tenant_id IN ({placeholders}) ORDER BY updated_at DESC LIMIT 1",
-            tuple(tenant_ids),
-        ).fetchone()
+    placeholders = ", ".join("%s" for _ in tenant_ids)
+    with _supabase_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT user_id FROM xero_tokens WHERE tenant_id IN ({placeholders}) ORDER BY updated_at DESC LIMIT 1",
+                tuple(tenant_ids),
+            )
+            row = cur.fetchone()
     return str(row[0]) if row and row[0] else None
 
 
 def _persist_tokens_for_tenant(user_id: str, tenant_id: str, tokens: dict) -> None:
     ensure_user(user_id)
-    with _db_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO xero_tokens (user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, tenant_id) DO UPDATE SET
-                refresh_token=excluded.refresh_token,
-                access_token=excluded.access_token,
-                expires_at=excluded.expires_at,
-                scope=excluded.scope,
-                updated_at=excluded.updated_at
-            """,
-            (
-                user_id,
-                tenant_id,
-                tokens.get("refresh_token"),
-                tokens.get("access_token"),
-                int(tokens.get("expires_at") or 0),
-                tokens.get("scope"),
-                _utc_now_iso(),
-            ),
-        )
+    with _supabase_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO xero_tokens (user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (user_id, tenant_id) DO UPDATE SET
+                    refresh_token = EXCLUDED.refresh_token,
+                    access_token = EXCLUDED.access_token,
+                    expires_at = EXCLUDED.expires_at,
+                    scope = EXCLUDED.scope,
+                    updated_at = NOW()
+                """,
+                (
+                    user_id,
+                    tenant_id,
+                    tokens.get("refresh_token"),
+                    tokens.get("access_token"),
+                    int(tokens.get("expires_at") or 0),
+                    tokens.get("scope"),
+                ),
+            )
+        conn.commit()
 
 
 def _persist_tokens_for_tenants(user_id: str, tenant_ids: list[str], tokens: dict) -> None:
@@ -349,12 +340,14 @@ def _selected_tenant() -> str | None:
 
 
 def _get_user_tenant_ids(user_id: str) -> list[str]:
-    with _db_conn() as conn:
-        rows = conn.execute(
-            "SELECT tenant_id FROM xero_tokens WHERE user_id = ? ORDER BY updated_at DESC",
-            (user_id,),
-        ).fetchall()
-    return [r["tenant_id"] for r in rows if r["tenant_id"]]
+    with _supabase_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT tenant_id FROM xero_tokens WHERE user_id = %s ORDER BY updated_at DESC",
+                (user_id,),
+            )
+            rows = cur.fetchall()
+    return [r[0] for r in rows if r[0]]
 
 
 def _fetch_and_store_connections(access_token: str, user_id: str, tokens: dict) -> list[str]:
@@ -404,28 +397,31 @@ def require_tenant_id(access_token: str | None = None) -> str:
 
 
 def _get_user_token_row(user_id: str, tenant_id: str | None = None) -> dict:
-    with _db_conn() as conn:
-        if tenant_id:
-            row = conn.execute(
-                """
-                SELECT user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at
-                FROM xero_tokens
-                WHERE user_id = ? AND tenant_id = ?
-                """,
-                (user_id, tenant_id),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                """
-                SELECT user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at
-                FROM xero_tokens
-                WHERE user_id = ?
-                ORDER BY updated_at DESC
-                LIMIT 1
-                """,
-                (user_id,),
-            ).fetchone()
-    return dict(row) if row else {}
+    with _supabase_conn() as conn:
+        with conn.cursor() as cur:
+            if tenant_id:
+                cur.execute(
+                    """
+                    SELECT user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at
+                    FROM xero_tokens
+                    WHERE user_id = %s AND tenant_id = %s
+                    """,
+                    (user_id, tenant_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT user_id, tenant_id, refresh_token, access_token, expires_at, scope, updated_at
+                    FROM xero_tokens
+                    WHERE user_id = %s
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """,
+                    (user_id,),
+                )
+            row = cur.fetchone()
+            cols = [desc[0] for desc in cur.description] if cur.description else []
+    return dict(zip(cols, row)) if row else {}
 
 
 def load_tokens() -> dict:
@@ -504,12 +500,7 @@ def refresh_access_token(tokens: dict) -> dict:
         if has_request_context():
             user_id = session.get("user_id")
             if user_id:
-                with _db_conn() as conn:
-                    tenant_rows = conn.execute(
-                        "SELECT tenant_id FROM xero_tokens WHERE user_id = ?",
-                        (user_id,),
-                    ).fetchall()
-                tenant_ids = [r["tenant_id"] for r in tenant_rows]
+                tenant_ids = _get_user_tenant_ids(user_id)
                 new_tokens["expires_at"] = new_tokens["expires_at"]
                 _persist_tokens_for_tenants(user_id, tenant_ids, new_tokens)
 
@@ -652,7 +643,7 @@ def parse_xero_date(xero_date_str: str | None) -> datetime | None:
         return None
 
 
-init_db()
+_ensure_token_tables()
 
 # ----------------------------
 # Legacy CSV helpers (no longer used in runtime mode)
@@ -811,16 +802,12 @@ def _save_budget_rows_manual(rows: list[dict]) -> pd.DataFrame:
     return clean
 
 
-def _supabase_budget_conn():
-    if psycopg2 is None:
-        raise RuntimeError("psycopg2 is not installed. Switch to BUDGET_BACKEND=manual for local CSV budget storage, or install backend requirements.")
-    if not SUPABASE_DB_URL:
-        raise RuntimeError("SUPABASE_DB_URL must be set when BUDGET_BACKEND=supabase.")
+def _supabase_conn():
     return psycopg2.connect(SUPABASE_DB_URL)
 
 
 def _ensure_supabase_budget_table() -> None:
-    with _supabase_budget_conn() as conn:
+    with _supabase_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -850,7 +837,7 @@ def _budget_session_user_id() -> str:
 def _load_budget_df_supabase() -> pd.DataFrame:
     _ensure_supabase_budget_table()
     user_id = _budget_session_user_id()
-    with _supabase_budget_conn() as conn:
+    with _supabase_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -895,7 +882,7 @@ def _save_budget_rows_supabase(rows: list[dict]) -> pd.DataFrame:
 
     _ensure_supabase_budget_table()
     user_id = _budget_session_user_id()
-    with _supabase_budget_conn() as conn:
+    with _supabase_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM manual_budget WHERE user_id = %s", (user_id,))
             if not clean.empty:
@@ -1921,9 +1908,11 @@ def auth_logout():
     user_id = session.get("user_id")
     session.clear()
     if clear_tokens and user_id:
-        with _db_conn() as conn:
-            conn.execute("DELETE FROM xero_tokens WHERE user_id = ?", (user_id,))
-            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        with _supabase_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM xero_tokens WHERE user_id = %s", (user_id,))
+                cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            conn.commit()
     return jsonify({"ok": True, "session_cleared": True, "tokens_deleted": bool(clear_tokens and user_id)})
 
 
@@ -1975,11 +1964,13 @@ def set_tenant():
         return jsonify({"error": "Missing tenantId"}), 400
 
     user_id = session.get("user_id")
-    with _db_conn() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM xero_tokens WHERE user_id = ? AND tenant_id = ?",
-            (user_id, tenant_id),
-        ).fetchone()
+    with _supabase_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM xero_tokens WHERE user_id = %s AND tenant_id = %s",
+                (user_id, tenant_id),
+            )
+            exists = cur.fetchone()
     if not exists:
         return jsonify({"error": "Tenant not found for current user"}), 404
     session["tenant_id"] = tenant_id
@@ -2057,7 +2048,7 @@ def health():
             "has_client_id": bool(CLIENT_ID),
             "has_client_secret": bool(CLIENT_SECRET),
             "tenant_id": get_tenant_id(),
-            "db_file": DB_FILE,
+            "token_storage": "supabase",
             "has_access_token": bool(tokens.get("access_token")),
             "has_refresh_token": bool(tokens.get("refresh_token")),
             "token_valid": token_is_valid(tokens),
