@@ -211,7 +211,7 @@ def csrf_protect_forms():
     session.permanent = True
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_urlsafe(32)
-    if request.path == "/login":
+    if request.path in {"/login", "/signup", "/login/forgot", "/login/reset"}:
         return None
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
@@ -1914,7 +1914,7 @@ def login_page():
 
     if request.method == "POST":
         email = str(request.form.get("email", "")).strip().lower()
-        password = str(request.form.get("password", "")).strip()
+        password = str(request.form.get("password", ""))
 
         try:
             resp = requests.post(
@@ -1927,6 +1927,9 @@ def login_page():
             return redirect("/login?error=unavailable")
 
         if resp.status_code != 200:
+            err_desc = (resp.json().get("error_description") or "").lower()
+            if "not confirmed" in err_desc or "email" in err_desc and "confirm" in err_desc:
+                return redirect("/login?error=unconfirmed")
             return redirect("/login?error=invalid")
 
         data = resp.json()
@@ -1965,7 +1968,7 @@ def signup_page():
         return redirect("/dashboard")
     if request.method == "POST":
         email = str(request.form.get("email", "")).strip().lower()
-        password = str(request.form.get("password", "")).strip()
+        password = str(request.form.get("password", ""))
         if not email or not password:
             return redirect("/signup?error=missing")
         try:
@@ -1977,12 +1980,16 @@ def signup_page():
             )
         except requests.RequestException:
             return redirect("/signup?error=unavailable")
+        data = resp.json()
         if resp.status_code not in (200, 201):
-            data = resp.json()
-            msg = data.get("msg") or data.get("message") or data.get("error_description") or "error"
+            msg = data.get("msg") or data.get("message") or data.get("error_description") or ""
             if "already" in msg.lower() or "exists" in msg.lower():
                 return redirect("/signup?error=exists")
             return redirect("/signup?error=failed")
+        # Supabase returns 200 with identities=[] when email already exists
+        identities = data.get("identities")
+        if identities is not None and len(identities) == 0:
+            return redirect("/signup?error=exists")
         return redirect("/login?signup=confirm")
     return app.send_static_file("signup.html")
 
@@ -1992,7 +1999,7 @@ def login_reset():
     """Password reset: GET serves the reset page; POST updates the password."""
     if request.method == "POST":
         access_token = str(request.form.get("access_token", "")).strip()
-        new_password = str(request.form.get("password", "")).strip()
+        new_password = str(request.form.get("password", ""))
         if not access_token or not new_password:
             return redirect("/login/reset?error=missing")
         try:
@@ -2007,9 +2014,9 @@ def login_reset():
                 timeout=10,
             )
         except requests.RequestException:
-            return redirect("/login/reset?error=unavailable")
+            return redirect(f"/login/reset?error=unavailable#access_token={access_token}&type=recovery")
         if resp.status_code != 200:
-            return redirect("/login/reset?error=failed")
+            return redirect(f"/login/reset?error=failed#access_token={access_token}&type=recovery")
         return redirect("/login?reset=done")
     return app.send_static_file("reset.html")
 
