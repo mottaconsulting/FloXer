@@ -394,66 +394,129 @@ function renderOverviewCharts(data) {
   const profit = data?.charts?.profit_fy;
   const expenses = data?.charts?.expenses_fy;
   if (!sales || !profit || !expenses) return;
+  const cashflow = data?.charts?.cashflow;
 
-  const labels = sales.labels || [];
-  const salesActual = SALES_MODE === "cumulative" ? sales.actual_cumulative : sales.actual_monthly;
-  const expenseActual = SALES_MODE === "cumulative" ? expenses.actual_cumulative : expenses.actual_monthly;
-  const netActual = SALES_MODE === "cumulative"
-    ? cumulativeSeries((profit.actual_monthly_profit || []).map(v => Number(v || 0)))
-    : (profit.actual_monthly_profit || []).map(v => Number(v || 0));
+  if (cashflow?.labels?.length && sales?.labels?.length && expenses?.labels?.length) {
+    const revenueSeries = splitActualProjectedSeries(data, sales.labels, sales.actual_monthly || [], sales.projected_monthly || []);
+    const expenseSeries = splitActualProjectedSeries(data, expenses.labels, expenses.actual_monthly || [], expenses.projected_monthly || []);
+    let runningTotal = 0;
+    const runningNet = revenueSeries.combined.map((revenueValue, idx) => {
+      const expenseValue = expenseSeries.combined[idx];
+      if (revenueValue === null || expenseValue === null) return null;
+      runningTotal += Number(revenueValue || 0) - Number(expenseValue || 0);
+      return runningTotal;
+    });
 
-  XeroCharts.renderChart("overviewPerformance", "overviewPerformanceChart", "bar", {
-    labels: profit.labels || labels,
-    datasets: [
-      {
-        type: "bar",
-        label: "Sales",
-        data: seriesWithLessZeroNoise(salesActual),
-        borderColor: "#0f766e",
-        backgroundColor: "rgba(15, 118, 110, 0.72)",
-        borderWidth: 1,
-        borderRadius: 8,
-        barThickness: 18
-      },
-      {
-        type: "bar",
-        label: "Expenses",
-        data: seriesWithLessZeroNoise(expenseActual),
-        borderColor: "#b91c1c",
-        backgroundColor: "rgba(185, 28, 28, 0.72)",
-        borderWidth: 1,
-        borderRadius: 8,
-        barThickness: 18
-      },
-      {
-        type: "line",
-        label: "Net Profit",
-        data: seriesWithLessZeroNoise(netActual || []),
-        borderColor: "#2563eb",
-        borderWidth: 3,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        pointBackgroundColor: (netActual || []).map(v => Number(v || 0) >= 0 ? "#16a34a" : "#dc2626"),
-        pointBorderColor: "#ffffff",
-        pointBorderWidth: 2,
-        tension: 0.3,
-        spanGaps: true
+    XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
+      labels: monthInitialLabels(sales.labels),
+      datasets: [
+        {
+          label: "Running Cash Flow",
+          data: runningNet,
+          backgroundColor: runningNet.map((v, idx) => {
+            const isFuture = !isPastFinancialYearSelection(data) && idx > revenueSeries.cutoffIdx;
+            if (Number(v || 0) < 0) return isFuture ? "rgba(236, 72, 153, 0.42)" : "rgba(236, 72, 153, 0.84)";
+            return isFuture ? "rgba(59, 130, 246, 0.42)" : "rgba(59, 130, 246, 0.82)";
+          }),
+          borderRadius: 0,
+          categoryPercentage: 0.62,
+          barPercentage: 0.9
+        }
+      ]
+    }, {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true }
       }
-    ]
-  }, {
-    interaction: {
-      mode: "index",
-      intersect: false
-    },
-    scales: {
-      x: {
-        grid: { display: false }
+    });
+  }
+
+  if (sales?.labels?.length && expenses?.labels?.length) {
+    const revenueSeries = splitActualProjectedSeries(data, sales.labels, sales.actual_monthly || [], sales.projected_monthly || []);
+    const expenseSeries = splitActualProjectedSeries(data, expenses.labels, expenses.actual_monthly || [], expenses.projected_monthly || []);
+
+    XeroCharts.renderChart("dashboardRevenueExpenses", "dashboardRevenueExpensesChart", "line", {
+      labels: monthInitialLabels(sales.labels),
+      datasets: [
+        {
+          label: "Revenue",
+          data: revenueSeries.actualOnly,
+          borderColor: "#3b82f6",
+          backgroundColor: "rgba(59, 130, 246, 0.18)",
+          pointBackgroundColor: "#3b82f6",
+          pointBorderColor: "#3b82f6",
+          borderWidth: 3,
+          pointRadius: 0,
+          tension: 0.35
+        },
+        {
+          label: "Revenue Projection",
+          data: revenueSeries.projectedOnly,
+          borderColor: "rgba(59, 130, 246, 0.55)",
+          backgroundColor: "rgba(59, 130, 246, 0.08)",
+          pointBackgroundColor: "rgba(59, 130, 246, 0.55)",
+          pointBorderColor: "rgba(59, 130, 246, 0.55)",
+          borderWidth: 2,
+          borderDash: [7, 5],
+          pointRadius: 0,
+          tension: 0.35
+        },
+        {
+          label: "Expenses",
+          data: expenseSeries.actualOnly,
+          borderColor: "#ec4899",
+          backgroundColor: "rgba(236, 72, 153, 0.18)",
+          pointBackgroundColor: "#ec4899",
+          pointBorderColor: "#ec4899",
+          borderWidth: 3,
+          pointRadius: 0,
+          tension: 0.35
+        },
+        {
+          label: "Expenses Projection",
+          data: expenseSeries.projectedOnly,
+          borderColor: "rgba(236, 72, 153, 0.55)",
+          backgroundColor: "rgba(236, 72, 153, 0.08)",
+          pointBackgroundColor: "rgba(236, 72, 153, 0.55)",
+          pointBorderColor: "rgba(236, 72, 153, 0.55)",
+          borderWidth: 2,
+          borderDash: [7, 5],
+          pointRadius: 0,
+          tension: 0.35
+        }
+      ]
+    }, {
+      interaction: {
+        mode: "index",
+        intersect: false
       },
-      y: {
-        beginAtZero: true
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          enabled: true,
+          backgroundColor: "rgba(15, 23, 42, 0.94)",
+          titleColor: "#ffffff",
+          bodyColor: "#e5e7eb",
+          padding: 10,
+          displayColors: true,
+          callbacks: {
+            label: (ctx) => {
+              const label = ctx.dataset.label.replace(" Projection", "");
+              const prefix = ctx.dataset.label.includes("Projection") ? "Projected " : "";
+              return `${prefix}${label}: ${fmtUSD(Number(ctx.parsed?.y || 0))}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true }
       }
-    }
-  });
+    });
+  }
 }
 
 function applyRunwayVisuals(runwayMonths) {
