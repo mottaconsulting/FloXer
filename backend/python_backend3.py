@@ -53,6 +53,7 @@ PROVISIONAL_LOGIN_EMAIL = os.getenv("PROVISIONAL_LOGIN_EMAIL", "demo@businesspul
 PROVISIONAL_LOGIN_PASSWORD = os.getenv("PROVISIONAL_LOGIN_PASSWORD", "demo123").strip()
 PRIMARY_BANK_ACCOUNT_CODE = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_CODE", "").strip()
 PRIMARY_BANK_ACCOUNT_NAME = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_NAME", "").strip().lower()
+PRIMARY_BANK_ACCOUNT_NUMBER = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_NUMBER", "").strip()
 
 
 def _origin_from_url(url: str) -> str:
@@ -576,6 +577,8 @@ def _bank_account_matches(account: dict) -> bool:
     if str(account.get("Status") or "").upper() not in {"", "ACTIVE"}:
         return False
 
+    if PRIMARY_BANK_ACCOUNT_NUMBER:
+        return str(account.get("BankAccountNumber") or "").strip() == PRIMARY_BANK_ACCOUNT_NUMBER
     if PRIMARY_BANK_ACCOUNT_CODE:
         return str(account.get("Code") or "").strip() == PRIMARY_BANK_ACCOUNT_CODE
     if PRIMARY_BANK_ACCOUNT_NAME:
@@ -594,16 +597,17 @@ def _filter_bank_rows_for_selected_account(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _load_live_bank_balance_xero() -> float | None:
-    """Return live bank balance from Xero Accounts.
+def _load_live_bank_balance_xero() -> tuple[float | None, str | None]:
+    """Return live bank balance from Xero Accounts plus an optional diagnostic.
 
-    If XERO_PRIMARY_BANK_ACCOUNT_CODE or XERO_PRIMARY_BANK_ACCOUNT_NAME is set,
+    If XERO_PRIMARY_BANK_ACCOUNT_NUMBER, XERO_PRIMARY_BANK_ACCOUNT_CODE,
+    or XERO_PRIMARY_BANK_ACCOUNT_NAME is set,
     only that bank account is used. Otherwise all active bank accounts are summed.
     """
     try:
         accounts = _xero_collection("Accounts", "Accounts")
-    except Exception:
-        return None
+    except Exception as exc:
+        return None, str(exc)
 
     total = 0.0
     found = False
@@ -619,7 +623,9 @@ def _load_live_bank_balance_xero() -> float | None:
         total += bal_num
         found = True
 
-    return total if found else None
+    if found:
+        return total, None
+    return None, "No active Xero BANK accounts with a readable Balance were found."
 
 
 def parse_xero_date(xero_date_str: str | None) -> datetime | None:
@@ -1518,7 +1524,7 @@ def build_overview_payload(
     else:
         monthly_burn = None
 
-    live_cash_balance = _load_live_bank_balance_xero()
+    live_cash_balance, live_cash_balance_error = _load_live_bank_balance_xero()
     effective_cash_balance = (
         float(live_cash_balance)
         if live_cash_balance is not None
@@ -1547,6 +1553,8 @@ def build_overview_payload(
         runway_months = float(effective_cash_balance) / monthly_burn
     else:
         warnings.append("Insufficient bank history to compute runway.")
+    if live_cash_balance is None and live_cash_balance_error:
+        warnings.append(f"Live Xero cash balance unavailable: {live_cash_balance_error}")
 
     if budget.empty:
         warnings.append("No manual budget yet. Future Profit is unavailable until budget rows are added.")
@@ -1610,11 +1618,17 @@ def build_overview_payload(
                 round(float(live_cash_balance), 2) if live_cash_balance is not None else None
             ),
             "cash_balance_proxy": (
-                round(float(effective_cash_balance), 2) if effective_cash_balance is not None else None
+                round(float(bank_balance_proxy), 2) if bank_balance_proxy is not None else None
             ),
             "cash_balance_prev_month": (
                 round(float(previous_month_balance), 2) if previous_month_balance is not None else None
             ),
+            "cash_balance_source": (
+                "xero"
+                if live_cash_balance is not None
+                else ("proxy" if bank_balance_proxy is not None else "unavailable")
+            ),
+            "cash_balance_live_error": live_cash_balance_error,
             "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
             "monthly_burn": round(float(monthly_burn), 2) if monthly_burn is not None else None,
             "monthly_burn_basis": "bank_net_outflow_3m",

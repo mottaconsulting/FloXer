@@ -147,13 +147,16 @@ function renderOverview(data) {
   }
   renderBalanceAdjustState(balanceKpi, isPastFy);
   const runwayValue = document.getElementById("dashboardRunwayValue");
+  const forwardRunway = !isPastFy ? computeForwardRunwayMetrics(data, balanceKpi.balance) : null;
   if (runwayValue) {
     runwayValue.classList.remove("positive", "negative");
     if (isPastFy) {
       runwayValue.textContent = fmtUSD(sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []));
       runwayValue.classList.add("negative");
     } else {
-      const runwayMonths = Number(kpis.runway_months);
+      const runwayMonths = Number.isFinite(forwardRunway?.runwayMonths)
+        ? Number(forwardRunway.runwayMonths)
+        : Number(kpis.runway_months);
       runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths)} Months` : "--";
       if (Number.isFinite(runwayMonths)) runwayValue.classList.add(runwayMonths <= 3 ? "negative" : "positive");
     }
@@ -165,8 +168,10 @@ function renderOverview(data) {
       burnNote.textContent = "FY total";
       burnNote.classList.add("flat");
     } else {
-      const burn = Number(kpis.monthly_burn || 0);
-      burnNote.textContent = Number.isFinite(burn) && burn > 0 ? `At ${fmtUSD(burn)} per month` : "--";
+      const shortfall = Number(forwardRunway?.avgMonthlyShortfall);
+      burnNote.textContent = Number.isFinite(shortfall) && shortfall > 0
+        ? `At ${fmtUSD(shortfall)} projected net outflow`
+        : "Based on budget";
     }
   }
   renderOverviewCharts(data);

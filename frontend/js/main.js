@@ -642,6 +642,73 @@ function computeBalanceKpi(data) {
   return { balance, previousBalance, changePct, monthlyNet, hasManualOverride, source };
 }
 
+function computeForwardRunwayMetrics(data, startingBalance) {
+  const balance = finiteNumberOrNaN(startingBalance);
+  if (!Number.isFinite(balance)) {
+    return { runwayMonths: NaN, avgMonthlyShortfall: NaN, basis: "unavailable" };
+  }
+
+  const sales = data?.charts?.sales_fy || {};
+  const expenses = data?.charts?.expenses_fy || {};
+  const labels = sales.labels || expenses.labels || [];
+  const revenueProjected = Array.isArray(sales.projected_monthly) ? sales.projected_monthly : [];
+  const expenseProjected = Array.isArray(expenses.projected_monthly) ? expenses.projected_monthly : [];
+  const asOfMonth = data?.meta?.as_of_month || (data?.meta?.today ? String(data.meta.today).slice(0, 7) : null);
+  const cutoffIdx = asOfMonth ? labels.indexOf(asOfMonth) : -1;
+
+  if (!labels.length || cutoffIdx < 0) {
+    return { runwayMonths: NaN, avgMonthlyShortfall: NaN, basis: "unavailable" };
+  }
+
+  const futureNet = labels
+    .map((_, idx) => {
+      const revenue = finiteNumberOrNaN(revenueProjected[idx]);
+      const expense = finiteNumberOrNaN(expenseProjected[idx]);
+      if (!Number.isFinite(revenue) || !Number.isFinite(expense)) return null;
+      return revenue - expense;
+    })
+    .slice(cutoffIdx + 1)
+    .filter((value) => value !== null);
+
+  if (!futureNet.length) {
+    return { runwayMonths: NaN, avgMonthlyShortfall: NaN, basis: "unavailable" };
+  }
+
+  let rollingBalance = balance;
+  let elapsedMonths = 0;
+  for (const net of futureNet) {
+    if (rollingBalance + net <= 0 && net < 0) {
+      const monthFraction = rollingBalance / Math.abs(net);
+      const avgMonthlyShortfall = Math.abs(net);
+      return {
+        runwayMonths: Math.max(0, elapsedMonths + monthFraction),
+        avgMonthlyShortfall,
+        basis: "budget"
+      };
+    }
+    rollingBalance += net;
+    elapsedMonths += 1;
+  }
+
+  const negativeMonths = futureNet.filter((net) => net < 0);
+  if (!negativeMonths.length) {
+    return { runwayMonths: NaN, avgMonthlyShortfall: NaN, basis: "budget" };
+  }
+
+  const avgMonthlyShortfall = Math.abs(
+    negativeMonths.reduce((total, net) => total + net, 0) / negativeMonths.length
+  );
+  if (avgMonthlyShortfall <= 0) {
+    return { runwayMonths: NaN, avgMonthlyShortfall: NaN, basis: "budget" };
+  }
+
+  return {
+    runwayMonths: elapsedMonths + (rollingBalance / avgMonthlyShortfall),
+    avgMonthlyShortfall,
+    basis: "budget"
+  };
+}
+
 function buildSparklineMarkup(values) {
   const points = (values || [])
     .map(v => Number(v))
