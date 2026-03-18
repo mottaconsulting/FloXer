@@ -55,7 +55,14 @@ if (window.Chart && !Chart.registry.plugins.get("monthHighlight")) {
 
 function renderChart(name, canvasId, type, chartData, options = {}) {
   const el = document.getElementById(canvasId);
-  if (!el || !window.Chart) return;
+  if (!el) return;
+  if (!window.Chart) {
+    const host = el.parentElement;
+    if (host) {
+      host.innerHTML = `<div class="rebuilt-empty" style="padding:24px 0; text-align:center;">Unable to load chart library.</div>`;
+    }
+    return;
+  }
 
   if (charts[name]) charts[name].destroy();
 

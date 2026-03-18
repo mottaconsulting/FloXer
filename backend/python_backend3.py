@@ -93,9 +93,9 @@ def _csv_env(name: str, default_csv: str = "") -> list[str]:
 
 
 _csp_extra_connect_src = _csv_env("CSP_EXTRA_CONNECT_SRC", "")
-_csp_extra_script_src = _csv_env("CSP_EXTRA_SCRIPT_SRC", "https://cdn.jsdelivr.net")
-_csp_extra_style_src = _csv_env("CSP_EXTRA_STYLE_SRC", "https://fonts.googleapis.com")
-_csp_extra_font_src = _csv_env("CSP_EXTRA_FONT_SRC", "https://fonts.gstatic.com")
+_csp_extra_script_src = list(dict.fromkeys(["https://cdn.jsdelivr.net"] + _csv_env("CSP_EXTRA_SCRIPT_SRC", "")))
+_csp_extra_style_src = list(dict.fromkeys(["https://fonts.googleapis.com"] + _csv_env("CSP_EXTRA_STYLE_SRC", "")))
+_csp_extra_font_src = list(dict.fromkeys(["https://fonts.gstatic.com"] + _csv_env("CSP_EXTRA_FONT_SRC", "")))
 # Frontend is served by Flask on the same origin in the Render deployment,
 # so runtime CORS is intentionally disabled.
 
