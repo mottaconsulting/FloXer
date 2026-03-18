@@ -108,8 +108,8 @@ function updateBudgetSummary() {
   const revenueEl = document.getElementById("budgetRevenueTotal");
   const expenseEl = document.getElementById("budgetExpenseTotal");
   if (rowCountEl) rowCountEl.innerText = String(rows.length);
-  if (revenueEl) revenueEl.innerText = fmtUSD(revenueTotal);
-  if (expenseEl) expenseEl.innerText = fmtUSD(expenseTotal);
+  if (revenueEl) revenueEl.innerText = fmtCurrency(revenueTotal);
+  if (expenseEl) expenseEl.innerText = fmtCurrency(expenseTotal);
 }
 
 function updateBudgetRowUi(idx) {

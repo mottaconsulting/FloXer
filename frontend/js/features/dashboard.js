@@ -93,7 +93,7 @@ function renderOverview(data) {
   const profitValue = document.getElementById("dashboardProfitValue");
   if (profitValue) {
     profitValue.classList.remove("positive", "negative");
-    profitValue.textContent = Number.isFinite(yearProfitKpi.yearProfit) ? fmtUSD(yearProfitKpi.yearProfit) : "--";
+    profitValue.textContent = Number.isFinite(yearProfitKpi.yearProfit) ? fmtCurrency(yearProfitKpi.yearProfit) : "--";
     if (Number.isFinite(yearProfitKpi.yearProfit)) profitValue.classList.add(yearProfitKpi.yearProfit < 0 ? "negative" : "positive");
   }
   const profitTrend = document.getElementById("dashboardProfitTrend");
@@ -118,10 +118,10 @@ function renderOverview(data) {
   if (balanceValue) {
     balanceValue.classList.remove("positive", "negative");
     if (isPastFy) {
-      balanceValue.textContent = fmtUSD(sumNumeric(data?.charts?.sales_fy?.actual_monthly || []));
+      balanceValue.textContent = fmtCurrency(sumNumeric(data?.charts?.sales_fy?.actual_monthly || []));
       balanceValue.classList.add("positive");
     } else {
-      balanceValue.textContent = Number.isFinite(balanceKpi.balance) ? fmtUSD(balanceKpi.balance) : "--";
+      balanceValue.textContent = Number.isFinite(balanceKpi.balance) ? fmtCurrency(balanceKpi.balance) : "--";
       if (Number.isFinite(balanceKpi.balance)) balanceValue.classList.add(balanceKpi.balance < 0 ? "negative" : "positive");
     }
   }
@@ -151,7 +151,7 @@ function renderOverview(data) {
   if (runwayValue) {
     runwayValue.classList.remove("positive", "negative");
     if (isPastFy) {
-      runwayValue.textContent = fmtUSD(sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []));
+      runwayValue.textContent = fmtCurrency(sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []));
       runwayValue.classList.add("negative");
     } else {
       const runwayMonths = Number.isFinite(forwardRunway?.runwayMonths)
@@ -178,7 +178,7 @@ function renderOverview(data) {
         burnNote.textContent = "Budget projects positive cash flow";
       } else {
         burnNote.textContent = Number.isFinite(shortfall) && shortfall > 0
-          ? `At ${fmtUSD(shortfall)} projected net outflow`
+          ? `At ${fmtCurrency(shortfall)} projected net outflow`
           : "Based on budget";
       }
     }
