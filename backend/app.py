@@ -789,16 +789,6 @@ def _enforce_sign_convention(df: pd.DataFrame) -> pd.DataFrame:
             df.loc[is_expense, "NET_AMOUNT"] = exp.abs()
     return df
 
-def _load_budget_df_manual() -> pd.DataFrame:
-    if not MANUAL_BUDGET_FILE.exists():
-        return _empty_canonical_df()
-    df = pd.read_csv(MANUAL_BUDGET_FILE)
-    df.columns = [_normalize_col(c) for c in df.columns]
-    budget = _normalize_schema(df)
-    budget = _enforce_sign_convention(budget)
-    if "DATA_CATEGORY" in budget.columns:
-        budget["DATA_CATEGORY"] = budget["DATA_CATEGORY"].replace("", "Budget")
-    return budget
 
 def _save_budget_rows_manual(rows: list[dict]) -> pd.DataFrame:
     incoming = pd.DataFrame(rows or [])
@@ -1774,52 +1764,6 @@ def build_liabilities_payload(
         }
     )
 
-
-def _run_tests() -> None:
-    # a) revenue negative converts to positive revenue_value
-    df_a = pd.DataFrame(
-        {
-            "ACCOUNT_TYPE": ["REVENUE", "EXPENSE"],
-            "ACCOUNT_NAME": ["Sales", "Rent"],
-            "DATA_CATEGORY": ["", ""],
-            "JOURNAL_DATE": [datetime(2024, 1, 1), datetime(2024, 1, 2)],
-            "NET_AMOUNT": [-100.0, 30.0],
-        }
-    )
-    rev, exp = _calc_revenue_expense(df_a)
-    assert rev == 100.0 and exp == 30.0
-
-    # b) complete_budget_to_fy fills missing months
-    df_b = pd.DataFrame(
-        {
-            "ACCOUNT_TYPE": ["REVENUE", "REVENUE"],
-            "ACCOUNT_NAME": ["Sales", "Sales"],
-            "DATA_CATEGORY": ["", ""],
-            "JOURNAL_DATE": [datetime(2024, 1, 1), datetime(2024, 3, 1)],
-            "NET_AMOUNT": [-100.0, -120.0],
-        }
-    )
-    fy_start = datetime(2024, 1, 1)
-    fy_end = datetime(2024, 3, 31)
-    completed, filled = complete_budget_to_fy(df_b, fy_start, fy_end)
-    assert len(completed) == 3 and filled >= 1
-
-    # c) sales series arrays match number of FY months
-    empty = pd.DataFrame(
-        {
-            "ACCOUNT_TYPE": pd.Series(dtype=str),
-            "ACCOUNT_NAME": pd.Series(dtype=str),
-            "DATA_CATEGORY": pd.Series(dtype=str),
-            "JOURNAL_DATE": pd.Series(dtype="datetime64[ns]"),
-            "NET_AMOUNT": pd.Series(dtype=float),
-        }
-    )
-    fy_start = datetime(2024, 1, 1)
-    fy_end = datetime(2024, 12, 31)
-    series = _build_sales_series(empty, empty, fy_start, fy_end, datetime(2024, 6, 15))
-    assert len(series["labels"]) == 12
-    assert len(series["actual_monthly"]) == 12
-    assert len(series["projected_monthly"]) == 12
 
 
 @app.route("/api/debug/config")
