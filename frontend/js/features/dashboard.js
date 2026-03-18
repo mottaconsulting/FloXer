@@ -157,8 +157,13 @@ function renderOverview(data) {
       const runwayMonths = Number.isFinite(forwardRunway?.runwayMonths)
         ? Number(forwardRunway.runwayMonths)
         : Number(kpis.runway_months);
-      runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths)} Months` : "--";
-      if (Number.isFinite(runwayMonths)) runwayValue.classList.add(runwayMonths <= 3 ? "negative" : "positive");
+      if (runwayMonths === Number.POSITIVE_INFINITY) {
+        runwayValue.textContent = "12+ Months";
+        runwayValue.classList.add("positive");
+      } else {
+        runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths)} Months` : "--";
+        if (Number.isFinite(runwayMonths)) runwayValue.classList.add(runwayMonths <= 3 ? "negative" : "positive");
+      }
     }
   }
   const burnNote = document.getElementById("dashboardBurnNote");
@@ -169,9 +174,13 @@ function renderOverview(data) {
       burnNote.classList.add("flat");
     } else {
       const shortfall = Number(forwardRunway?.avgMonthlyShortfall);
-      burnNote.textContent = Number.isFinite(shortfall) && shortfall > 0
-        ? `At ${fmtUSD(shortfall)} projected net outflow`
-        : "Based on budget";
+      if (forwardRunway?.basis === "budget-surplus") {
+        burnNote.textContent = "Budget projects positive cash flow";
+      } else {
+        burnNote.textContent = Number.isFinite(shortfall) && shortfall > 0
+          ? `At ${fmtUSD(shortfall)} projected net outflow`
+          : "Based on budget";
+      }
     }
   }
   renderOverviewCharts(data);
