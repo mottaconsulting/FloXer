@@ -697,6 +697,31 @@
       width: 100%;
       height: 42px;
     }
+    .rebuilt-free-cash-bar {
+      margin-top: 4px;
+    }
+    .rebuilt-free-cash-track {
+      height: 6px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      overflow: hidden;
+    }
+    .rebuilt-free-cash-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: #3b82f6;
+      transition: width 0.4s ease;
+    }
+    .rebuilt-free-cash-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .rebuilt-free-cash-free { color: #3b82f6; }
+    .rebuilt-free-cash-committed { color: #ec4899; }
     .rebuilt-chart-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2028,6 +2053,15 @@
             <div id="dashboardBalanceSparkline" class="rebuilt-kpi-sparkline" aria-hidden="true"></div>
           </div>
           <div id="dashboardBalanceSource" class="rebuilt-kpi-adjust-source"></div>
+          <div id="dashboardFreeCashBar" class="rebuilt-free-cash-bar" style="display:none;">
+            <div class="rebuilt-free-cash-track">
+              <div id="dashboardFreeCashFill" class="rebuilt-free-cash-fill"></div>
+            </div>
+            <div class="rebuilt-free-cash-labels">
+              <span id="dashboardFreeCashLabel" class="rebuilt-free-cash-free">--</span>
+              <span id="dashboardCommittedLabel" class="rebuilt-free-cash-committed">--</span>
+            </div>
+          </div>
           <div class="rebuilt-kpi-footer">
             <button id="dashboardBalanceAdjustToggle" class="rebuilt-kpi-adjust-btn" type="button" aria-label="Edit current balance">Edit</button>
           </div>

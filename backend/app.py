@@ -1065,17 +1065,90 @@ def _monthly_series(df: pd.DataFrame, months: list[datetime], account_type: str)
     return series
 
 
+def _fetch_pl_report(fy_start: datetime, fy_end: datetime) -> dict | None:
+    """
+    Fetch monthly revenue and expense from Xero Reports/ProfitAndLoss API.
+    Returns {"revenue": [...], "expense": [...]} aligned to FY months, or None on failure.
+    This is more accurate than raw journal lines — GST excluded, matches Xero UI exactly.
+    """
+    months = _month_range(fy_start, fy_end)
+    n = len(months)
+    if not n:
+        return None
+    try:
+        resp = _xero_get(
+            "Reports/ProfitAndLoss",
+            params={
+                "fromDate": fy_start.strftime("%Y-%m-%d"),
+                "toDate": fy_end.strftime("%Y-%m-%d"),
+                "periods": n - 1,
+                "timeframe": "MONTH",
+                "standardLayout": "true",
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None
+
+    report = (data.get("Reports") or [{}])[0]
+    rows = report.get("Rows") or []
+
+    # Count data columns from header row
+    n_cols = 0
+    for row in rows:
+        if row.get("RowType") == "Header":
+            n_cols = max(0, len(row.get("Cells", [])) - 1)
+            break
+    if not n_cols:
+        return None
+
+    revenue = [0.0] * n_cols
+    expense = [0.0] * n_cols
+
+    INCOME_KW  = {"income", "revenue", "sales", "trading"}
+    EXPENSE_KW = {"expense", "cost", "overhead", "depreciation"}
+
+    for row in rows:
+        if row.get("RowType") != "Section":
+            continue
+        title = (row.get("Title") or "").strip().lower()
+        is_income  = any(k in title for k in INCOME_KW)
+        is_expense = (any(k in title for k in EXPENSE_KW) or title.startswith("less")) and not is_income
+        if not is_income and not is_expense:
+            continue
+        for sub in row.get("Rows", []):
+            if sub.get("RowType") != "SummaryRow":
+                continue
+            cells = sub.get("Cells", [])
+            for i, cell in enumerate(cells[1: n_cols + 1]):
+                try:
+                    val = abs(float((cell.get("Value") or "0").replace(",", "")))
+                except (ValueError, AttributeError, TypeError):
+                    val = 0.0
+                if is_income:
+                    revenue[i] += val
+                elif is_expense:
+                    expense[i] += val
+
+    # Pad / truncate to exactly n FY months
+    revenue = (revenue + [0.0] * n)[:n]
+    expense = (expense + [0.0] * n)[:n]
+    return {"revenue": revenue, "expense": expense}
+
+
 def _build_sales_series(
     actual_df: pd.DataFrame,
     budget_df: pd.DataFrame,
     fy_start: datetime,
     fy_end: datetime,
     today: datetime,
+    actual_revenue_override: list | None = None,
 ) -> dict:
     months = _month_range(fy_start, fy_end)
     current_month = datetime(today.year, today.month, 1)
 
-    actual_rev = _monthly_series(actual_df, months, "REVENUE")
+    actual_rev = actual_revenue_override if actual_revenue_override is not None else _monthly_series(actual_df, months, "REVENUE")
     budget_rev = _monthly_series(budget_df, months, "REVENUE")
 
     projected_monthly = []
@@ -1263,38 +1336,40 @@ def build_overview_payload(
     previous_month = (pd.Timestamp(current_month) - pd.DateOffset(months=1)).to_pydatetime()
 
     actuals_to_date = actuals_fy[actuals_fy["JOURNAL_DATE"] < next_month]
-    revenue_value, expense_value = _calc_revenue_expense(actuals_to_date)
-    profit_now = revenue_value - expense_value
 
     months = _month_range(fy_start, fy_end)
-    actual_profit = [
-        r - e
-        for r, e in zip(
-            _monthly_series(actuals_fy, months, "REVENUE"),
-            _monthly_series(actuals_fy, months, "EXPENSE"),
-        )
-    ]
-    actual_profit_to_date = [
-        r - e
-        for r, e in zip(
-            _monthly_series(actuals_to_date, months, "REVENUE"),
-            _monthly_series(actuals_to_date, months, "EXPENSE"),
-        )
-    ]
     prev_fy_start = (pd.Timestamp(fy_start) - pd.DateOffset(years=1)).to_pydatetime()
     prev_fy_end = (pd.Timestamp(fy_end) - pd.DateOffset(years=1)).to_pydatetime()
     prev_next_month = (pd.Timestamp(next_month) - pd.DateOffset(years=1)).to_pydatetime()
     prev_months = _month_range(prev_fy_start, prev_fy_end)
-    prev_actuals_to_match = actuals[
-        (actuals["JOURNAL_DATE"] >= prev_fy_start) & (actuals["JOURNAL_DATE"] < prev_next_month)
-    ]
-    previous_year_profit_to_date = [
-        r - e
-        for r, e in zip(
-            _monthly_series(prev_actuals_to_match, prev_months, "REVENUE"),
-            _monthly_series(prev_actuals_to_match, prev_months, "EXPENSE"),
-        )
-    ]
+
+    # Fetch P&L from Xero Reports API — accurate actuals, GST excluded, matches Xero UI.
+    # Falls back to journal-line aggregation if the API call fails.
+    _pl      = _fetch_pl_report(fy_start, fy_end)
+    _pl_prev = _fetch_pl_report(prev_fy_start, prev_fy_end)
+
+    _pl_revenue      = _pl["revenue"]      if _pl      else _monthly_series(actuals_fy, months, "REVENUE")
+    _pl_expense      = _pl["expense"]      if _pl      else _monthly_series(actuals_fy, months, "EXPENSE")
+    _pl_prev_revenue = _pl_prev["revenue"] if _pl_prev else _monthly_series(
+        actuals[(actuals["JOURNAL_DATE"] >= prev_fy_start) & (actuals["JOURNAL_DATE"] < prev_next_month)],
+        prev_months, "REVENUE",
+    )
+    _pl_prev_expense = _pl_prev["expense"] if _pl_prev else _monthly_series(
+        actuals[(actuals["JOURNAL_DATE"] >= prev_fy_start) & (actuals["JOURNAL_DATE"] < prev_next_month)],
+        prev_months, "EXPENSE",
+    )
+
+    # YTD profit: sum P&L actuals up to and including current_month
+    cur_idx = next((i for i, m in enumerate(months) if m >= current_month), len(months) - 1)
+    revenue_value = sum(_pl_revenue[: cur_idx + 1])
+    expense_value = sum(_pl_expense[: cur_idx + 1])
+    profit_now = revenue_value - expense_value
+
+    actual_profit = [r - e for r, e in zip(_pl_revenue, _pl_expense)]
+    # P&L only returns actuals so future months are already 0 — same as actuals_to_date
+    actual_profit_to_date = [r - e for r, e in zip(_pl_revenue, _pl_expense)]
+
+    previous_year_profit_to_date = [r - e for r, e in zip(_pl_prev_revenue, _pl_prev_expense)]
     actual_profit_ytd = float(np.sum(actual_profit_to_date)) if actual_profit_to_date else 0.0
     previous_year_profit_ytd = (
         float(np.sum(previous_year_profit_to_date))
@@ -1327,21 +1402,20 @@ def build_overview_payload(
     previous_month_cutoff = datetime(previous_month.year, previous_month.month, 1)
     previous_next_month = (pd.Timestamp(previous_month_cutoff) + pd.DateOffset(months=1)).to_pydatetime()
     if previous_month_cutoff >= fy_start:
-        prior_actuals = actuals_fy[actuals_fy["JOURNAL_DATE"] < previous_next_month]
-        prev_rev, prev_exp = _calc_revenue_expense(prior_actuals)
-        profit_now_prev = float(prev_rev - prev_exp)
+        prev_idx = next((i for i, m in enumerate(months) if m >= previous_month_cutoff), len(months) - 1)
+        profit_now_prev = float(sum(_pl_revenue[: prev_idx + 1]) - sum(_pl_expense[: prev_idx + 1]))
     else:
         profit_now_prev = None
 
-    actual_expense = _monthly_series(actuals_fy, months, "EXPENSE")
-    actual_revenue = _monthly_series(actuals_fy, months, "REVENUE")
+    actual_expense = _pl_expense
+    actual_revenue = _pl_revenue
     budget_expense = _monthly_series(budget_projection, months, "EXPENSE")
     projected_expense = [
         a if m <= current_month else (b if has_budget_projection else None)
         for m, a, b in zip(months, actual_expense, budget_expense)
     ]
 
-    sales_series = _build_sales_series(actuals_fy, budget_projection, fy_start, fy_end, today)
+    sales_series = _build_sales_series(actuals_fy, budget_projection, fy_start, fy_end, today, actual_revenue_override=_pl_revenue)
     available_months = []
     if "JOURNAL_DATE" in actuals_fy.columns and len(actuals_fy):
         months_set = {
@@ -1386,37 +1460,36 @@ def build_overview_payload(
         & (actuals["JOURNAL_DATE"] < current_month)
     ].copy()
     bank_rows_before_current = _filter_bank_rows_for_selected_account(bank_rows_before_current)
-    # Cashflow chart is aligned to P&L monthly net movement for consistency:
-    # net = revenue - expense, split into in/out bars.
-    cashflow_cash_in = []
-    cashflow_cash_out = []
-    for m, revenue_m, expense_m in zip(months, actual_revenue, actual_expense):
-        if m > current_month:
-            cashflow_cash_in.append(0.0)
-            cashflow_cash_out.append(0.0)
-            continue
-        net_m = float(revenue_m) - float(expense_m)
-        cashflow_cash_in.append(max(0.0, net_m))
-        cashflow_cash_out.append(max(0.0, -net_m))
-
     bank_burn_series: list[float] = []
     bank_monthly_net: list[float | None] = []
+    cashflow_cash_in: list[float] = []
+    cashflow_cash_out: list[float] = []
     previous_month_balance = None
     bank_balance_proxy = None
+    bank_in = pd.Series(dtype=float)
+    bank_out = pd.Series(dtype=float)
     if len(bank_rows):
         bank_rows["MONTH"] = bank_rows["JOURNAL_DATE"].dt.to_period("M").dt.to_timestamp()
-        # Keep sign convention aligned with frontend and KPI math:
-        # positive NET_AMOUNT = cash in, negative NET_AMOUNT = cash out.
-        bank_in = bank_rows.loc[bank_rows["NET_AMOUNT"] > 0].groupby("MONTH")["NET_AMOUNT"].sum()
+        # Actual cash in/out from bank account journal lines.
+        # Positive NET_AMOUNT = cash received into bank, negative = cash paid out.
+        bank_in  = bank_rows.loc[bank_rows["NET_AMOUNT"] > 0].groupby("MONTH")["NET_AMOUNT"].sum()
         bank_out = bank_rows.loc[bank_rows["NET_AMOUNT"] < 0].groupby("MONTH")["NET_AMOUNT"].sum().abs()
         for idx, m in enumerate(months):
             if m > current_month:
                 bank_monthly_net.append(None)
+                cashflow_cash_in.append(0.0)
+                cashflow_cash_out.append(0.0)
                 continue
-            inflow = float(bank_in.get(pd.Timestamp(m), 0.0))
+            inflow  = float(bank_in.get(pd.Timestamp(m), 0.0))
             outflow = float(bank_out.get(pd.Timestamp(m), 0.0))
             bank_monthly_net.append(inflow - outflow)
             bank_burn_series.append(max(0.0, outflow - inflow))
+            cashflow_cash_in.append(inflow)
+            cashflow_cash_out.append(outflow)
+    else:
+        cashflow_cash_in  = [0.0] * len(months)
+        cashflow_cash_out = [0.0] * len(months)
+        bank_monthly_net  = [None] * len(months)
     if len(bank_rows_all):
         bank_balance_proxy = float(bank_rows_all["NET_AMOUNT"].sum())
     if len(bank_rows_before_current):
@@ -1463,20 +1536,25 @@ def build_overview_payload(
         warnings.append("No manual budget yet. Future Profit is unavailable until budget rows are added.")
 
     current_liabilities = None
-    if "ACCOUNT_TYPE" in actuals_to_date.columns and "NET_AMOUNT" in actuals_to_date.columns:
-        cur_df = actuals_to_date.loc[actuals_to_date["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
+    # Use full actuals history (not FY-scoped) so liabilities accrued in prior periods
+    # but not yet paid are included. Cap at today to exclude future-dated journals.
+    _liab_all = actuals[actuals["JOURNAL_DATE"] <= pd.Timestamp(today)]
+    if "ACCOUNT_TYPE" in _liab_all.columns and "NET_AMOUNT" in _liab_all.columns:
+        cur_df = _liab_all.loc[_liab_all["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
         if len(cur_df):
-            if "ACCOUNT_CODE" in cur_df.columns:
-                key_series = cur_df["ACCOUNT_CODE"].fillna("")
-            elif "ACCOUNT_NAME" in cur_df.columns:
-                key_series = cur_df["ACCOUNT_NAME"].fillna("")
-            else:
-                key_series = pd.Series(["CURRLIAB"] * len(cur_df), index=cur_df.index)
-            cur_df["_LIAB_KEY"] = key_series.astype(str)
-            balances = cur_df.groupby("_LIAB_KEY")["NET_AMOUNT"].sum()
-            outstanding = balances[balances < 0].abs()
-            if len(outstanding):
-                current_liabilities = float(outstanding.sum())
+            # Build a stable per-account key: non-empty code takes priority over name.
+            # This prevents different accounts with empty codes from being collapsed together.
+            code_col = cur_df["ACCOUNT_CODE"].fillna("").astype(str).str.strip() if "ACCOUNT_CODE" in cur_df.columns else pd.Series("", index=cur_df.index)
+            name_col = cur_df["ACCOUNT_NAME"].fillna("").astype(str).str.strip() if "ACCOUNT_NAME" in cur_df.columns else pd.Series("", index=cur_df.index)
+            cur_df["_LIAB_KEY"] = code_col.where(code_col != "", name_col)
+            cur_df = cur_df[cur_df["_LIAB_KEY"] != ""]
+            if len(cur_df):
+                balances = cur_df.groupby("_LIAB_KEY")["NET_AMOUNT"].sum()
+                # Negative running balance = credit-normal account still owed (unpaid liability).
+                # Positive = fully offset or over-debited (already paid, not a commitment).
+                outstanding = balances[balances < 0].abs()
+                if len(outstanding):
+                    current_liabilities = float(outstanding.sum())
 
     profit_fy = {
         "labels": sales_series["labels"],

@@ -201,8 +201,25 @@ function renderOverview(data) {
     balanceSparkline.innerHTML = buildSparklineMarkup(cumulativeBalanceSeries);
   }
   renderBalanceAdjustState(balanceKpi, isPastFy);
+  const currentLiabilities = Number.isFinite(Number(data?.kpis?.current_liabilities)) ? Number(data.kpis.current_liabilities) : 0;
+  const freeBalance = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance - currentLiabilities : balanceKpi.balance;
+  // Option B: render free cash bar
+  const freeCashBar = document.getElementById("dashboardFreeCashBar");
+  const freeCashFill = document.getElementById("dashboardFreeCashFill");
+  const freeCashLabel = document.getElementById("dashboardFreeCashLabel");
+  const committedLabel = document.getElementById("dashboardCommittedLabel");
+  if (!isPastFy && freeCashBar && Number.isFinite(balanceKpi.balance) && balanceKpi.balance > 0 && currentLiabilities > 0) {
+    const pctFree = Math.min(100, Math.max(0, (freeBalance / balanceKpi.balance) * 100));
+    freeCashFill.style.width = `${pctFree}%`;
+    freeCashLabel.textContent = `${fmtCurrency(Math.max(0, freeBalance))} free`;
+    committedLabel.textContent = `${fmtCurrency(currentLiabilities)} committed`;
+    freeCashBar.style.display = "";
+  } else if (freeCashBar) {
+    freeCashBar.style.display = "none";
+  }
   const runwayValue = document.getElementById("dashboardRunwayValue");
-  const forwardRunway = !isPastFy ? computeForwardRunwayMetrics(data, balanceKpi.balance) : null;
+  // Option C: use free cash for runway so days reflect cash after ATO commitments
+  const forwardRunway = !isPastFy ? computeForwardRunwayMetrics(data, freeBalance) : null;
   if (runwayValue) {
     runwayValue.classList.remove("positive", "negative");
     if (isPastFy) {
