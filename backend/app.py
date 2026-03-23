@@ -947,16 +947,71 @@ def _normalize_frequency(value: str | None, default: str) -> str:
     return v if v in {"monthly", "quarterly"} else default
 
 
+def _detect_frequency(accrual_dates: "pd.Series") -> str:
+    """Infer monthly vs quarterly from the gaps between accrual journal entries.
+
+    Uses the median gap between consecutive accrual dates so that a single
+    irregular entry doesn't throw off the result.  Falls back to 'quarterly'
+    when there is insufficient history — better to show a later (safer) due
+    date than to falsely flag something as overdue.
+    """
+    dates = pd.to_datetime(accrual_dates, errors="coerce").dropna().sort_values().unique()
+    if len(dates) < 2:
+        return "quarterly"
+    gaps_days = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
+    median_gap = sorted(gaps_days)[len(gaps_days) // 2]
+    if median_gap < 45:
+        return "monthly"
+    return "quarterly"
+
+
 def _liability_frequency_config(
+    lines: "pd.DataFrame | None" = None,
     gst_frequency: str | None = None,
     payg_frequency: str | None = None,
     super_frequency: str | None = None,
 ) -> dict:
+    """Build frequency map, auto-detecting from journal history where not overridden.
+
+    Priority: explicit param → env var → auto-detected from journals → quarterly fallback.
+    Super is always quarterly (AU Superannuation Guarantee).
+    """
+    def _resolve(explicit, env_key, detected):
+        if explicit:
+            return _normalize_frequency(explicit, detected)
+        env_val = os.getenv(env_key)
+        if env_val:
+            return _normalize_frequency(env_val, detected)
+        return detected
+
+    detected_gst = "quarterly"
+    detected_payg = "quarterly"
+
+    if lines is not None and not lines.empty and "NET_AMOUNT" in lines.columns:
+        accruals = lines[pd.to_numeric(lines["NET_AMOUNT"], errors="coerce") < 0]
+        for ltype, col in [("GST", "detected_gst"), ("PAYG", "detected_payg")]:
+            mask = lines.apply(
+                lambda r: _liability_type(
+                    str(r.get("ACCOUNT_CODE", "")), str(r.get("ACCOUNT_NAME", ""))
+                ) == ltype,
+                axis=1,
+            )
+            subset = accruals[mask]
+            if len(subset):
+                detected = _detect_frequency(subset["JOURNAL_DATE"])
+                if col == "detected_gst":
+                    detected_gst = detected
+                else:
+                    detected_payg = detected
+
     return {
-        "GST": _normalize_frequency(gst_frequency, _normalize_frequency(os.getenv("GST_FREQUENCY"), "monthly")),
-        "PAYG": _normalize_frequency(payg_frequency, _normalize_frequency(os.getenv("PAYG_FREQUENCY"), "monthly")),
-        "SUPER": _normalize_frequency(super_frequency, _normalize_frequency(os.getenv("SUPER_FREQUENCY"), "quarterly")),
+        "GST": _resolve(gst_frequency, "GST_FREQUENCY", detected_gst),
+        "PAYG": _resolve(payg_frequency, "PAYG_FREQUENCY", detected_payg),
+        "SUPER": _normalize_frequency(
+            super_frequency, _normalize_frequency(os.getenv("SUPER_FREQUENCY"), "quarterly")
+        ),
         "WAGES": "payrun",
+        "_detected": {"GST": detected_gst, "PAYG": detected_payg},
     }
 
 
@@ -1646,6 +1701,7 @@ def build_liabilities_payload(
 
     lines = _load_liability_lines_df_xero()
     freq_map = _liability_frequency_config(
+        lines=lines,
         gst_frequency=gst_frequency,
         payg_frequency=payg_frequency,
         super_frequency=super_frequency,
@@ -1660,6 +1716,7 @@ def build_liabilities_payload(
                     "PAYG_FREQUENCY": freq_map.get("PAYG"),
                     "SUPER_FREQUENCY": freq_map.get("SUPER"),
                 },
+                "detected_frequencies": freq_map.get("_detected", {}),
                 "note": "Agent extensions not included.",
             },
             "rows": [],
@@ -1763,6 +1820,7 @@ def build_liabilities_payload(
                     "PAYG_FREQUENCY": freq_map.get("PAYG"),
                     "SUPER_FREQUENCY": freq_map.get("SUPER"),
                 },
+                "detected_frequencies": freq_map.get("_detected", {}),
                 "note": "Outstanding balances reflect all-time journal history. obligation_created/amount_paid reflect the selected period only.",
             },
             "rows": rows,
