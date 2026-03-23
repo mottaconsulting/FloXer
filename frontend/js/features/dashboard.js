@@ -237,9 +237,16 @@ function renderOverview(data) {
       runwayValue.textContent = fmtCurrency(sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []));
       runwayValue.classList.add("negative");
     } else {
+      // Prefer budget-based forward runway (free-cash-aware).
+      // Fall back to freeBalance / monthly_burn so liabilities are still subtracted.
+      // Never fall back to kpis.runway_months — that uses gross balance and ignores liabilities.
+      const monthlyBurn = Number(kpis.monthly_burn);
+      const burnFallbackMonths = Number.isFinite(freeBalance) && Number.isFinite(monthlyBurn) && monthlyBurn > 0
+        ? freeBalance / monthlyBurn
+        : NaN;
       const runwayMonths = Number.isFinite(forwardRunway?.runwayMonths)
         ? Number(forwardRunway.runwayMonths)
-        : Number(kpis.runway_months);
+        : burnFallbackMonths;
       const runwayDays = Number.isFinite(runwayMonths) ? Math.round(runwayMonths * 30) : null;
       if (forwardRunway?.basis === "already-negative") {
         runwayValue.textContent = "0 Days";
