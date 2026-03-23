@@ -1666,32 +1666,51 @@ def build_liabilities_payload(
         }
 
     period_start, period_end = _period_bounds(today, period, fy_start_month)
-    period_lines = lines[(lines["JOURNAL_DATE"] >= period_start) & (lines["JOURNAL_DATE"] <= period_end)]
-    if period_lines.empty:
+
+    # All history up to today — source of truth for outstanding balances.
+    # Period filter was the old approach; it missed liabilities accrued in prior periods.
+    all_lines = lines[lines["JOURNAL_DATE"] <= pd.Timestamp(today)]
+    if all_lines.empty:
+        # Fall back: shift today to latest available data
         latest_date = lines["JOURNAL_DATE"].max()
         if pd.notna(latest_date):
             today = latest_date.to_pydatetime() if hasattr(latest_date, "to_pydatetime") else latest_date
             period_start, period_end = _period_bounds(today, period, fy_start_month)
-            period_lines = lines[(lines["JOURNAL_DATE"] >= period_start) & (lines["JOURNAL_DATE"] <= period_end)]
+            all_lines = lines[lines["JOURNAL_DATE"] <= pd.Timestamp(today)]
 
     rows = []
-    for (code, name), grp in period_lines.groupby(["ACCOUNT_CODE", "ACCOUNT_NAME"]):
-        net = pd.to_numeric(grp["NET_AMOUNT"], errors="coerce").fillna(0.0)
-        neg = net[net < 0]
-        pos = net[net > 0]
-
-        obligation_created = float(neg.abs().sum())
-        amount_paid = float(pos.sum())
-        net_position = float(net.sum())
+    for (code, name), all_grp in all_lines.groupby(["ACCOUNT_CODE", "ACCOUNT_NAME"]):
+        all_net = pd.to_numeric(all_grp["NET_AMOUNT"], errors="coerce").fillna(0.0)
+        net_position = float(all_net.sum())
         outstanding_owed = float(abs(net_position)) if net_position < 0 else 0.0
         credit_balance = float(net_position) if net_position > 0 else 0.0
 
-        first_accrual = grp.loc[net < 0, "JOURNAL_DATE"].min()
-        last_activity = grp["JOURNAL_DATE"].max()
-        last_payment = grp.loc[net > 0, "JOURNAL_DATE"].max()
+        # Skip accounts fully settled (nothing owed and nothing in credit)
+        if outstanding_owed == 0 and credit_balance == 0:
+            continue
+
+        # Period-scoped breakdown for context (what happened this month/quarter)
+        period_mask = (all_grp["JOURNAL_DATE"] >= period_start) & (all_grp["JOURNAL_DATE"] <= period_end)
+        period_net = pd.to_numeric(all_grp.loc[period_mask, "NET_AMOUNT"], errors="coerce").fillna(0.0)
+        obligation_created = float(period_net[period_net < 0].abs().sum())
+        amount_paid = float(period_net[period_net > 0].sum())
+
+        # Dates from all history
+        first_accrual = all_grp.loc[all_net < 0, "JOURNAL_DATE"].min()
+        last_activity = all_grp["JOURNAL_DATE"].max()
+        last_payment = all_grp.loc[all_net > 0, "JOURNAL_DATE"].max()
+
+        # Due date based on the period of the last accrual, not the current period.
+        # Example: Feb GST last accrued in Feb → due Mar 21 → shows Overdue if unpaid in March.
+        last_accrual_ts = all_grp.loc[all_net < 0, "JOURNAL_DATE"].max()
+        if pd.notna(last_accrual_ts):
+            last_accrual_dt = last_accrual_ts.to_pydatetime() if hasattr(last_accrual_ts, "to_pydatetime") else last_accrual_ts
+            _, accrual_period_end = _period_bounds(last_accrual_dt, period, fy_start_month)
+        else:
+            accrual_period_end = period_end
 
         ltype = _liability_type(code, name)
-        expected_due, basis_rule = _expected_due_date(ltype, period_end, freq_map)
+        expected_due, basis_rule = _expected_due_date(ltype, accrual_period_end, freq_map)
         days_to_due = (expected_due.date() - today.date()).days if expected_due else None
 
         if credit_balance > 0:
@@ -1738,12 +1757,13 @@ def build_liabilities_payload(
                 "period": period,
                 "period_start": period_start.date().isoformat(),
                 "period_end": period_end.date().isoformat(),
+                "outstanding_basis": "all_history",
                 "configuration_used": {
                     "GST_FREQUENCY": freq_map.get("GST"),
                     "PAYG_FREQUENCY": freq_map.get("PAYG"),
                     "SUPER_FREQUENCY": freq_map.get("SUPER"),
                 },
-                "note": "Agent extensions not included.",
+                "note": "Outstanding balances reflect all-time journal history. obligation_created/amount_paid reflect the selected period only.",
             },
             "rows": rows,
         }
