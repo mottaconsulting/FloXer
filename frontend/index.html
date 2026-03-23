@@ -660,8 +660,8 @@
     }
     .rebuilt-kpi-split {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 140px;
-      gap: 12px;
+      grid-template-columns: minmax(0, 1fr) 80px;
+      gap: 8px;
       align-items: start;
       min-height: 58px;
     }
@@ -685,8 +685,7 @@
       justify-content: flex-end;
     }
     .rebuilt-kpi-sparkline {
-      width: 80px;
-      min-width: 80px;
+      width: 100%;
       min-height: 32px;
       display: flex;
       align-items: end;
@@ -724,18 +723,13 @@
     .rebuilt-free-cash-free { color: #3b82f6; }
     .rebuilt-free-cash-committed { color: #ec4899; }
     .rebuilt-kpi-value.warning { color: #f59e0b; }
-    .rebuilt-runway-basis {
-      margin-top: 6px;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 11px;
-      font-weight: 700;
-      line-height: 1;
+    .rebuilt-kpi-trend-hint {
+      font-size: 9px;
+      font-weight: 600;
+      color: #94a3b8;
+      letter-spacing: 0.02em;
+      cursor: pointer;
     }
-    .rebuilt-runway-free { color: #3b82f6; }
-    .rebuilt-runway-committed { color: #ec4899; }
-    .rebuilt-runway-sep { color: #cbd5e1; }
     .rebuilt-chart-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2083,15 +2077,13 @@
         <div class="rebuilt-kpi-card">
           <div class="rebuilt-kpi-head">
             <span id="dashboardThirdKpiLabel">Out of Cash</span>
-            <span id="dashboardBurnNote" class="rebuilt-kpi-trend">--</span>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
+              <span id="dashboardBurnNote" class="rebuilt-kpi-trend">--</span>
+              <span id="dashboardBurnNoteHint" class="rebuilt-kpi-trend-hint" style="display:none;">tap for details</span>
+            </div>
           </div>
           <div class="rebuilt-kpi-body">
             <div id="dashboardRunwayValue" class="rebuilt-kpi-value">--</div>
-          </div>
-          <div id="dashboardRunwayBasis" class="rebuilt-runway-basis" style="display:none;">
-            <span id="dashboardRunwayFree" class="rebuilt-runway-free">--</span>
-            <span class="rebuilt-runway-sep">·</span>
-            <span id="dashboardRunwayCommitted" class="rebuilt-runway-committed">--</span>
           </div>
         </div>
       </div>

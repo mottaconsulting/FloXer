@@ -85,12 +85,22 @@ function bindBurnNotePopover() {
     const exp        = Number(note.dataset.fyExpense);
     const net        = Number(note.dataset.fyNet);
     const monthsLeft = Number(note.dataset.monthsLeft) || 0;
+    const committed  = Number(note.dataset.committed) || 0;
+    const freeBal    = Number(note.dataset.freeBalance);
     const fmtNum     = v => Number.isFinite(v) ? fmtCurrency(Math.abs(v)) : "--";
     const netSign    = net >= 0 ? "+" : "-";
     const netCol     = net >= 0 ? "#3b82f6" : "#ec4899";
     const sentence   = net >= 0
       ? `Budget projects a surplus over the next ${monthsLeft} month${monthsLeft !== 1 ? "s" : ""}.`
       : `Budget projects a shortfall over the next ${monthsLeft} month${monthsLeft !== 1 ? "s" : ""}.`;
+    const committedSection = committed > 0 ? `
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid #dbe2ea;">
+        <div style="font-weight:700;color:#0d1b4b;margin-bottom:4px">Current cash position</div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:2px 16px;color:#374151">
+          <span>Free cash</span><span style="color:#3b82f6;font-weight:700">${fmtNum(freeBal)}</span>
+          <span>Committed</span><span style="color:#ec4899;font-weight:700">-${fmtNum(committed)}</span>
+        </div>
+      </div>` : "";
     pop.innerHTML = `
       <div style="font-weight:700;color:#0d1b4b;margin-bottom:6px">Remaining FY budget</div>
       <div style="color:#6b7280;font-size:12px;margin-bottom:10px">${sentence}</div>
@@ -99,7 +109,8 @@ function bindBurnNotePopover() {
         <span>Expenses</span><span style="color:#ec4899;font-weight:700">-${fmtNum(exp)}</span>
         <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:700">Net</span>
         <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:800;color:${netCol}">${netSign}${fmtNum(net)}</span>
-      </div>`;
+      </div>
+      ${committedSection}`;
     const rect = note.getBoundingClientRect();
     pop.style.display = "block";
     const pw = pop.offsetWidth;
@@ -218,9 +229,6 @@ function renderOverview(data) {
     freeCashBar.style.display = "none";
   }
   const runwayValue = document.getElementById("dashboardRunwayValue");
-  const runwayBasis = document.getElementById("dashboardRunwayBasis");
-  const runwayFreeEl = document.getElementById("dashboardRunwayFree");
-  const runwayCommittedEl = document.getElementById("dashboardRunwayCommitted");
   // Option C: use free cash for runway so days reflect cash after ATO commitments
   const forwardRunway = !isPastFy ? computeForwardRunwayMetrics(data, freeBalance) : null;
   if (runwayValue) {
@@ -228,7 +236,6 @@ function renderOverview(data) {
     if (isPastFy) {
       runwayValue.textContent = fmtCurrency(sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []));
       runwayValue.classList.add("negative");
-      if (runwayBasis) runwayBasis.style.display = "none";
     } else {
       const runwayMonths = Number.isFinite(forwardRunway?.runwayMonths)
         ? Number(forwardRunway.runwayMonths)
@@ -244,14 +251,6 @@ function renderOverview(data) {
           else if (runwayDays <= 90) runwayValue.classList.add("warning");
           else runwayValue.classList.add("positive");
         }
-      }
-      // Basis sub-line: show free vs committed only when liabilities are known
-      if (runwayBasis && currentLiabilities > 0 && Number.isFinite(balanceKpi.balance)) {
-        runwayFreeEl.textContent = `${fmtCurrency(Math.max(0, freeBalance))} free`;
-        runwayCommittedEl.textContent = `${fmtCurrency(currentLiabilities)} committed`;
-        runwayBasis.style.display = "";
-      } else if (runwayBasis) {
-        runwayBasis.style.display = "none";
       }
     }
   }
@@ -274,10 +273,14 @@ function renderOverview(data) {
       const fyRevenue = futureRevenues.filter(Number.isFinite).reduce((a, b) => a + b, 0);
       const fyExpense = futureExpenses.filter(Number.isFinite).reduce((a, b) => a + b, 0);
       const monthsLeft = futureNet.length;
-      burnNote.dataset.fyRevenue  = fyRevenue;
-      burnNote.dataset.fyExpense  = fyExpense;
-      burnNote.dataset.fyNet      = fyNet;
-      burnNote.dataset.monthsLeft = monthsLeft;
+      burnNote.dataset.fyRevenue   = fyRevenue;
+      burnNote.dataset.fyExpense   = fyExpense;
+      burnNote.dataset.fyNet       = fyNet;
+      burnNote.dataset.monthsLeft  = monthsLeft;
+      burnNote.dataset.committed   = currentLiabilities;
+      burnNote.dataset.freeBalance = Math.max(0, freeBalance);
+      const burnHint = document.getElementById("dashboardBurnNoteHint");
+      if (burnHint) burnHint.style.display = futureNet.length ? "" : "none";
       burnNote.style.color = "";
       if (!futureNet.length) {
         burnNote.textContent = "No budget data";
