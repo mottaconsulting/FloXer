@@ -722,6 +722,19 @@
     }
     .rebuilt-free-cash-free { color: #3b82f6; }
     .rebuilt-free-cash-committed { color: #ec4899; }
+    .rebuilt-kpi-value.warning { color: #f59e0b; }
+    .rebuilt-runway-basis {
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .rebuilt-runway-free { color: #3b82f6; }
+    .rebuilt-runway-committed { color: #ec4899; }
+    .rebuilt-runway-sep { color: #cbd5e1; }
     .rebuilt-chart-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2073,6 +2086,11 @@
           </div>
           <div class="rebuilt-kpi-body">
             <div id="dashboardRunwayValue" class="rebuilt-kpi-value">--</div>
+          </div>
+          <div id="dashboardRunwayBasis" class="rebuilt-runway-basis" style="display:none;">
+            <span id="dashboardRunwayFree" class="rebuilt-runway-free">--</span>
+            <span class="rebuilt-runway-sep">·</span>
+            <span id="dashboardRunwayCommitted" class="rebuilt-runway-committed">--</span>
           </div>
         </div>
       </div>

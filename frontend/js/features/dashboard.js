@@ -218,23 +218,40 @@ function renderOverview(data) {
     freeCashBar.style.display = "none";
   }
   const runwayValue = document.getElementById("dashboardRunwayValue");
+  const runwayBasis = document.getElementById("dashboardRunwayBasis");
+  const runwayFreeEl = document.getElementById("dashboardRunwayFree");
+  const runwayCommittedEl = document.getElementById("dashboardRunwayCommitted");
   // Option C: use free cash for runway so days reflect cash after ATO commitments
   const forwardRunway = !isPastFy ? computeForwardRunwayMetrics(data, freeBalance) : null;
   if (runwayValue) {
-    runwayValue.classList.remove("positive", "negative");
+    runwayValue.classList.remove("positive", "negative", "warning");
     if (isPastFy) {
       runwayValue.textContent = fmtCurrency(sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []));
       runwayValue.classList.add("negative");
+      if (runwayBasis) runwayBasis.style.display = "none";
     } else {
       const runwayMonths = Number.isFinite(forwardRunway?.runwayMonths)
         ? Number(forwardRunway.runwayMonths)
         : Number(kpis.runway_months);
+      const runwayDays = Number.isFinite(runwayMonths) ? Math.round(runwayMonths * 30) : null;
       if (runwayMonths === Number.POSITIVE_INFINITY) {
         runwayValue.textContent = "365+ Days";
         runwayValue.classList.add("positive");
       } else {
-        runwayValue.textContent = Number.isFinite(runwayMonths) ? `${Math.round(runwayMonths * 30)} Days` : "--";
-        if (Number.isFinite(runwayMonths)) runwayValue.classList.add(runwayMonths <= 3 ? "negative" : "positive");
+        runwayValue.textContent = runwayDays !== null ? `${runwayDays} Days` : "--";
+        if (runwayDays !== null) {
+          if (runwayDays <= 30) runwayValue.classList.add("negative");
+          else if (runwayDays <= 90) runwayValue.classList.add("warning");
+          else runwayValue.classList.add("positive");
+        }
+      }
+      // Basis sub-line: show free vs committed only when liabilities are known
+      if (runwayBasis && currentLiabilities > 0 && Number.isFinite(balanceKpi.balance)) {
+        runwayFreeEl.textContent = `${fmtCurrency(Math.max(0, freeBalance))} free`;
+        runwayCommittedEl.textContent = `${fmtCurrency(currentLiabilities)} committed`;
+        runwayBasis.style.display = "";
+      } else if (runwayBasis) {
+        runwayBasis.style.display = "none";
       }
     }
   }
