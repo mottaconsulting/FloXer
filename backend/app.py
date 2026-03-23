@@ -928,6 +928,25 @@ def _next_business_day_if_weekend(d: datetime) -> datetime:
     return d
 
 
+def _is_bookkeeping_artefact(account_name: str) -> bool:
+    """Return True for Xero accounts that are bookkeeping artefacts, not real cash liabilities.
+
+    These accounts exist in virtually every Xero file but represent opening-balance
+    adjustments, rounding differences, or conversion entries — not money owed to anyone.
+    Including them in 'committed cash' produces misleading numbers.
+    """
+    name = str(account_name or "").lower()
+    artefact_patterns = [
+        "historical adjustment",
+        "opening balance",
+        "conversion",
+        "rounding",
+        "suspense",
+        "clearing",
+    ]
+    return any(p in name for p in artefact_patterns)
+
+
 def _liability_type(account_code: str, account_name: str) -> str:
     code = str(account_code or "").strip()
     name = str(account_name or "").lower()
@@ -1603,6 +1622,8 @@ def build_overview_payload(
             name_col = cur_df["ACCOUNT_NAME"].fillna("").astype(str).str.strip() if "ACCOUNT_NAME" in cur_df.columns else pd.Series("", index=cur_df.index)
             cur_df["_LIAB_KEY"] = code_col.where(code_col != "", name_col)
             cur_df = cur_df[cur_df["_LIAB_KEY"] != ""]
+            # Exclude bookkeeping artefacts (opening balances, rounding, conversion entries)
+            cur_df = cur_df[~name_col.reindex(cur_df.index).map(_is_bookkeeping_artefact)]
             if len(cur_df):
                 balances = cur_df.groupby("_LIAB_KEY")["NET_AMOUNT"].sum()
                 # Negative running balance = credit-normal account still owed (unpaid liability).
@@ -1736,7 +1757,13 @@ def build_liabilities_payload(
             all_lines = lines[lines["JOURNAL_DATE"] <= pd.Timestamp(today)]
 
     rows = []
+    warnings = []
     for (code, name), all_grp in all_lines.groupby(["ACCOUNT_CODE", "ACCOUNT_NAME"]):
+        # Skip Xero bookkeeping artefacts — opening balances, rounding, conversion entries.
+        # These are not real cash liabilities and would distort committed cash totals.
+        if _is_bookkeeping_artefact(name):
+            continue
+
         all_net = pd.to_numeric(all_grp["NET_AMOUNT"], errors="coerce").fillna(0.0)
         net_position = float(all_net.sum())
         outstanding_owed = float(abs(net_position)) if net_position < 0 else 0.0
@@ -1746,11 +1773,24 @@ def build_liabilities_payload(
         if outstanding_owed == 0 and credit_balance == 0:
             continue
 
+        # Skip negligible amounts (rounding noise under $1)
+        if outstanding_owed < 1.0 and credit_balance < 1.0:
+            continue
+
         # Period-scoped breakdown for context (what happened this month/quarter)
         period_mask = (all_grp["JOURNAL_DATE"] >= period_start) & (all_grp["JOURNAL_DATE"] <= period_end)
         period_net = pd.to_numeric(all_grp.loc[period_mask, "NET_AMOUNT"], errors="coerce").fillna(0.0)
         obligation_created = float(period_net[period_net < 0].abs().sum())
         amount_paid = float(period_net[period_net > 0].sum())
+
+        # Warn when all-time outstanding is more than 3x the period obligation —
+        # this usually means the liability has been accruing without regular ATO payments.
+        if outstanding_owed > 1.0 and obligation_created > 0 and outstanding_owed > obligation_created * 3:
+            warnings.append(
+                f"{name} ({code}): all-time outstanding ${outstanding_owed:,.2f} is significantly "
+                f"higher than this period's obligation ${obligation_created:,.2f}. "
+                "Check whether historical payments have been recorded in Xero."
+            )
 
         # Dates from all history
         first_accrual = all_grp.loc[all_net < 0, "JOURNAL_DATE"].min()
@@ -1821,6 +1861,7 @@ def build_liabilities_payload(
                     "SUPER_FREQUENCY": freq_map.get("SUPER"),
                 },
                 "detected_frequencies": freq_map.get("_detected", {}),
+                "warnings": warnings,
                 "note": "Outstanding balances reflect all-time journal history. obligation_created/amount_paid reflect the selected period only.",
             },
             "rows": rows,
