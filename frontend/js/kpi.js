@@ -126,6 +126,10 @@ function computeForwardRunwayMetrics(data, startingBalance) {
   if (!Number.isFinite(balance)) {
     return { runwayMonths: NaN, avgMonthlyShortfall: NaN, basis: "unavailable", futureNet: [] };
   }
+  // If free cash is already zero or negative the business has no runway left.
+  if (balance <= 0) {
+    return { runwayMonths: 0, avgMonthlyShortfall: NaN, basis: "already-negative", futureNet: [] };
+  }
 
   const sales = data?.charts?.sales_fy || {};
   const expenses = data?.charts?.expenses_fy || {};

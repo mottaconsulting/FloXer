@@ -241,7 +241,10 @@ function renderOverview(data) {
         ? Number(forwardRunway.runwayMonths)
         : Number(kpis.runway_months);
       const runwayDays = Number.isFinite(runwayMonths) ? Math.round(runwayMonths * 30) : null;
-      if (runwayMonths === Number.POSITIVE_INFINITY) {
+      if (forwardRunway?.basis === "already-negative") {
+        runwayValue.textContent = "0 Days";
+        runwayValue.classList.add("negative");
+      } else if (runwayMonths === Number.POSITIVE_INFINITY) {
         runwayValue.textContent = "365+ Days";
         runwayValue.classList.add("positive");
       } else {
@@ -263,15 +266,22 @@ function renderOverview(data) {
     } else {
       const futureNet = forwardRunway?.futureNet || [];
       const fyNet = futureNet.reduce((a, b) => a + b, 0);
-      // Compute FY totals for popover
+      // Derive popover revenue/expense from the same slice used by computeForwardRunwayMetrics
+      // so they are always consistent with futureNet (same null-filtering, same cutoff).
       const labels = data?.charts?.sales_fy?.labels || data?.charts?.expenses_fy?.labels || [];
       const asOfMonth = data?.meta?.as_of_month;
       const cutoffIdx = asOfMonth ? labels.indexOf(asOfMonth) : -1;
-      const nextIdx = cutoffIdx + 1;
-      const futureRevenues = (data?.charts?.sales_fy?.projected_monthly || []).slice(nextIdx).map(Number);
-      const futureExpenses = (data?.charts?.expenses_fy?.projected_monthly || []).slice(nextIdx).map(Number);
-      const fyRevenue = futureRevenues.filter(Number.isFinite).reduce((a, b) => a + b, 0);
-      const fyExpense = futureExpenses.filter(Number.isFinite).reduce((a, b) => a + b, 0);
+      const revenueProjected = data?.charts?.sales_fy?.projected_monthly || [];
+      const expenseProjected = data?.charts?.expenses_fy?.projected_monthly || [];
+      let fyRevenue = 0, fyExpense = 0;
+      labels.forEach((_, idx) => {
+        if (idx <= cutoffIdx) return;
+        const rev = Number(revenueProjected[idx]);
+        const exp = Number(expenseProjected[idx]);
+        if (!Number.isFinite(rev) || !Number.isFinite(exp)) return;
+        fyRevenue += rev;
+        fyExpense += exp;
+      });
       const monthsLeft = futureNet.length;
       burnNote.dataset.fyRevenue   = fyRevenue;
       burnNote.dataset.fyExpense   = fyExpense;
