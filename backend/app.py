@@ -150,7 +150,7 @@ TENANT_ID_ENV = os.getenv("XERO_TENANT_ID")
 # Keep scopes simple: only request what you use.
 SCOPES = os.getenv(
     "XERO_SCOPES",
-    "accounting.transactions accounting.contacts accounting.settings accounting.journals.read offline_access",
+    "accounting.transactions accounting.contacts accounting.settings accounting.journals.read accounting.reports.read offline_access",
 )
 
 XERO_AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
@@ -1275,12 +1275,16 @@ def _fetch_pl_report(fy_start: datetime, fy_end: datetime) -> dict | None:
     return {"revenue": revenue, "expense": expense}
 
 
-def _fetch_balance_sheet_liabilities(as_of_date: datetime) -> dict | None:
+def _fetch_balance_sheet(as_of_date: datetime) -> dict | None:
     """
-    Fetch Current Liabilities directly from Xero Reports/BalanceSheet API.
-    Returns {"total": float, "accounts": [{"name": str, "amount": float}]}
-    or None on failure. This matches exactly what Xero shows in the Balance Sheet UI.
-    Excludes bookkeeping artefacts (Historical Adjustment, Rounding, etc.).
+    Fetch and parse the Xero Balance Sheet report.
+    Returns:
+      {
+        "liabilities": {"total": float, "accounts": [{"name", "amount"}], "xero_total": float},
+        "bank":        {"total": float, "accounts": [{"name", "amount"}]},
+      }
+    or None on failure.
+    Liabilities excludes bookkeeping artefacts. Bank preserves signed balances (negative = overdrawn).
     """
     try:
         resp = _xero_get(
@@ -1295,23 +1299,56 @@ def _fetch_balance_sheet_liabilities(as_of_date: datetime) -> dict | None:
     report = (data.get("Reports") or [{}])[0]
     rows = report.get("Rows") or []
 
-    accounts = []
-    total = None
-
-    def _parse_amount(cell: dict) -> float:
+    def _parse_signed(cell: dict) -> float:
         try:
-            return abs(float((cell.get("Value") or "0").replace(",", "")))
+            return float((cell.get("Value") or "0").replace(",", ""))
         except (ValueError, TypeError):
             return 0.0
 
-    # Walk top-level sections to find Liabilities → Current Liabilities
+    def _parse_abs(cell: dict) -> float:
+        return abs(_parse_signed(cell))
+
+    # --- Bank section ---
+    bank_accounts: list[dict] = []
+    bank_total: float | None = None
+    for section in rows:
+        if section.get("RowType") != "Section":
+            continue
+        title = (section.get("Title") or "").strip().lower()
+        if title != "bank":
+            continue
+        for row in (section.get("Rows") or []):
+            rt = row.get("RowType")
+            cells = row.get("Cells") or []
+            if rt == "Row" and len(cells) >= 2:
+                name = (cells[0].get("Value") or "").strip()
+                amount = _parse_signed(cells[1])  # preserve sign: negative = overdrawn
+                if name:
+                    # Filter to primary bank account if configured
+                    name_matches = (not PRIMARY_BANK_ACCOUNT_NAME) or name.lower() == PRIMARY_BANK_ACCOUNT_NAME
+                    if name_matches:
+                        bank_accounts.append({"name": name, "amount": amount})
+            elif rt == "SummaryRow" and len(cells) >= 2:
+                bank_total = _parse_signed(cells[1])
+        break
+
+    # If filtered to a specific account, use its balance; otherwise use Total Bank
+    if bank_accounts and PRIMARY_BANK_ACCOUNT_NAME:
+        bs_bank_total = sum(a["amount"] for a in bank_accounts)
+    elif bank_total is not None:
+        bs_bank_total = bank_total
+    else:
+        bs_bank_total = sum(a["amount"] for a in bank_accounts) if bank_accounts else None
+
+    # --- Current Liabilities section ---
+    liab_accounts: list[dict] = []
+    liab_xero_total: float | None = None
     for section in rows:
         if section.get("RowType") != "Section":
             continue
         title = (section.get("Title") or "").strip().lower()
         if "liabilit" not in title:
             continue
-        # Could be a flat "Current Liabilities" section or nested under "Liabilities"
         sub_rows = section.get("Rows") or []
         target_rows = None
         for sub in sub_rows:
@@ -1319,31 +1356,46 @@ def _fetch_balance_sheet_liabilities(as_of_date: datetime) -> dict | None:
             if sub.get("RowType") == "Section" and "current" in sub_title:
                 target_rows = sub.get("Rows") or []
                 break
-        # If no nested "Current" sub-section, treat the section itself as current liabilities
         if target_rows is None and "current" in title:
             target_rows = sub_rows
-
         if target_rows is None:
             continue
-
         for row in target_rows:
             rt = row.get("RowType")
             cells = row.get("Cells") or []
             if rt == "Row" and len(cells) >= 2:
                 name = (cells[0].get("Value") or "").strip()
-                amount = _parse_amount(cells[1])
+                amount = _parse_abs(cells[1])
                 if name and amount > 0.01 and not _is_bookkeeping_artefact(name):
-                    accounts.append({"name": name, "amount": amount})
+                    liab_accounts.append({"name": name, "amount": amount})
             elif rt == "SummaryRow" and len(cells) >= 2:
-                total = _parse_amount(cells[1])
+                liab_xero_total = _parse_abs(cells[1])
         break
 
-    if not accounts:
+    if not liab_accounts and bs_bank_total is None:
         return None
 
-    # Recalculate total excluding artefacts (Xero's SummaryRow includes them)
-    clean_total = sum(a["amount"] for a in accounts)
-    return {"total": clean_total, "accounts": accounts, "xero_total": total}
+    liab_clean_total = sum(a["amount"] for a in liab_accounts)
+    return {
+        "liabilities": {
+            "total": liab_clean_total,
+            "accounts": liab_accounts,
+            "xero_total": liab_xero_total,
+        },
+        "bank": {
+            "total": bs_bank_total,
+            "accounts": bank_accounts,
+        },
+    }
+
+
+def _fetch_balance_sheet_liabilities(as_of_date: datetime) -> dict | None:
+    """Convenience wrapper — returns the liabilities portion of the Balance Sheet."""
+    bs = _fetch_balance_sheet(as_of_date)
+    if not bs:
+        return None
+    liab = bs.get("liabilities") or {}
+    return liab if liab.get("accounts") else None
 
 
 def _build_sales_series(
@@ -1710,6 +1762,18 @@ def build_overview_payload(
         monthly_burn = None
 
     live_cash_balance, live_cash_balance_error = _load_live_bank_balance_xero()
+
+    # Fetch Balance Sheet once — provides both bank balance (fallback) and liabilities.
+    _bs_full = _fetch_balance_sheet(today)
+    _bs = (_bs_full or {}).get("liabilities") if _bs_full and (_bs_full.get("liabilities") or {}).get("accounts") else None
+
+    # Use Balance Sheet bank total when the Accounts API returns no balance
+    if live_cash_balance is None and _bs_full:
+        bs_bank_total = (_bs_full.get("bank") or {}).get("total")
+        if bs_bank_total is not None:
+            live_cash_balance = bs_bank_total
+            live_cash_balance_error = None
+
     effective_cash_balance = (
         float(live_cash_balance)
         if live_cash_balance is not None
@@ -1744,9 +1808,7 @@ def build_overview_payload(
     if budget.empty:
         warnings.append("No manual budget yet. Future Profit is unavailable until budget rows are added.")
 
-    # Fetch Current Liabilities directly from Xero Balance Sheet report —
-    # same approach as P&L, matches Xero UI exactly, no journal-line calculation errors.
-    _bs = _fetch_balance_sheet_liabilities(today)
+    # Current Liabilities — use Balance Sheet parsed earlier (same API call, no extra request).
     current_liabilities = _bs["total"] if _bs else None
 
     # Fall back to journal lines if Balance Sheet fetch failed.
@@ -1851,9 +1913,9 @@ def build_overview_payload(
                 round(float(previous_month_balance), 2) if previous_month_balance is not None else None
             ),
             "cash_balance_source": (
-                "xero"
-                if live_cash_balance is not None
-                else ("proxy" if bank_balance_proxy is not None else "unavailable")
+                "balance_sheet"
+                if live_cash_balance is not None and _bs_full and (_bs_full.get("bank") or {}).get("total") is not None
+                else ("xero" if live_cash_balance is not None else ("proxy" if bank_balance_proxy is not None else "unavailable"))
             ),
             "cash_balance_live_error": live_cash_balance_error,
             "runway_months": round(float(runway_months), 2) if runway_months is not None else None,
@@ -2067,7 +2129,7 @@ def debug_balance_sheet():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    parsed = _fetch_balance_sheet_liabilities(datetime.today())
+    parsed = _fetch_balance_sheet(datetime.today())
     return jsonify({"raw": raw, "parsed": parsed})
 
 # ----------------------------
