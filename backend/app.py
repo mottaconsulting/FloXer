@@ -1275,6 +1275,77 @@ def _fetch_pl_report(fy_start: datetime, fy_end: datetime) -> dict | None:
     return {"revenue": revenue, "expense": expense}
 
 
+def _fetch_balance_sheet_liabilities(as_of_date: datetime) -> dict | None:
+    """
+    Fetch Current Liabilities directly from Xero Reports/BalanceSheet API.
+    Returns {"total": float, "accounts": [{"name": str, "amount": float}]}
+    or None on failure. This matches exactly what Xero shows in the Balance Sheet UI.
+    Excludes bookkeeping artefacts (Historical Adjustment, Rounding, etc.).
+    """
+    try:
+        resp = _xero_get(
+            "Reports/BalanceSheet",
+            params={"date": as_of_date.strftime("%Y-%m-%d"), "paymentsOnly": "false"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None
+
+    report = (data.get("Reports") or [{}])[0]
+    rows = report.get("Rows") or []
+
+    accounts = []
+    total = None
+
+    def _parse_amount(cell: dict) -> float:
+        try:
+            return abs(float((cell.get("Value") or "0").replace(",", "")))
+        except (ValueError, TypeError):
+            return 0.0
+
+    # Walk top-level sections to find Liabilities → Current Liabilities
+    for section in rows:
+        if section.get("RowType") != "Section":
+            continue
+        title = (section.get("Title") or "").strip().lower()
+        if "liabilit" not in title:
+            continue
+        # Could be a flat "Current Liabilities" section or nested under "Liabilities"
+        sub_rows = section.get("Rows") or []
+        target_rows = None
+        for sub in sub_rows:
+            sub_title = (sub.get("Title") or "").strip().lower()
+            if sub.get("RowType") == "Section" and "current" in sub_title:
+                target_rows = sub.get("Rows") or []
+                break
+        # If no nested "Current" sub-section, treat the section itself as current liabilities
+        if target_rows is None and "current" in title:
+            target_rows = sub_rows
+
+        if target_rows is None:
+            continue
+
+        for row in target_rows:
+            rt = row.get("RowType")
+            cells = row.get("Cells") or []
+            if rt == "Row" and len(cells) >= 2:
+                name = (cells[0].get("Value") or "").strip()
+                amount = _parse_amount(cells[1])
+                if name and amount > 0.01 and not _is_bookkeeping_artefact(name):
+                    accounts.append({"name": name, "amount": amount})
+            elif rt == "SummaryRow" and len(cells) >= 2:
+                total = _parse_amount(cells[1])
+        break
+
+    if not accounts:
+        return None
+
+    # Recalculate total excluding artefacts (Xero's SummaryRow includes them)
+    clean_total = sum(a["amount"] for a in accounts)
+    return {"total": clean_total, "accounts": accounts, "xero_total": total}
+
+
 def _build_sales_series(
     actual_df: pd.DataFrame,
     budget_df: pd.DataFrame,
@@ -1673,28 +1744,27 @@ def build_overview_payload(
     if budget.empty:
         warnings.append("No manual budget yet. Future Profit is unavailable until budget rows are added.")
 
-    current_liabilities = None
-    # Use full actuals history (not FY-scoped) so liabilities accrued in prior periods
-    # but not yet paid are included. Cap at today to exclude future-dated journals.
+    # Fetch Current Liabilities directly from Xero Balance Sheet report —
+    # same approach as P&L, matches Xero UI exactly, no journal-line calculation errors.
+    _bs = _fetch_balance_sheet_liabilities(today)
+    current_liabilities = _bs["total"] if _bs else None
+
+    # Fall back to journal lines if Balance Sheet fetch failed.
     _liab_all = actuals[actuals["JOURNAL_DATE"] <= pd.Timestamp(today)]
-    if "ACCOUNT_TYPE" in _liab_all.columns and "NET_AMOUNT" in _liab_all.columns:
-        cur_df = _liab_all.loc[_liab_all["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
-        if len(cur_df):
-            # Build a stable per-account key: non-empty code takes priority over name.
-            # This prevents different accounts with empty codes from being collapsed together.
-            code_col = cur_df["ACCOUNT_CODE"].fillna("").astype(str).str.strip() if "ACCOUNT_CODE" in cur_df.columns else pd.Series("", index=cur_df.index)
-            name_col = cur_df["ACCOUNT_NAME"].fillna("").astype(str).str.strip() if "ACCOUNT_NAME" in cur_df.columns else pd.Series("", index=cur_df.index)
-            cur_df["_LIAB_KEY"] = code_col.where(code_col != "", name_col)
-            cur_df = cur_df[cur_df["_LIAB_KEY"] != ""]
-            # Exclude bookkeeping artefacts (opening balances, rounding, conversion entries)
-            cur_df = cur_df[~name_col.reindex(cur_df.index).map(_is_bookkeeping_artefact)]
+    if current_liabilities is None:
+        if "ACCOUNT_TYPE" in _liab_all.columns and "NET_AMOUNT" in _liab_all.columns:
+            cur_df = _liab_all.loc[_liab_all["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
             if len(cur_df):
-                balances = cur_df.groupby("_LIAB_KEY")["NET_AMOUNT"].sum()
-                # Negative running balance = credit-normal account still owed (unpaid liability).
-                # Positive = fully offset or over-debited (already paid, not a commitment).
-                outstanding = balances[balances < 0].abs()
-                if len(outstanding):
-                    current_liabilities = float(outstanding.sum())
+                code_col = cur_df["ACCOUNT_CODE"].fillna("").astype(str).str.strip() if "ACCOUNT_CODE" in cur_df.columns else pd.Series("", index=cur_df.index)
+                name_col = cur_df["ACCOUNT_NAME"].fillna("").astype(str).str.strip() if "ACCOUNT_NAME" in cur_df.columns else pd.Series("", index=cur_df.index)
+                cur_df["_LIAB_KEY"] = code_col.where(code_col != "", name_col)
+                cur_df = cur_df[cur_df["_LIAB_KEY"] != ""]
+                cur_df = cur_df[~name_col.reindex(cur_df.index).map(_is_bookkeeping_artefact)]
+                if len(cur_df):
+                    balances = cur_df.groupby("_LIAB_KEY")["NET_AMOUNT"].sum()
+                    outstanding = balances[balances < 0].abs()
+                    if len(outstanding):
+                        current_liabilities = float(outstanding.sum())
 
     # Build per-account liability schedule for the frontend cash timeline.
     # Reuses _liab_all already filtered above — no extra API call.

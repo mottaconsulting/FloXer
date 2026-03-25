@@ -237,6 +237,7 @@ function renderOverview(data) {
   const firstNegIdx = timeline?.firstNegativeIdx ?? -1;
   if (runwayValue) {
     runwayValue.classList.remove("positive", "negative", "warning");
+    runwayValue.style.fontSize = "";
     if (isPastFy) {
       runwayValue.textContent = fmtCurrency(sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []));
       runwayValue.classList.add("negative");
@@ -257,7 +258,8 @@ function renderOverview(data) {
       }
     } else if (firstNegIdx < 0) {
       // Cash positive through FY end
-      runwayValue.textContent = "365+ Days";
+      runwayValue.textContent = "Cash positive through FY end";
+      runwayValue.style.fontSize = "15px";
       runwayValue.classList.add("positive");
     } else {
       // Days from today to the start of the first negative month
