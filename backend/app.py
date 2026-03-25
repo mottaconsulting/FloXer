@@ -1833,6 +1833,8 @@ def build_overview_payload(
             "currency": currency,
             "available_months": available_months,
             "available_fy_end_years": available_fy_end_years,
+            "balance_sheet_source": "xero_report" if _bs else "journal_lines_fallback",
+            "balance_sheet_accounts": _bs["accounts"] if _bs else None,
         },
         "kpis": {
             "profit_now": round(float(profit_now), 2),
@@ -2049,6 +2051,24 @@ def debug_config():
             "supabase_url_set": bool(SUPABASE_DB_URL),
         }
     )
+
+
+@app.route("/api/debug/balance-sheet")
+@login_required
+def debug_balance_sheet():
+    """Return the raw Xero Balance Sheet response so the parser can be verified."""
+    try:
+        resp = _xero_get(
+            "Reports/BalanceSheet",
+            params={"date": datetime.today().strftime("%Y-%m-%d"), "paymentsOnly": "false"},
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    parsed = _fetch_balance_sheet_liabilities(datetime.today())
+    return jsonify({"raw": raw, "parsed": parsed})
 
 # ----------------------------
 # OAuth
