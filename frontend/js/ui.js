@@ -71,7 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function hideAllViews() {
-  ["dashboardContainer", "transactionsContainer", "liabilitiesContainer", "budgetContainer", "rawOutput"].forEach(id => {
+  ["dashboardContainer", "transactionsContainer", "liabilitiesContainer", "budgetContainer", "cashTimelineContainer", "rawOutput"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = "none";
   });
