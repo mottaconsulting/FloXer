@@ -1772,6 +1772,34 @@ def build_overview_payload(
     _liab_freq_map = _liability_frequency_config(lines=_liab_currliab)
     liability_schedule = _build_liability_schedule(_liab_all, today, _liab_freq_map, period="month", fy_start_month=fy_start_month)
 
+    # Patch schedule amounts with Balance Sheet figures — BS is authoritative for outstanding balances.
+    # Journal lines can diverge (payments recorded after today's cutoff, sign errors, etc.).
+    # Match by account name (case-insensitive). Accounts in BS but missing from schedule
+    # (e.g. Business Bank Account overdraft, which is BANK type not CURRLIAB) are added
+    # to the current month so they appear in the cash timeline.
+    if _bs and _bs.get("accounts"):
+        _bs_by_name = {a["name"].strip().lower(): a["amount"] for a in _bs["accounts"]}
+        _schedule_names = {item["name"].strip().lower() for item in liability_schedule}
+        # Patch existing entries
+        for item in liability_schedule:
+            bs_amt = _bs_by_name.get(item["name"].strip().lower())
+            if bs_amt is not None:
+                item["amount"] = round(bs_amt, 2)
+        # Remove entries that BS says are zero (fully paid)
+        liability_schedule = [item for item in liability_schedule if item["amount"] > 0.01]
+        # Add BS accounts not in schedule (no journal history / different account type)
+        _current_month_str = f"{today.year}-{today.month:02d}"
+        for _bs_acc in _bs["accounts"]:
+            _key = _bs_acc["name"].strip().lower()
+            if _key not in _schedule_names and _bs_acc["amount"] > 0.01:
+                liability_schedule.append({
+                    "month": _current_month_str,
+                    "name": _bs_acc["name"],
+                    "code": "",
+                    "amount": round(_bs_acc["amount"], 2),
+                    "type": "other",
+                })
+
     profit_fy = {
         "labels": sales_series["labels"],
         "actual_monthly_profit": [round(v, 2) for v in actual_profit],
