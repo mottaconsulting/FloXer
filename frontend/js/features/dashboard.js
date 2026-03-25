@@ -34,7 +34,8 @@ function buildCashTimeline(data, grossBalance) {
   }
 
   const firstNegativeIdx = rows.findIndex(r => r.isNegative);
-  return { rows, firstNegativeIdx };
+  const minRow = rows.reduce((a, b) => b.runningBalance < a.runningBalance ? b : a, rows[0]);
+  return { rows, firstNegativeIdx, minRow };
 }
 
 function fmtTimelineMonth(yyyymm) {
@@ -49,14 +50,20 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
   const timeline = buildCashTimeline(data, grossBalance);
   if (!timeline || !timeline.rows.length) { container.style.display = "none"; return; }
 
-  const { rows, firstNegativeIdx } = timeline;
+  const { rows, firstNegativeIdx, minRow } = timeline;
   const hasNegative = firstNegativeIdx >= 0;
   const allNoBudget = rows.every(r => r.budgetNet === null);
   if (allNoBudget) { container.style.display = "none"; return; }
 
-  const headline = hasNegative
-    ? `Cash shortfall projected in <strong>${fmtTimelineMonth(rows[firstNegativeIdx].month)}</strong>`
-    : `<span style="color:#2f6e5f;font-weight:800">You are cash positive through FY end</span>`;
+  let headline;
+  if (hasNegative) {
+    headline = `Cash shortfall projected in <strong>${fmtTimelineMonth(rows[firstNegativeIdx].month)}</strong>`;
+  } else {
+    const tightLabel = minRow
+      ? ` · lowest point <strong>${fmtCurrency(minRow.runningBalance)}</strong> in ${fmtTimelineMonth(minRow.month)}`
+      : "";
+    headline = `<span style="color:#2f6e5f;font-weight:800">Cash positive through FY end</span><span style="color:#6b7280;font-weight:500">${tightLabel}</span>`;
+  }
 
   const tableRows = rows.map((row, idx) => {
     const isFirst = idx === firstNegativeIdx;
