@@ -229,39 +229,47 @@ function renderOverview(data) {
     freeCashBar.style.display = "none";
   }
   const runwayValue = document.getElementById("dashboardRunwayValue");
-  // Option C: use free cash for runway so days reflect cash after ATO commitments
-  const forwardRunway = !isPastFy ? computeForwardRunwayMetrics(data, freeBalance) : null;
+  // Drive Out of Cash from the cash timeline — same logic as the Cash Timeline page.
+  // Timeline uses _bestOf(actual, budget) per month and places liabilities at their real due months,
+  // which is more accurate than the old computeForwardRunwayMetrics approach.
+  const timeline = !isPastFy ? buildCashTimeline(data, balanceKpi.balance) : null;
+  const timelineRows = timeline?.rows || [];
+  const firstNegIdx = timeline?.firstNegativeIdx ?? -1;
   if (runwayValue) {
     runwayValue.classList.remove("positive", "negative", "warning");
     if (isPastFy) {
       runwayValue.textContent = fmtCurrency(sumNumeric(data?.charts?.expenses_fy?.actual_monthly || []));
       runwayValue.classList.add("negative");
-    } else {
-      // Prefer budget-based forward runway (free-cash-aware).
-      // Fall back to freeBalance / monthly_burn so liabilities are still subtracted.
-      // Never fall back to kpis.runway_months — that uses gross balance and ignores liabilities.
+    } else if (freeBalance <= 0) {
+      // Already committed more than available — out of cash now
+      runwayValue.textContent = "0 Days";
+      runwayValue.classList.add("negative");
+    } else if (!timelineRows.length) {
+      // No budget data — fall back to freeBalance / monthly_burn
       const monthlyBurn = Number(kpis.monthly_burn);
-      const burnFallbackMonths = Number.isFinite(freeBalance) && Number.isFinite(monthlyBurn) && monthlyBurn > 0
-        ? freeBalance / monthlyBurn
-        : NaN;
-      const runwayMonths = Number.isFinite(forwardRunway?.runwayMonths)
-        ? Number(forwardRunway.runwayMonths)
-        : burnFallbackMonths;
-      const runwayDays = Number.isFinite(runwayMonths) ? Math.round(runwayMonths * 30) : null;
-      if (forwardRunway?.basis === "already-negative") {
-        runwayValue.textContent = "0 Days";
-        runwayValue.classList.add("negative");
-      } else if (runwayMonths === Number.POSITIVE_INFINITY) {
-        runwayValue.textContent = "365+ Days";
-        runwayValue.classList.add("positive");
-      } else {
-        runwayValue.textContent = runwayDays !== null ? `${runwayDays} Days` : "--";
-        if (runwayDays !== null) {
-          if (runwayDays <= 30) runwayValue.classList.add("negative");
-          else if (runwayDays <= 90) runwayValue.classList.add("warning");
-          else runwayValue.classList.add("positive");
-        }
+      const fallbackDays = Number.isFinite(monthlyBurn) && monthlyBurn > 0
+        ? Math.round((freeBalance / monthlyBurn) * 30) : null;
+      runwayValue.textContent = fallbackDays !== null ? `${fallbackDays} Days` : "--";
+      if (fallbackDays !== null) {
+        if (fallbackDays <= 30) runwayValue.classList.add("negative");
+        else if (fallbackDays <= 90) runwayValue.classList.add("warning");
+        else runwayValue.classList.add("positive");
       }
+    } else if (firstNegIdx < 0) {
+      // Cash positive through FY end
+      runwayValue.textContent = "365+ Days";
+      runwayValue.classList.add("positive");
+    } else {
+      // Days from today to the start of the first negative month
+      const negMonth = timelineRows[firstNegIdx].month;
+      const [y, m] = negMonth.split("-").map(Number);
+      const negDate = new Date(y, m - 1, 1);
+      const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
+      const runwayDays = Math.max(0, Math.round((negDate - todayDate) / 86400000));
+      runwayValue.textContent = `${runwayDays} Days`;
+      if (runwayDays <= 30) runwayValue.classList.add("negative");
+      else if (runwayDays <= 90) runwayValue.classList.add("warning");
+      else runwayValue.classList.add("positive");
     }
   }
   const burnNote = document.getElementById("dashboardBurnNote");
@@ -271,25 +279,27 @@ function renderOverview(data) {
       burnNote.textContent = "FY total";
       burnNote.classList.add("flat");
     } else {
-      const futureNet = forwardRunway?.futureNet || [];
-      const fyNet = futureNet.reduce((a, b) => a + b, 0);
-      // Derive popover revenue/expense from the same slice used by computeForwardRunwayMetrics
-      // so they are always consistent with futureNet (same null-filtering, same cutoff).
-      const labels = data?.charts?.sales_fy?.labels || data?.charts?.expenses_fy?.labels || [];
+      // Derive fyRevenue/fyExpense using the same _bestOf(actual, budget) logic as the timeline
+      const salesChart = data?.charts?.sales_fy || {};
+      const expensesChart = data?.charts?.expenses_fy || {};
+      const labels = salesChart.labels || expensesChart.labels || [];
       const asOfMonth = data?.meta?.as_of_month;
       const cutoffIdx = asOfMonth ? labels.indexOf(asOfMonth) : -1;
-      const revenueProjected = data?.charts?.sales_fy?.projected_monthly || [];
-      const expenseProjected = data?.charts?.expenses_fy?.projected_monthly || [];
+      const revenueActual = salesChart.actual_monthly || [];
+      const revenueProjected = salesChart.projected_monthly || [];
+      const expenseActual = expensesChart.actual_monthly || [];
+      const expenseProjected = expensesChart.projected_monthly || [];
       let fyRevenue = 0, fyExpense = 0;
       labels.forEach((_, idx) => {
         if (idx <= cutoffIdx) return;
-        const rev = Number(revenueProjected[idx]);
-        const exp = Number(expenseProjected[idx]);
+        const rev = _bestOf(revenueActual[idx], revenueProjected[idx]);
+        const exp = _bestOf(expenseActual[idx], expenseProjected[idx]);
         if (!Number.isFinite(rev) || !Number.isFinite(exp)) return;
         fyRevenue += rev;
         fyExpense += exp;
       });
-      const monthsLeft = futureNet.length;
+      const fyNet = timelineRows.reduce((s, r) => r.budgetNet !== null ? s + r.budgetNet : s, 0);
+      const monthsLeft = timelineRows.filter(r => r.budgetNet !== null).length;
       burnNote.dataset.fyRevenue   = fyRevenue;
       burnNote.dataset.fyExpense   = fyExpense;
       burnNote.dataset.fyNet       = fyNet;
@@ -297,9 +307,9 @@ function renderOverview(data) {
       burnNote.dataset.committed   = currentLiabilities;
       burnNote.dataset.freeBalance = Math.max(0, freeBalance);
       const burnHint = document.getElementById("dashboardBurnNoteHint");
-      if (burnHint) burnHint.style.display = futureNet.length ? "" : "none";
+      if (burnHint) burnHint.style.display = timelineRows.length ? "" : "none";
       burnNote.style.color = "";
-      if (!futureNet.length) {
+      if (!timelineRows.length) {
         burnNote.textContent = "No budget data";
         burnNote.classList.add("flat");
       } else if (fyNet >= 0) {

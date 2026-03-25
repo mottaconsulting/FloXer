@@ -1,7 +1,24 @@
+function _bestOf(actual, budget) {
+  // Returns the higher of actual vs budget when both are available.
+  // For expenses: higher = more conservative (worse case).
+  // For revenue: higher = more accurate (actual beat budget).
+  // Falls back to whichever value is finite if only one is available.
+  const a = finiteNumberOrNaN(actual);
+  const b = finiteNumberOrNaN(budget);
+  if (Number.isFinite(a) && Number.isFinite(b)) return Math.max(a, b);
+  if (Number.isFinite(a)) return a;
+  if (Number.isFinite(b)) return b;
+  return NaN;
+}
+
 function buildCashTimeline(data, grossBalance) {
-  const labels = data?.charts?.sales_fy?.labels || data?.charts?.expenses_fy?.labels || [];
-  const revenueProjected = data?.charts?.sales_fy?.projected_monthly || [];
-  const expenseProjected = data?.charts?.expenses_fy?.projected_monthly || [];
+  const salesChart = data?.charts?.sales_fy || {};
+  const expensesChart = data?.charts?.expenses_fy || {};
+  const labels = salesChart.labels || expensesChart.labels || [];
+  const revenueActual = salesChart.actual_monthly || [];
+  const revenueProjected = salesChart.projected_monthly || [];
+  const expenseActual = expensesChart.actual_monthly || [];
+  const expenseProjected = expensesChart.projected_monthly || [];
   const asOfMonth = data?.meta?.as_of_month;
   const cutoffIdx = asOfMonth ? labels.indexOf(asOfMonth) : -1;
   const liabilitySchedule = data?.kpis?.liability_schedule || [];
@@ -20,8 +37,10 @@ function buildCashTimeline(data, grossBalance) {
 
   for (let i = cutoffIdx + 1; i < labels.length; i++) {
     const month = labels[i];
-    const rev = Number(revenueProjected[i]);
-    const exp = Number(expenseProjected[i]);
+    // Use actuals when they exceed budget (budget may be miscalculated);
+    // fall back to budget for future months where actuals don't exist yet.
+    const rev = _bestOf(revenueActual[i], revenueProjected[i]);
+    const exp = _bestOf(expenseActual[i], expenseProjected[i]);
     const hasBudget = Number.isFinite(rev) && Number.isFinite(exp);
     const budgetNet = hasBudget ? rev - exp : null;
     const liabsThisMonth = liabByMonth[month] || [];
