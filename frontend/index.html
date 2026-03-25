@@ -723,6 +723,31 @@
     .rebuilt-free-cash-free { color: #3b82f6; }
     .rebuilt-free-cash-committed { color: #ec4899; }
     .rebuilt-kpi-value.warning { color: #f59e0b; }
+    .cash-timeline-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .cash-timeline-table th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0 10px 8px 0;
+      border-bottom: 1px solid #dbe2ea;
+    }
+    .cash-timeline-table td {
+      padding: 7px 10px 7px 0;
+      border-bottom: 1px solid #f1f5f9;
+      color: #374151;
+      font-weight: 600;
+    }
+    .cash-timeline-table tr.ct-negative td { background: #fff0f6; }
+    .cash-timeline-table tr.ct-first-negative td { background: #ffe4ef; }
+    .cash-timeline-table tr.ct-first-negative td:last-child { color: #ec4899; font-weight: 800; }
+    .cash-timeline-table tr:not(.ct-negative) td:last-child { color: #1e2a78; font-weight: 800; }
     .rebuilt-kpi-trend-hint {
       font-size: 9px;
       font-weight: 600;
@@ -2087,6 +2112,8 @@
           </div>
         </div>
       </div>
+
+      <section id="dashboardCashTimeline" class="rebuilt-panel" style="display:none;padding:20px 22px;"></section>
 
       <div class="rebuilt-chart-grid">
         <section class="rebuilt-panel">

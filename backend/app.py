@@ -928,6 +928,70 @@ def _next_business_day_if_weekend(d: datetime) -> datetime:
     return d
 
 
+def _build_liability_schedule(
+    all_lines: "pd.DataFrame",
+    today: datetime,
+    freq_map: dict,
+    period: str = "month",
+    fy_start_month: int = 7,
+) -> list[dict]:
+    """Return upcoming liability payments grouped by expected due month.
+
+    Each entry: {month, name, code, amount, type}
+    Only includes accounts with outstanding balance (net negative across all history).
+    Overdue items are placed in the current month (pay immediately).
+    """
+    schedule: list[dict] = []
+    if all_lines.empty or "ACCOUNT_TYPE" not in all_lines.columns:
+        return schedule
+
+    cur_df = all_lines[all_lines["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
+    if cur_df.empty:
+        return schedule
+
+    code_col = cur_df["ACCOUNT_CODE"].fillna("").astype(str).str.strip() if "ACCOUNT_CODE" in cur_df.columns else pd.Series("", index=cur_df.index)
+    name_col = cur_df["ACCOUNT_NAME"].fillna("").astype(str).str.strip() if "ACCOUNT_NAME" in cur_df.columns else pd.Series("", index=cur_df.index)
+    cur_df["_CODE"] = code_col.values
+    cur_df["_NAME"] = name_col.values
+    cur_df["_KEY"] = code_col.where(code_col != "", name_col).values
+    cur_df = cur_df[cur_df["_KEY"] != ""]
+    cur_df = cur_df[~cur_df["_NAME"].map(_is_bookkeeping_artefact)]
+
+    for (code, name), grp in cur_df.groupby(["_CODE", "_NAME"]):
+        net = pd.to_numeric(grp["NET_AMOUNT"], errors="coerce").fillna(0.0)
+        net_position = float(net.sum())
+        if net_position >= 0:
+            continue
+        outstanding = abs(net_position)
+        if outstanding < 1.0:
+            continue
+
+        last_accrual_ts = grp.loc[net < 0, "JOURNAL_DATE"].max()
+        if not pd.notna(last_accrual_ts):
+            continue
+        last_accrual_dt = last_accrual_ts.to_pydatetime() if hasattr(last_accrual_ts, "to_pydatetime") else last_accrual_ts
+        _, accrual_period_end = _period_bounds(last_accrual_dt, period, fy_start_month)
+
+        ltype = _liability_type(code, name)
+        expected_due, _ = _expected_due_date(ltype, accrual_period_end, freq_map)
+
+        if expected_due is None or expected_due.date() <= today.date():
+            # No due date or already overdue — place in current month
+            due_month = f"{today.year}-{today.month:02d}"
+        else:
+            due_month = f"{expected_due.year}-{expected_due.month:02d}"
+
+        schedule.append({
+            "month": due_month,
+            "name": name,
+            "code": str(code),
+            "amount": round(outstanding, 2),
+            "type": ltype,
+        })
+
+    return schedule
+
+
 def _is_bookkeeping_artefact(account_name: str) -> bool:
     """Return True for Xero accounts that are bookkeeping artefacts, not real cash liabilities.
 
@@ -1632,6 +1696,12 @@ def build_overview_payload(
                 if len(outstanding):
                     current_liabilities = float(outstanding.sum())
 
+    # Build per-account liability schedule for the frontend cash timeline.
+    # Reuses _liab_all already filtered above — no extra API call.
+    _liab_currliab = _liab_all[_liab_all["ACCOUNT_TYPE"] == "CURRLIAB"].copy() if "ACCOUNT_TYPE" in _liab_all.columns else pd.DataFrame()
+    _liab_freq_map = _liability_frequency_config(lines=_liab_currliab)
+    liability_schedule = _build_liability_schedule(_liab_all, today, _liab_freq_map, period="month", fy_start_month=fy_start_month)
+
     profit_fy = {
         "labels": sales_series["labels"],
         "actual_monthly_profit": [round(v, 2) for v in actual_profit],
@@ -1692,6 +1762,7 @@ def build_overview_payload(
             "sales_this_month": round(float(month_rev), 2) if month_rev is not None else None,
             "spending_this_month": round(float(month_exp), 2) if month_exp is not None else None,
             "current_liabilities": round(float(current_liabilities), 2) if current_liabilities is not None else None,
+            "liability_schedule": liability_schedule,
             "warnings": warnings,
         },
         "charts": {
