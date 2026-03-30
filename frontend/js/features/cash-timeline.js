@@ -82,8 +82,7 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
   const startBalClass = Number(grossBalance) >= 0 ? "ct-bal-pos" : "ct-bal-neg";
   let tbodyHtml = `<tbody>
     <tr class="ct-start-row">
-      <td class="ct-start-label">Starting balance</td>
-      <td></td>
+      <td>Starting balance</td>
       <td class="ct-bal ${startBalClass}">${fmtCurrency(grossBalance)}</td>
     </tr>
   </tbody>`;
@@ -97,29 +96,26 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
     // Liability sub-rows
     const liabRows = row.liabsThisMonth.map(l =>
       `<tr class="ct-detail-row">
-        <td class="ct-detail-label">↳ ${l.name}</td>
-        <td class="ct-detail-amount ct-neg-amt">-${fmtCurrency(l.amount)}</td>
-        <td></td>
+        <td>↳ ${l.name}</td>
+        <td class="ct-neg-amt">-${fmtCurrency(l.amount)}</td>
       </tr>`
     ).join("");
 
     // Budget net sub-row
     const budgetRow = row.budgetNet !== null
       ? `<tr class="ct-detail-row">
-          <td class="ct-detail-label">↳ Budget net</td>
-          <td class="ct-detail-amount ${row.budgetNet >= 0 ? "ct-pos-amt" : "ct-neg-amt"}">${row.budgetNet >= 0 ? "+" : ""}${fmtCurrency(row.budgetNet)}</td>
-          <td></td>
+          <td>↳ Budget net</td>
+          <td class="${row.budgetNet >= 0 ? "ct-pos-amt" : "ct-neg-amt"}">${row.budgetNet >= 0 ? "+" : ""}${fmtCurrency(row.budgetNet)}</td>
         </tr>`
       : "";
 
     tbodyHtml += `<tbody class="${groupClass}">
       <tr class="ct-month-row">
         <td>${fmtTimelineMonth(row.month)}${isFirstNeg ? ' <span class="ct-badge-neg">Shortfall</span>' : ""}</td>
-        <td></td>
         <td class="ct-bal ${balClass}">${fmtCurrency(row.runningBalance)}</td>
       </tr>
       ${liabRows}${budgetRow}
-      <tr class="ct-group-sep"><td colspan="3"></td></tr>
+      <tr class="ct-group-sep"><td colspan="2"></td></tr>
     </tbody>`;
   });
 
@@ -131,7 +127,6 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
     </div>
     <div style="overflow-x:auto">
       <table class="cash-timeline-table">
-        <thead><tr><th>Month</th><th>Change</th><th>Balance</th></tr></thead>
         ${tbodyHtml}
       </table>
     </div>`;
