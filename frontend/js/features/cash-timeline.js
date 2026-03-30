@@ -93,20 +93,25 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
     const groupClass = isFirstNeg ? "ct-group ct-group-first-neg" : (row.isNegative ? "ct-group ct-group-neg" : "ct-group");
     const balClass = row.runningBalance >= 0 ? "ct-bal-pos" : "ct-bal-neg";
 
-    // Liability sub-rows
-    const liabRows = row.liabsThisMonth.map(l =>
-      `<tr class="ct-detail-row ct-liab-row">
-        <td>↳ ${l.name}</td>
-        <td class="ct-neg-amt">-${fmtCurrency(l.amount)}</td>
-      </tr>`
-    ).join("");
+    // Liability sub-rows with section label
+    const hasLiabs = row.liabsThisMonth.length > 0;
+    const liabSection = hasLiabs
+      ? `<tr class="ct-section-label"><td colspan="2">Obligations due</td></tr>` +
+        row.liabsThisMonth.map(l =>
+          `<tr class="ct-detail-row ct-liab-row">
+            <td>${l.name}</td>
+            <td class="ct-neg-amt">-${fmtCurrency(l.amount)}</td>
+          </tr>`
+        ).join("")
+      : "";
 
-    // Budget net sub-row — visually separated from liabilities
+    // Budget net sub-row with section label
     const budgetRow = row.budgetNet !== null
-      ? `<tr class="ct-detail-row ct-budget-row">
-          <td>↳ Budget net</td>
-          <td class="${row.budgetNet >= 0 ? "ct-pos-amt" : "ct-neg-amt"}">${row.budgetNet >= 0 ? "+" : ""}${fmtCurrency(row.budgetNet)}</td>
-        </tr>`
+      ? `<tr class="ct-section-label ct-section-budget"><td colspan="2">Forecast</td></tr>
+         <tr class="ct-detail-row ct-budget-row">
+           <td>Budget net</td>
+           <td class="${row.budgetNet >= 0 ? "ct-pos-amt" : "ct-neg-amt"}">${row.budgetNet >= 0 ? "+" : ""}${fmtCurrency(row.budgetNet)}</td>
+         </tr>`
       : "";
 
     tbodyHtml += `<tbody class="${groupClass}">
@@ -114,7 +119,7 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
         <td>${fmtTimelineMonth(row.month)}${isFirstNeg ? ' <span class="ct-badge-neg">Shortfall</span>' : ""}</td>
         <td class="ct-bal ${balClass}">${fmtCurrency(row.runningBalance)}</td>
       </tr>
-      ${liabRows}${budgetRow}
+      ${liabSection}${budgetRow}
       <tr class="ct-group-sep"><td colspan="2"></td></tr>
     </tbody>`;
   });
