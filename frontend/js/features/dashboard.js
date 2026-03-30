@@ -274,6 +274,13 @@ function renderOverview(data) {
       else runwayValue.classList.add("positive");
     }
   }
+  const runwayBalance = document.getElementById("dashboardRunwayBalance");
+  if (runwayBalance && !isPastFy && Number.isFinite(balanceKpi.balance)) {
+    const balCol = balanceKpi.balance >= 0 ? "#1e2a78" : "#ec4899";
+    runwayBalance.innerHTML = `Current balance <strong style="color:${balCol}">${fmtCurrency(balanceKpi.balance)}</strong>`;
+  } else if (runwayBalance) {
+    runwayBalance.textContent = "";
+  }
   const burnNote = document.getElementById("dashboardBurnNote");
   if (burnNote) {
     burnNote.classList.remove("up", "down", "flat");
@@ -316,7 +323,8 @@ function renderOverview(data) {
         burnNote.classList.add("flat");
       } else {
         const committedAmt = Number(currentLiabilities) || 0;
-        const combinedNet = fyNet - committedAmt;
+        const currentBal = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance : 0;
+        const combinedNet = currentBal + fyNet - committedAmt;
         if (combinedNet >= 0) {
           burnNote.textContent = `Projected net +${fmtCurrency(combinedNet)} to FY end`;
           burnNote.style.color = "#3b82f6";
