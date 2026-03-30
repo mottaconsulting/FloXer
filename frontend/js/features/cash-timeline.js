@@ -15,9 +15,7 @@ function buildCashTimeline(data, grossBalance) {
   const salesChart = data?.charts?.sales_fy || {};
   const expensesChart = data?.charts?.expenses_fy || {};
   const labels = salesChart.labels || expensesChart.labels || [];
-  const revenueActual = salesChart.actual_monthly || [];
   const revenueProjected = salesChart.projected_monthly || [];
-  const expenseActual = expensesChart.actual_monthly || [];
   const expenseProjected = expensesChart.projected_monthly || [];
   const asOfMonth = data?.meta?.as_of_month;
   const cutoffIdx = asOfMonth ? labels.indexOf(asOfMonth) : -1;
@@ -37,10 +35,10 @@ function buildCashTimeline(data, grossBalance) {
 
   for (let i = cutoffIdx + 1; i < labels.length; i++) {
     const month = labels[i];
-    // Use actuals when they exceed budget (budget may be miscalculated);
-    // fall back to budget for future months where actuals don't exist yet.
-    const rev = _bestOf(revenueActual[i], revenueProjected[i]);
-    const exp = _bestOf(expenseActual[i], expenseProjected[i]);
+    // These are future months — use budget (projected) directly.
+    // Actuals for future months are not reliable (Xero demo has phantom values).
+    const rev = finiteNumberOrNaN(revenueProjected[i]);
+    const exp = finiteNumberOrNaN(expenseProjected[i]);
     const hasBudget = Number.isFinite(rev) && Number.isFinite(exp);
     const budgetNet = hasBudget ? rev - exp : null;
     const liabsThisMonth = liabByMonth[month] || [];
