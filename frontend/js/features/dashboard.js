@@ -314,12 +314,16 @@ function renderOverview(data) {
       if (!timelineRows.length) {
         burnNote.textContent = "No budget data";
         burnNote.classList.add("flat");
-      } else if (fyNet >= 0) {
-        burnNote.textContent = `Projected net +${fmtCurrency(fyNet)} to FY end`;
-        burnNote.style.color = "#3b82f6";
       } else {
-        burnNote.textContent = `Projected net -${fmtCurrency(Math.abs(fyNet))} to FY end`;
-        burnNote.style.color = "#ec4899";
+        const committedAmt = Number(currentLiabilities) || 0;
+        const combinedNet = fyNet - committedAmt;
+        if (combinedNet >= 0) {
+          burnNote.textContent = `Projected net +${fmtCurrency(combinedNet)} to FY end`;
+          burnNote.style.color = "#3b82f6";
+        } else {
+          burnNote.textContent = `Projected net -${fmtCurrency(Math.abs(combinedNet))} to FY end`;
+          burnNote.style.color = "#ec4899";
+        }
       }
     }
   }
