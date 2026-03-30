@@ -95,15 +95,15 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
 
     // Liability sub-rows
     const liabRows = row.liabsThisMonth.map(l =>
-      `<tr class="ct-detail-row">
+      `<tr class="ct-detail-row ct-liab-row">
         <td>↳ ${l.name}</td>
         <td class="ct-neg-amt">-${fmtCurrency(l.amount)}</td>
       </tr>`
     ).join("");
 
-    // Budget net sub-row
+    // Budget net sub-row — visually separated from liabilities
     const budgetRow = row.budgetNet !== null
-      ? `<tr class="ct-detail-row">
+      ? `<tr class="ct-detail-row ct-budget-row">
           <td>↳ Budget net</td>
           <td class="${row.budgetNet >= 0 ? "ct-pos-amt" : "ct-neg-amt"}">${row.budgetNet >= 0 ? "+" : ""}${fmtCurrency(row.budgetNet)}</td>
         </tr>`

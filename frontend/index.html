@@ -738,21 +738,21 @@
     .cash-timeline-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 13px;
+      font-size: 17px;
     }
     /* Starting balance row */
     .ct-start-row td {
-      padding: 8px 16px;
+      padding: 10px 16px;
       border-bottom: 1px solid #e2e8f0;
-      font-size: 12px;
+      font-size: 15px;
       color: #94a3b8;
       font-weight: 600;
     }
     .ct-start-row td:last-child { text-align: right; }
     /* Month header row */
     .ct-month-row td {
-      padding: 11px 16px;
-      font-size: 13px;
+      padding: 13px 16px;
+      font-size: 17px;
       font-weight: 800;
       color: #0d1b4b;
       background: #f8fafc;
@@ -764,21 +764,29 @@
     .ct-group-first-neg .ct-month-row td { background: #fff0f6; }
     .ct-group-neg .ct-month-row td:first-child,
     .ct-group-first-neg .ct-month-row td:first-child { color: #ec4899; }
-    /* Detail sub-rows */
-    .ct-detail-row td {
+    /* Liability detail rows */
+    .ct-detail-row.ct-liab-row td {
       padding: 5px 16px 5px 32px;
       border-bottom: none;
-      font-size: 12px;
+      font-size: 15px;
       font-weight: 500;
       color: #6b7280;
     }
-    .ct-detail-row td:last-child { text-align: right; padding-right: 16px; }
-    .ct-detail-row:last-of-type td { padding-bottom: 10px; }
+    .ct-detail-row.ct-liab-row td:last-child { text-align: right; padding-right: 16px; }
+    /* Budget net row — separated with a top border */
+    .ct-detail-row.ct-budget-row td {
+      padding: 7px 16px 10px 32px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #374151;
+      border-top: 1px dashed #e2e8f0;
+    }
+    .ct-detail-row.ct-budget-row td:last-child { text-align: right; padding-right: 16px; }
     /* Group separator */
     .ct-group-sep td { padding: 0; border: none; }
     /* Balance */
     .ct-bal { font-weight: 800; }
-    .ct-bal-pos { color: #1e2a78; }
+    .ct-bal-pos { color: #3b82f6; }
     .ct-bal-neg { color: #ec4899; }
     /* Amount colours */
     .ct-pos-amt { color: #3b82f6; font-weight: 600; }
@@ -791,7 +799,7 @@
       border-radius: 999px;
       background: #fce7f3;
       color: #ec4899;
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.02em;
       vertical-align: middle;
