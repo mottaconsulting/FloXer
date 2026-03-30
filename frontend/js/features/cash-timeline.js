@@ -74,44 +74,65 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
   const allNoBudget = rows.every(r => r.budgetNet === null);
   if (allNoBudget) { container.style.display = "none"; return; }
 
-  let headline;
-  if (hasNegative) {
-    headline = `Cash shortfall projected in <strong>${fmtTimelineMonth(rows[firstNegativeIdx].month)}</strong>`;
-  } else {
-    const tightLabel = minRow
-      ? ` · lowest point <strong>${fmtCurrency(minRow.runningBalance)}</strong> in ${fmtTimelineMonth(minRow.month)}`
-      : "";
-    headline = `<span style="color:#2f6e5f;font-weight:800">Cash positive through FY end</span><span style="color:#6b7280;font-weight:500">${tightLabel}</span>`;
-  }
+  const headlineHtml = hasNegative
+    ? `<span class="ct-headline ct-headline-neg">Shortfall projected in <strong>${fmtTimelineMonth(rows[firstNegativeIdx].month)}</strong></span>`
+    : `<span class="ct-headline ct-headline-pos">Cash positive through FY end${minRow ? ` · lowest <strong>${fmtCurrency(minRow.runningBalance)}</strong> in ${fmtTimelineMonth(minRow.month)}` : ""}</span>`;
 
-  const tableRows = rows.map((row, idx) => {
-    const isFirst = idx === firstNegativeIdx;
-    const rowClass = isFirst ? "ct-first-negative" : (row.isNegative ? "ct-negative" : "");
-    const liabCell = row.liabTotal > 0
-      ? `<span style="color:#ec4899">-${fmtCurrency(row.liabTotal)}</span>`
-      : `<span style="color:#cbd5e1">—</span>`;
-    const budgetCell = row.budgetNet !== null
-      ? `<span style="color:${row.budgetNet >= 0 ? "#3b82f6" : "#ec4899"}">${row.budgetNet >= 0 ? "+" : ""}${fmtCurrency(row.budgetNet)}</span>`
-      : `<span style="color:#cbd5e1">—</span>`;
-    const liabTip = row.liabsThisMonth.map(l => `${l.name}: ${fmtCurrency(l.amount)}`).join(" · ");
-    return `<tr class="${rowClass}">
-      <td>${fmtTimelineMonth(row.month)}</td>
-      <td title="${liabTip}">${liabCell}</td>
-      <td>${budgetCell}</td>
-      <td>${fmtCurrency(row.runningBalance)}</td>
-    </tr>`;
-  }).join("");
+  // Starting balance tbody
+  const startBalClass = Number(grossBalance) >= 0 ? "ct-bal-pos" : "ct-bal-neg";
+  let tbodyHtml = `<tbody>
+    <tr class="ct-start-row">
+      <td class="ct-start-label">Starting balance</td>
+      <td></td>
+      <td class="ct-bal ${startBalClass}">${fmtCurrency(grossBalance)}</td>
+    </tr>
+  </tbody>`;
+
+  // One tbody per month group
+  rows.forEach((row, idx) => {
+    const isFirstNeg = idx === firstNegativeIdx;
+    const groupClass = isFirstNeg ? "ct-group ct-group-first-neg" : (row.isNegative ? "ct-group ct-group-neg" : "ct-group");
+    const balClass = row.runningBalance >= 0 ? "ct-bal-pos" : "ct-bal-neg";
+
+    // Liability sub-rows
+    const liabRows = row.liabsThisMonth.map(l =>
+      `<tr class="ct-detail-row">
+        <td class="ct-detail-label">↳ ${l.name}</td>
+        <td class="ct-detail-amount ct-neg-amt">-${fmtCurrency(l.amount)}</td>
+        <td></td>
+      </tr>`
+    ).join("");
+
+    // Budget net sub-row
+    const budgetRow = row.budgetNet !== null
+      ? `<tr class="ct-detail-row">
+          <td class="ct-detail-label">↳ Budget net</td>
+          <td class="ct-detail-amount ${row.budgetNet >= 0 ? "ct-pos-amt" : "ct-neg-amt"}">${row.budgetNet >= 0 ? "+" : ""}${fmtCurrency(row.budgetNet)}</td>
+          <td></td>
+        </tr>`
+      : "";
+
+    tbodyHtml += `<tbody class="${groupClass}">
+      <tr class="ct-month-row">
+        <td>${fmtTimelineMonth(row.month)}${isFirstNeg ? ' <span class="ct-badge-neg">Shortfall</span>' : ""}</td>
+        <td></td>
+        <td class="ct-bal ${balClass}">${fmtCurrency(row.runningBalance)}</td>
+      </tr>
+      ${liabRows}${budgetRow}
+      <tr class="ct-group-sep"><td colspan="3"></td></tr>
+    </tbody>`;
+  });
 
   container.style.display = "";
   container.innerHTML = `
-    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:6px;">
-      <h3 class="rebuilt-panel-title" style="margin:0">Cash timeline</h3>
-      <span style="font-size:13px;color:#374151">${headline}</span>
+    <div class="ct-header">
+      <h3 class="rebuilt-panel-title" style="margin:0">Cash Timeline</h3>
+      ${headlineHtml}
     </div>
     <div style="overflow-x:auto">
       <table class="cash-timeline-table">
-        <thead><tr><th>Month</th><th>Liabilities due</th><th>Budget net</th><th>Running balance</th></tr></thead>
-        <tbody>${tableRows}</tbody>
+        <thead><tr><th>Month</th><th>Change</th><th>Balance</th></tr></thead>
+        ${tbodyHtml}
       </table>
     </div>`;
 }
