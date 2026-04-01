@@ -2138,6 +2138,10 @@
         </div>
       </div>
 
+      <div id="dashboardUnreconciledBanner" style="display:none;margin-bottom:12px;padding:9px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:13px;color:#9a3412;font-weight:600;">
+        ⚠ Viewing estimated balance — Xero not fully reconciled. Numbers may differ from official records.
+      </div>
+
       <div class="rebuilt-kpi-grid">
         <div class="rebuilt-kpi-card">
           <div class="rebuilt-kpi-head">
@@ -2189,7 +2193,7 @@
 
       <div class="rebuilt-chart-grid">
         <section class="rebuilt-panel">
-          <h3 class="rebuilt-panel-title">Cash flow <span id="graphFyLabelCashflow" class="rebuilt-fy-chip">--</span></h3>
+          <h3 class="rebuilt-panel-title">Bank Balance <span id="graphFyLabelCashflow" class="rebuilt-fy-chip">--</span></h3>
           <div class="rebuilt-chart-wrap">
             <canvas id="dashboardCashflowChart"></canvas>
           </div>
@@ -2376,8 +2380,8 @@
   <script defer src="/js/health.js"></script>
   <script defer src="/js/liabilities.js"></script>
   <script defer src="/js/main.js"></script>
-  <script defer src="/js/features/dashboard.js"></script>
   <script defer src="/js/features/cash-timeline.js"></script>
+  <script defer src="/js/features/dashboard.js"></script>
   <script defer src="/js/features/transactions.js"></script>
   <script defer src="/js/features/budget.js"></script>
   <script defer src="/js/ui.js"></script>

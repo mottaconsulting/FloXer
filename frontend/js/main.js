@@ -162,38 +162,73 @@ function renderOverviewCharts(data) {
   if (!sales || !profit || !expenses) return;
   const cashflow = data?.charts?.cashflow;
 
-  if (cashflow?.labels?.length && sales?.labels?.length && expenses?.labels?.length) {
-    const revenueSeries = splitActualProjectedSeries(data, sales.labels, sales.actual_monthly || [], sales.projected_monthly || []);
-    const expenseSeries = splitActualProjectedSeries(data, expenses.labels, expenses.actual_monthly || [], expenses.projected_monthly || []);
-    let runningTotal = 0;
-    const runningNet = revenueSeries.combined.map((revenueValue, idx) => {
-      const expenseValue = expenseSeries.combined[idx];
-      if (revenueValue === null || expenseValue === null) return null;
-      runningTotal += Number(revenueValue || 0) - Number(expenseValue || 0);
-      return runningTotal;
+  if (cashflow?.labels?.length) {
+    const cashIn    = cashflow.cashIn  || [];
+    const cashOut   = cashflow.cashOut || [];
+    const asOfMonth = data?.meta?.as_of_month;
+    const cutoffIdx = asOfMonth ? cashflow.labels.indexOf(asOfMonth) : cashflow.labels.length - 1;
+    const balanceKpi = computeBalanceKpi(data);
+    const currentBalance = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance : 0;
+
+    // Actual monthly net from bank movements
+    const actualNets = cashflow.labels.map((_, idx) => {
+      if (idx > cutoffIdx) return 0;
+      return Number(cashIn[idx] || 0) - Number(cashOut[idx] || 0);
     });
 
-    XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
-      labels: monthInitialLabels(sales.labels),
+    // Anchor: work backwards from current balance to find start-of-FY balance
+    const totalActualNet = actualNets.slice(0, cutoffIdx + 1).reduce((a, b) => a + b, 0);
+    const startBalance = currentBalance - totalActualNet;
+
+    // Build running balance — actuals for past, budget net for future
+    const revSeries = sales?.labels?.length
+      ? splitActualProjectedSeries(data, sales.labels, sales.actual_monthly || [], sales.projected_monthly || [])
+      : null;
+    const expSeries = expenses?.labels?.length
+      ? splitActualProjectedSeries(data, expenses.labels, expenses.actual_monthly || [], expenses.projected_monthly || [])
+      : null;
+
+    let running = startBalance;
+    const balanceLine = cashflow.labels.map((_, idx) => {
+      if (idx <= cutoffIdx) {
+        running += actualNets[idx];
+      } else if (revSeries && expSeries) {
+        const rev = Number(revSeries.combined[idx] || 0);
+        const exp = Number(expSeries.combined[idx] || 0);
+        running += rev - exp;
+      }
+      return running;
+    });
+
+    const isFutureArr = cashflow.labels.map((_, idx) => !isPastFinancialYearSelection(data) && idx > cutoffIdx);
+
+    XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "line", {
+      labels: monthInitialLabels(cashflow.labels),
       datasets: [
         {
-          label: "Running Cash Flow",
-          data: runningNet,
-          backgroundColor: runningNet.map((v, idx) => {
-            const isFuture = !isPastFinancialYearSelection(data) && idx > revenueSeries.cutoffIdx;
-            if (Number(v || 0) < 0) return isFuture ? "rgba(236, 72, 153, 0.42)" : "rgba(236, 72, 153, 0.84)";
-            return isFuture ? "rgba(59, 130, 246, 0.42)" : "rgba(59, 130, 246, 0.82)";
-          }),
-          borderRadius: 0,
-          categoryPercentage: 0.62,
-          barPercentage: 0.9
+          label: "Bank Balance",
+          data: balanceLine,
+          borderColor: balanceLine.map((v, idx) =>
+            isFutureArr[idx] ? "rgba(59,130,246,0.4)" : (v < 0 ? "#ec4899" : "#3b82f6")
+          ),
+          backgroundColor: "transparent",
+          pointBackgroundColor: balanceLine.map((v, idx) =>
+            isFutureArr[idx] ? "rgba(59,130,246,0.4)" : (v < 0 ? "#ec4899" : "#3b82f6")
+          ),
+          pointRadius: 3,
+          borderWidth: 2,
+          segment: {
+            borderColor: ctx => isFutureArr[ctx.p1DataIndex] ? "rgba(59,130,246,0.4)" : (ctx.p1.parsed.y < 0 ? "#ec4899" : "#3b82f6"),
+            borderDash: ctx => isFutureArr[ctx.p1DataIndex] ? [4, 4] : []
+          },
+          tension: 0.3
         }
       ]
     }, {
       plugins: { legend: { display: false } },
       scales: {
         x: { grid: { display: false } },
-        y: { beginAtZero: true }
+        y: { beginAtZero: false }
       }
     });
   }

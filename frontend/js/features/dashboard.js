@@ -126,10 +126,22 @@ function bindBurnNotePopover() {
 
 function renderBalanceAdjustState(balanceKpi, isPastFy) {
   const toggleBtn = document.getElementById("dashboardBalanceAdjustToggle");
-  const sourceEl = document.getElementById("dashboardBalanceSource");
+  const sourceEl  = document.getElementById("dashboardBalanceSource");
+  const banner    = document.getElementById("dashboardUnreconciledBanner");
   if (!toggleBtn || !sourceEl) return;
   toggleBtn.style.display = isPastFy ? "none" : "inline-flex";
-  sourceEl.textContent = "";
+  if (balanceKpi.hasManualOverride) {
+    toggleBtn.textContent = "Reset to Xero";
+    toggleBtn.style.color = "#9a3412";
+    sourceEl.textContent = "Estimated — unreconciled";
+    sourceEl.style.color = "#ea580c";
+  } else {
+    toggleBtn.textContent = "Edit";
+    toggleBtn.style.color = "";
+    sourceEl.textContent = "";
+    sourceEl.style.color = "";
+  }
+  if (banner) banner.style.display = balanceKpi.hasManualOverride && !isPastFy ? "" : "none";
 }
 
 function renderOverview(data) {
