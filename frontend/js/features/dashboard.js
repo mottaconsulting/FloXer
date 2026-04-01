@@ -40,20 +40,26 @@ function bindBalanceAdjustEvents() {
     const isPastFy = isPastFinancialYearSelection(data || {});
     if (isPastFy) return;
     const balanceKpi = computeBalanceKpi(data || {});
+
+    // If override is active, reset immediately — no prompt needed
+    if (balanceKpi.hasManualOverride) {
+      setBalanceOverrideValue(data || {}, null);
+      if (data) renderOverview(data);
+      return;
+    }
+
+    // Otherwise prompt for a new value
     const defaultValue = Number.isFinite(balanceKpi.balance) ? String(Math.round(balanceKpi.balance)) : "";
-    const raw = window.prompt("Edit Current Balance. Leave blank to reset to live Xero value.", defaultValue);
+    const raw = window.prompt("Edit Current Balance. Leave blank to cancel.", defaultValue);
     if (raw === null) return;
     const next = String(raw).trim();
-    if (!next) {
-      setBalanceOverrideValue(data || {}, null);
-    } else {
-      const parsed = parseCurrencyInput(next);
-      if (!Number.isFinite(parsed)) {
-        showError("Enter a valid number for Current Balance.");
-        return;
-      }
-      setBalanceOverrideValue(data || {}, parsed);
+    if (!next) return;
+    const parsed = parseCurrencyInput(next);
+    if (!Number.isFinite(parsed)) {
+      showError("Enter a valid number for Current Balance.");
+      return;
     }
+    setBalanceOverrideValue(data || {}, parsed);
     if (data) renderOverview(data);
   });
   BALANCE_ADJUST_EVENTS_BOUND = true;
