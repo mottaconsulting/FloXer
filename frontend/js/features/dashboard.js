@@ -132,9 +132,9 @@ function renderBalanceAdjustState(balanceKpi, isPastFy) {
   toggleBtn.style.display = isPastFy ? "none" : "inline-flex";
   if (balanceKpi.hasManualOverride) {
     toggleBtn.textContent = "Reset to Xero";
-    toggleBtn.style.color = "#9a3412";
+    toggleBtn.style.color = "#6b7280";
     sourceEl.textContent = "Estimated — unreconciled";
-    sourceEl.style.color = "#ea580c";
+    sourceEl.style.color = "#6b7280";
   } else {
     toggleBtn.textContent = "Edit";
     toggleBtn.style.color = "";
@@ -224,14 +224,15 @@ function renderOverview(data) {
     balanceSparkline.innerHTML = buildSparklineMarkup(cumulativeBalanceSeries);
   }
   renderBalanceAdjustState(balanceKpi, isPastFy);
-  const currentLiabilities = Number.isFinite(Number(data?.kpis?.current_liabilities)) ? Number(data.kpis.current_liabilities) : 0;
+  const currentLiabilities = !balanceKpi.hasManualOverride && Number.isFinite(Number(data?.kpis?.current_liabilities))
+    ? Number(data.kpis.current_liabilities) : 0;
   const freeBalance = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance - currentLiabilities : balanceKpi.balance;
-  // Option B: render free cash bar
+  // Free cash bar: only show when using Xero balance (liabilities are already known in manual override)
   const freeCashBar = document.getElementById("dashboardFreeCashBar");
   const freeCashFill = document.getElementById("dashboardFreeCashFill");
   const freeCashLabel = document.getElementById("dashboardFreeCashLabel");
   const committedLabel = document.getElementById("dashboardCommittedLabel");
-  if (!isPastFy && freeCashBar && Number.isFinite(balanceKpi.balance) && balanceKpi.balance > 0 && currentLiabilities > 0) {
+  if (!isPastFy && !balanceKpi.hasManualOverride && freeCashBar && Number.isFinite(balanceKpi.balance) && balanceKpi.balance > 0 && currentLiabilities > 0) {
     const pctFree = Math.min(100, Math.max(0, (freeBalance / balanceKpi.balance) * 100));
     freeCashFill.style.width = `${pctFree}%`;
     freeCashLabel.textContent = `${fmtCurrency(Math.max(0, freeBalance))} free`;

@@ -202,26 +202,19 @@ function renderOverviewCharts(data) {
 
     const isFutureArr = cashflow.labels.map((_, idx) => !isPastFinancialYearSelection(data) && idx > cutoffIdx);
 
-    XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "line", {
+    XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
       labels: monthInitialLabels(cashflow.labels),
       datasets: [
         {
           label: "Bank Balance",
           data: balanceLine,
-          borderColor: balanceLine.map((v, idx) =>
-            isFutureArr[idx] ? "rgba(59,130,246,0.4)" : (v < 0 ? "#ec4899" : "#3b82f6")
-          ),
-          backgroundColor: "transparent",
-          pointBackgroundColor: balanceLine.map((v, idx) =>
-            isFutureArr[idx] ? "rgba(59,130,246,0.4)" : (v < 0 ? "#ec4899" : "#3b82f6")
-          ),
-          pointRadius: 3,
-          borderWidth: 2,
-          segment: {
-            borderColor: ctx => isFutureArr[ctx.p1DataIndex] ? "rgba(59,130,246,0.4)" : (ctx.p1.parsed.y < 0 ? "#ec4899" : "#3b82f6"),
-            borderDash: ctx => isFutureArr[ctx.p1DataIndex] ? [4, 4] : []
-          },
-          tension: 0.3
+          backgroundColor: balanceLine.map((v, idx) => {
+            if (isFutureArr[idx]) return v < 0 ? "rgba(236,72,153,0.35)" : "rgba(59,130,246,0.35)";
+            return v < 0 ? "rgba(236,72,153,0.84)" : "rgba(59,130,246,0.82)";
+          }),
+          borderRadius: 0,
+          categoryPercentage: 0.62,
+          barPercentage: 0.9
         }
       ]
     }, {
