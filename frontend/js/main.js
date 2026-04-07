@@ -165,34 +165,23 @@ function renderOverviewCharts(data) {
   if (cashflow?.labels?.length && sales?.labels?.length && expenses?.labels?.length) {
     const revenueSeries = splitActualProjectedSeries(data, sales.labels, sales.actual_monthly || [], sales.projected_monthly || []);
     const expenseSeries = splitActualProjectedSeries(data, expenses.labels, expenses.actual_monthly || [], expenses.projected_monthly || []);
-    let runningTotal = 0;
-    const runningNet = revenueSeries.combined.map((revenueValue, idx) => {
-      const expenseValue = expenseSeries.combined[idx];
-      if (revenueValue === null || expenseValue === null) return null;
-      runningTotal += Number(revenueValue || 0) - Number(expenseValue || 0);
-      return runningTotal;
-    });
-
-    // If current balance is known, anchor the chart to it.
-    // startingBalance = currentBalance − cumulativeNet at cutoff month
-    // balance[i] = startingBalance + runningNet[i]
-    const balanceKpi = computeBalanceKpi(data);
     const cutoffIdx = revenueSeries.cutoffIdx;
-    const cumulativeAtCutoff = runningNet[cutoffIdx] ?? 0;
-    const chartData = Number.isFinite(balanceKpi.balance)
-      ? runningNet.map(v => v === null ? null : balanceKpi.balance - cumulativeAtCutoff + v)
-      : runningNet;
+    const monthlyNet = revenueSeries.combined.map((rev, idx) => {
+      const exp = expenseSeries.combined[idx];
+      if (rev === null || exp === null) return null;
+      return Number(rev || 0) - Number(exp || 0);
+    });
 
     XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
       labels: monthInitialLabels(sales.labels),
       datasets: [
         {
-          label: "Cash Position",
-          data: chartData,
-          backgroundColor: chartData.map((v, idx) => {
+          label: "Net (Revenue − Expenses)",
+          data: monthlyNet,
+          backgroundColor: monthlyNet.map((v, idx) => {
             const isFuture = !isPastFinancialYearSelection(data) && idx > cutoffIdx;
-            if (Number(v || 0) < 0) return isFuture ? "rgba(236, 72, 153, 0.42)" : "rgba(236, 72, 153, 0.84)";
-            return isFuture ? "rgba(59, 130, 246, 0.42)" : "rgba(59, 130, 246, 0.82)";
+            if (Number(v || 0) < 0) return isFuture ? "rgba(236,72,153,0.42)" : "rgba(236,72,153,0.84)";
+            return isFuture ? "rgba(59,130,246,0.42)" : "rgba(59,130,246,0.82)";
           }),
           borderRadius: 0,
           categoryPercentage: 0.62,
