@@ -203,7 +203,11 @@ function renderOverviewCharts(data) {
       plugins: { legend: { display: false } },
       scales: {
         x: { grid: { display: false } },
-        y: { beginAtZero: false }
+        y: {
+          grid: {
+            color: ctx => ctx.tick.value === 0 ? "rgba(55,65,81,0.4)" : "rgba(226,232,240,0.7)"
+          }
+        }
       }
     });
   }
