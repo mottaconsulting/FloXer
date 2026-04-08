@@ -1553,6 +1553,89 @@ def _payg_withholding_rate(all_lines: "pd.DataFrame", lookback_months: int = 6) 
     return float(rates.mean()) if len(rates) >= 2 else None
 
 
+def _project_future_tax_installments(
+    schedule: list[dict],
+    today: datetime,
+    fy_end: datetime,
+    freq_map: dict,
+    fy_start_month: int,
+) -> list[dict]:
+    """Add projected future tax installments to the schedule until FY end.
+
+    For each tax type already in the schedule, uses its current amount as the
+    base estimate and projects forward due dates until fy_end.
+    Handles GST/PAYG (quarterly or monthly) and Super (quarterly).
+    Projected entries are marked with projected=True.
+    """
+    projected = list(schedule)
+
+    # Get base amounts per type from existing schedule
+    base: dict[str, float] = {}
+    for item in schedule:
+        t = item.get("type", "other")
+        if t in ("GST", "PAYG", "SUPER") and t not in base:
+            base[t] = float(item["amount"])
+
+    if not base:
+        return projected
+
+    existing_months = {(item["type"], item["month"]) for item in schedule}
+
+    def add_if_new(ltype: str, due: datetime, amount: float):
+        due_month = f"{due.year}-{due.month:02d}"
+        if (ltype, due_month) in existing_months:
+            return
+        if due.date() <= today.date() or due > fy_end:
+            return
+        projected.append({
+            "month": due_month,
+            "name": f"{ltype} (projected)",
+            "code": "",
+            "amount": round(amount, 2),
+            "type": ltype,
+            "projected": True,
+        })
+        existing_months.add((ltype, due_month))
+
+    # Walk forward month by month until FY end, generating due dates
+    cursor = today
+    while cursor <= fy_end:
+        # GST
+        if "GST" in base:
+            freq = freq_map.get("GST", "quarterly")
+            if freq == "monthly":
+                nm = pd.Timestamp(cursor) + pd.DateOffset(months=1)
+                due = _next_business_day_if_weekend(datetime(nm.year, nm.month, 21))
+                add_if_new("GST", due, base["GST"])
+            else:
+                qe = _ato_quarter_end(cursor)
+                due = _next_business_day_if_weekend(_ato_bas_due(qe))
+                add_if_new("GST", due, base["GST"])
+
+        # PAYG
+        if "PAYG" in base:
+            freq = freq_map.get("PAYG", "monthly")
+            if freq == "monthly":
+                nm = pd.Timestamp(cursor) + pd.DateOffset(months=1)
+                due = _next_business_day_if_weekend(datetime(nm.year, nm.month, 21))
+                add_if_new("PAYG", due, base["PAYG"])
+            else:
+                qe = _ato_quarter_end(cursor)
+                due = _next_business_day_if_weekend(_ato_bas_due(qe))
+                add_if_new("PAYG", due, base["PAYG"])
+
+        # Super
+        if "SUPER" in base:
+            qe = _ato_quarter_end(cursor)
+            due = _next_business_day_if_weekend(_ato_super_due(qe))
+            add_if_new("SUPER", due, base["SUPER"])
+
+        # Advance cursor by one month
+        cursor = (pd.Timestamp(cursor) + pd.DateOffset(months=1)).to_pydatetime()
+
+    return projected
+
+
 def _estimate_upcoming_accruals(
     actuals_df: "pd.DataFrame",
     all_lines: "pd.DataFrame",
@@ -2101,6 +2184,13 @@ def build_overview_payload(
                     "amount": round(_bs_acc["amount"], 2),
                     "type": "other",
                 })
+
+    # Project future tax installments until FY end.
+    # Uses current BS amounts as base estimate for the next cycle(s).
+    # Only adds installments whose due date falls between today and fy_end.
+    liability_schedule = _project_future_tax_installments(
+        liability_schedule, today, fy_end, _liab_freq_map, fy_start_month
+    )
 
     # Accounts payable — real supplier invoices with actual due dates
     accounts_payable = _fetch_outstanding_bills()

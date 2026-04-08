@@ -144,10 +144,14 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
   // ── Helpers ──
   function liabTableRow(l, indicative = false) {
     const monthLabel = l.due_month ? fmtTimelineMonth(l.due_month) : (l.month ? fmtTimelineMonth(l.month) : "—");
-    return `<tr class="ct-liab-view-row${indicative ? " ct-liab-indicative" : ""}">
-      <td class="ct-liab-view-name">${l.name}${indicative ? ' <span class="ct-indicative-tag">est.</span>' : ""}</td>
+    const isProjected = l.projected === true;
+    const tag = indicative
+      ? ' <span class="ct-indicative-tag">est.</span>'
+      : isProjected ? ' <span class="ct-indicative-tag">projected</span>' : "";
+    return `<tr class="ct-liab-view-row${indicative || isProjected ? " ct-liab-indicative" : ""}">
+      <td class="ct-liab-view-name">${l.name}${tag}</td>
       <td class="ct-liab-view-month">${monthLabel}</td>
-      <td class="ct-liab-view-amt ${indicative ? "ct-neg-amt-muted" : "ct-neg-amt"}">-${fmtCurrency(l.amount)}</td>
+      <td class="ct-liab-view-amt ${indicative || isProjected ? "ct-neg-amt-muted" : "ct-neg-amt"}">-${fmtCurrency(l.amount)}</td>
     </tr>`;
   }
 
