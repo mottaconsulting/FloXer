@@ -1488,18 +1488,19 @@ def _fetch_outstanding_bills() -> list[dict]:
                     due_date = datetime.fromisoformat(due_raw[:10]).date()
                 except ValueError:
                     pass
+            cur_month_str = f"{today.year}-{today.month:02d}"
             if due_date:
                 due_month = f"{due_date.year}-{due_date.month:02d}"
-                overdue = due_date < today
+                # Skip invoices due before this month
+                if due_month < cur_month_str:
+                    continue
             else:
-                due_month = f"{today.year}-{today.month:02d}"
-                overdue = False
+                due_month = cur_month_str
             bills.append({
                 "name": contact,
                 "amount": round(amount_due, 2),
                 "due_month": due_month,
                 "due_date": due_date.isoformat() if due_date else None,
-                "overdue": overdue,
                 "type": "payable",
             })
         # Sort by due date ascending

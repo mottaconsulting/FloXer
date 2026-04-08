@@ -136,8 +136,6 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
   const taxObligations   = data?.kpis?.liability_schedule || [];
   const accountsPayable  = data?.kpis?.accounts_payable   || [];
   const upcomingAccruals = data?.kpis?.upcoming_accruals  || [];
-  const todayStr = new Date().toISOString().slice(0, 10);
-
   const totalTax      = taxObligations.reduce((s, l)  => s + Number(l.amount || 0), 0);
   const totalPayable  = accountsPayable.reduce((s, l) => s + Number(l.amount || 0), 0);
   const totalAccruals = upcomingAccruals.reduce((s, l) => s + Number(l.amount || 0), 0);
@@ -146,9 +144,8 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
   // ── Helpers ──
   function liabTableRow(l, indicative = false) {
     const monthLabel = l.due_month ? fmtTimelineMonth(l.due_month) : (l.month ? fmtTimelineMonth(l.month) : "—");
-    const overdue = l.due_date && l.due_date < todayStr;
     return `<tr class="ct-liab-view-row${indicative ? " ct-liab-indicative" : ""}">
-      <td class="ct-liab-view-name">${l.name}${indicative ? ' <span class="ct-indicative-tag">est.</span>' : ""}${overdue ? ' <span class="ct-overdue-tag">overdue</span>' : ""}</td>
+      <td class="ct-liab-view-name">${l.name}${indicative ? ' <span class="ct-indicative-tag">est.</span>' : ""}</td>
       <td class="ct-liab-view-month">${monthLabel}</td>
       <td class="ct-liab-view-amt ${indicative ? "ct-neg-amt-muted" : "ct-neg-amt"}">-${fmtCurrency(l.amount)}</td>
     </tr>`;
@@ -156,21 +153,14 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
 
   function apRows() {
     if (!accountsPayable.length) return "";
-    const overdue = accountsPayable.filter(l => l.due_date && l.due_date < todayStr);
-    const upcoming = accountsPayable.filter(l => !l.due_date || l.due_date >= todayStr);
-    // Group upcoming by month
+    // Group by month (all already current month+)
     const byMonth = {};
-    upcoming.forEach(l => {
+    accountsPayable.forEach(l => {
       const m = l.due_month || l.month || "unknown";
       if (!byMonth[m]) byMonth[m] = [];
       byMonth[m].push(l);
     });
     let html = "";
-    if (overdue.length) {
-      const total = overdue.reduce((s, l) => s + Number(l.amount || 0), 0);
-      html += `<tr class="ct-ap-group-row"><td colspan="2">Overdue (${overdue.length})</td><td class="ct-neg-amt">-${fmtCurrency(total)}</td></tr>`;
-      html += overdue.map(l => liabTableRow(l)).join("");
-    }
     Object.keys(byMonth).sort().forEach(m => {
       const grp = byMonth[m];
       const total = grp.reduce((s, l) => s + Number(l.amount || 0), 0);
