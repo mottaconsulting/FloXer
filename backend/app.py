@@ -956,6 +956,7 @@ def _build_liability_schedule(
     cur_df["_KEY"] = code_col.where(code_col != "", name_col).values
     cur_df = cur_df[cur_df["_KEY"] != ""]
     cur_df = cur_df[~cur_df["_NAME"].map(_is_bookkeeping_artefact)]
+    cur_df = cur_df[~cur_df["_NAME"].map(_is_trade_creditor)]
 
     for (code, name), grp in cur_df.groupby(["_CODE", "_NAME"]):
         net = pd.to_numeric(grp["NET_AMOUNT"], errors="coerce").fillna(0.0)
@@ -990,6 +991,23 @@ def _build_liability_schedule(
         })
 
     return schedule
+
+
+def _is_trade_creditor(account_name: str) -> bool:
+    """Return True for accounts payable / trade creditor accounts.
+
+    These are covered by the Xero Invoices API (accounts payable section)
+    and must be excluded from the tax obligations schedule to avoid double-counting.
+    """
+    name = str(account_name or "").lower()
+    patterns = [
+        "accounts payable",
+        "trade creditor",
+        "trade payable",
+        "creditors",
+        "supplier payable",
+    ]
+    return any(p in name for p in patterns)
 
 
 def _is_bookkeeping_artefact(account_name: str) -> bool:
@@ -2073,6 +2091,8 @@ def build_overview_payload(
         for _bs_acc in _bs["accounts"]:
             _key = _bs_acc["name"].strip().lower()
             if _key not in _schedule_names and _bs_acc["amount"] > 0.01:
+                if _is_trade_creditor(_bs_acc["name"]):
+                    continue  # covered by Invoices API — skip to avoid double-counting
                 liability_schedule.append({
                     "month": _current_month_str,
                     "name": _bs_acc["name"],
