@@ -733,150 +733,148 @@
       margin-bottom: 18px;
     }
     /* ═══════════════════════════════
-       CASH TIMELINE — design system
-       3 text levels: 28px / 15px / 12px
-       Color: meaning only (pink=neg, blue=pos, slate=neutral)
+       CASH TIMELINE — hierarchy system
+       Level 1 (32px): KPI values
+       Level 2 (18px): Month headers
+       Level 3 (13px): Detail rows
+       Color: meaning only
        ═══════════════════════════════ */
 
     /* ── Summary KPI bar ── */
     .ct-summary-bar {
       display: flex;
-      gap: 0;
-      margin-bottom: 20px;
+      gap: 12px;
+      margin-bottom: 24px;
     }
     .ct-summary-item {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      padding: 20px 24px;
+      gap: 8px;
+      padding: 22px 24px 20px;
       background: #fff;
-      border: 1px solid #e2e8f0;
-      border-right: none;
+      border: 1px solid #e8ecf0;
+      border-radius: 12px;
     }
-    .ct-summary-item:first-child { border-radius: 12px 0 0 12px; }
-    .ct-summary-item:last-child  { border-right: 1px solid #e2e8f0; border-radius: 0 12px 12px 0; }
     .ct-summary-label {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #b0bac9;
+      letter-spacing: 0.09em;
+      color: #8896a8;
     }
-    .ct-summary-value { font-size: 28px; font-weight: 800; line-height: 1; }
+    .ct-summary-value { font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
 
     /* ── Page section cards ── */
     .ct-page-card {
       background: #fff;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #e8ecf0;
       border-radius: 12px;
       overflow: hidden;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
     .ct-page-card-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 14px 22px;
+      padding: 12px 22px;
       border-bottom: 1px solid #f1f5f9;
     }
     .ct-page-card-title {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #b0bac9;
+      letter-spacing: 0.09em;
+      color: #8896a8;
     }
 
     /* ── Cash projection table ── */
-    .cash-timeline-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 15px;
-    }
+    .cash-timeline-table { width: 100%; border-collapse: collapse; }
 
     /* Starting balance row */
     .ct-start-row td {
       padding: 14px 22px;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 400;
       color: #94a3b8;
       border-bottom: 1px solid #f1f5f9;
     }
-    .ct-start-row td:last-child { text-align: right; }
+    .ct-start-row td:last-child { text-align: right; font-weight: 600; }
 
-    /* Month header — strongest element in projection */
+    /* ── Month block: top-level section ── */
+    .ct-group { margin-top: 0; }
     .ct-month-row td {
-      padding: 18px 22px 14px;
-      font-size: 17px;
+      padding: 22px 22px 10px;
+      font-size: 18px;
       font-weight: 800;
       color: #0f172a;
       background: #fff;
-      border-top: 2px solid #e2e8f0;
+      border-top: 2px solid #e8ecf0;
+      letter-spacing: -0.01em;
     }
     .ct-month-row td:last-child { text-align: right; }
     .ct-group-neg .ct-month-row td,
-    .ct-group-first-neg .ct-month-row td { background: #fff8fb; border-top-color: #fce7f3; }
+    .ct-group-first-neg .ct-month-row td {
+      background: #fffbfc;
+      border-top-color: #f9d5e8;
+    }
     .ct-group-neg .ct-month-row td:first-child,
     .ct-group-first-neg .ct-month-row td:first-child { color: #ec4899; }
 
-    /* Section labels — "Obligations due" / "Forecast" */
+    /* Section labels inside month — "OBLIGATIONS DUE" / "FORECAST" */
     .ct-section-label td {
-      padding: 10px 22px 2px;
-      font-size: 10px;
+      padding: 12px 22px 3px 22px;
+      font-size: 9px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #b0bac9;
+      letter-spacing: 0.1em;
+      color: #8896a8;
     }
     .ct-section-label.ct-section-budget td {
-      padding-top: 12px;
-      border-top: 1px solid #f1f5f9;
+      padding-top: 16px;
+      border-top: 1px dashed #edf0f3;
     }
 
-    /* Detail rows — light, indented */
-    .ct-detail-row.ct-liab-row td {
-      padding: 3px 22px 3px 30px;
-      font-size: 13px;
-      font-weight: 400;
-      color: #64748b;
-    }
-    .ct-detail-row.ct-liab-row td:last-child { text-align: right; padding-right: 22px; }
-
+    /* Detail rows — subordinate, indented */
+    .ct-detail-row.ct-liab-row td,
     .ct-detail-row.ct-budget-row td {
-      padding: 3px 22px 3px 30px;
+      padding: 4px 22px 4px 32px;
       font-size: 13px;
       font-weight: 400;
       color: #64748b;
     }
-    .ct-detail-row.ct-budget-row td:last-child { text-align: right; padding-right: 22px; }
-
-    /* Net row — bold, stands out from siblings */
-    .ct-budget-net-row td {
-      padding-top: 8px !important;
-      padding-bottom: 12px !important;
-      border-top: 1px solid #f1f5f9;
-      font-size: 14px !important;
-      font-weight: 700 !important;
-      color: #1e293b !important;
+    .ct-detail-row.ct-liab-row td:last-child,
+    .ct-detail-row.ct-budget-row td:last-child {
+      text-align: right;
+      padding-right: 22px;
     }
 
-    /* Group separator — breathing room between months */
-    .ct-group-sep td { padding: 4px 0; border: none; background: #f8fafc; }
+    /* Net row — dominant within the month */
+    .ct-budget-net-row td {
+      padding: 10px 22px 16px 32px !important;
+      border-top: 1px solid #f1f5f9;
+      font-size: 15px !important;
+      font-weight: 700 !important;
+      color: #0f172a !important;
+    }
+    .ct-budget-net-row td:last-child { padding-right: 22px !important; }
 
-    /* Balance amounts */
-    .ct-bal { font-weight: 800; }
-    .ct-bal-pos { color: #1e40af !important; }
+    /* Group separator — space between month blocks */
+    .ct-group-sep td { padding: 6px 0; border: none; background: transparent; }
+
+    /* Amounts */
+    .ct-bal { font-weight: 700; }
+    .ct-bal-pos { color: #1d4ed8 !important; }
     .ct-bal-neg { color: #ec4899 !important; }
-    .ct-pos-amt { color: #1e40af !important; font-weight: 500; }
-    .ct-neg-amt { color: #ec4899 !important; font-weight: 500; }
-    .ct-neg-amt-muted { color: #94a3b8; font-weight: 500; text-align: right; }
+    .ct-pos-amt { color: #1d4ed8 !important; font-weight: 400; }
+    .ct-neg-amt { color: #ec4899 !important; font-weight: 400; }
+    .ct-neg-amt-muted { color: #8896a8; font-weight: 400; text-align: right; }
 
     /* Shortfall badge */
     .ct-badge-neg {
       display: inline-block;
       margin-left: 8px;
-      padding: 2px 8px;
+      padding: 2px 9px;
       border-radius: 999px;
       background: #fce7f3;
       color: #ec4899;
@@ -891,14 +889,14 @@
     .ct-headline-neg { color: #ec4899; }
 
     /* ── Accordion (Obligations) ── */
-    .ct-accordion { border-top: 1px solid #f1f5f9; }
+    .ct-accordion { border-top: 1px solid #f4f6f8; }
     .ct-accordion:first-of-type { border-top: none; }
     .ct-accordion-trigger {
       width: 100%;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 16px 22px;
+      padding: 17px 22px;
       background: none;
       border: none;
       cursor: pointer;
@@ -907,51 +905,51 @@
     }
     .ct-accordion-trigger:hover { background: #f8fafc; }
     .ct-acc-title { font-size: 15px; font-weight: 600; color: #1e293b; }
-    .ct-acc-right { display: flex; align-items: center; gap: 10px; }
+    .ct-acc-right { display: flex; align-items: center; gap: 12px; }
     .ct-chevron {
-      width: 16px; height: 16px;
-      color: #b0bac9;
+      width: 15px; height: 15px;
+      color: #8896a8;
       transition: transform 0.2s ease;
       flex-shrink: 0;
     }
-    .ct-accordion-content { border-top: 1px solid #f1f5f9; }
+    .ct-accordion-content { border-top: 1px solid #f4f6f8; }
 
     /* ── Obligations table ── */
     .ct-obligations-table { width: 100%; border-collapse: collapse; }
     .ct-obligations-table thead th {
       padding: 8px 22px;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #b0bac9;
+      letter-spacing: 0.09em;
+      color: #8896a8;
       text-align: left;
-      background: #fafafa;
+      background: #fafbfc;
       border-bottom: 1px solid #f1f5f9;
     }
     .ct-obligations-table thead th:last-child { text-align: right; }
 
     /* Line item rows */
-    .ct-liab-view-row td { padding: 9px 22px; border-top: 1px solid #fafafa; }
-    .ct-liab-view-name { font-size: 13px; font-weight: 500; color: #475569; }
-    .ct-liab-view-month { font-size: 12px; color: #b0bac9; }
+    .ct-liab-view-row td { padding: 9px 22px; border-top: 1px solid #f8fafc; }
+    .ct-liab-view-name { font-size: 13px; font-weight: 400; color: #475569; }
+    .ct-liab-view-month { font-size: 12px; color: #8896a8; }
     .ct-liab-view-amt { text-align: right; font-size: 13px; font-weight: 600; }
 
-    /* Month group headers inside AP section */
+    /* Month sub-headers inside AP/tax tables */
     .ct-ap-group-row td {
-      padding: 8px 22px 4px;
+      padding: 10px 22px 5px;
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
+      letter-spacing: 0.08em;
       color: #94a3b8;
       background: #f8fafc;
       border-top: 1px solid #f1f5f9;
     }
-    .ct-ap-group-row td:last-child { text-align: right; }
+    .ct-ap-group-row td:last-child { text-align: right; font-size: 13px; font-weight: 700; }
 
     /* Indicative / projected rows */
-    .ct-liab-indicative td { opacity: 0.65; }
+    .ct-liab-indicative td { opacity: 0.6; }
     .ct-indicative-tag, .ct-overdue-tag {
       font-size: 9px;
       font-weight: 700;
