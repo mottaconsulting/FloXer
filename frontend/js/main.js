@@ -162,23 +162,41 @@ function renderOverviewCharts(data) {
   if (!sales || !profit || !expenses) return;
   const cashflow = data?.charts?.cashflow;
 
+  // Build liability-by-month lookup for projected expense adjustment
+  const liabilitySchedule = data?.kpis?.liability_schedule || [];
+  const liabByMonth = {};
+  for (const l of liabilitySchedule) {
+    liabByMonth[l.month] = (liabByMonth[l.month] || 0) + Number(l.amount || 0);
+  }
+
+  // Adjust a projected series to include liabilities for future months
+  function addLiabsToProjected(series, labels, cutoffIdx) {
+    return series.map((v, i) => {
+      if (i <= cutoffIdx || v === null) return v;
+      return (v || 0) + (liabByMonth[labels[i]] || 0);
+    });
+  }
+
   if (cashflow?.labels?.length && sales?.labels?.length && expenses?.labels?.length) {
     const revenueSeries = splitActualProjectedSeries(data, sales.labels, sales.actual_monthly || [], sales.projected_monthly || []);
     const expenseSeries = splitActualProjectedSeries(data, expenses.labels, expenses.actual_monthly || [], expenses.projected_monthly || []);
     const cutoffIdx = revenueSeries.cutoffIdx;
-    const monthlyNet = revenueSeries.combined.map((rev, idx) => {
-      const exp = expenseSeries.combined[idx];
+    const expCombinedAdj = addLiabsToProjected(expenseSeries.combined, expenses.labels, cutoffIdx);
+    let runningTotal = 0;
+    const runningNet = revenueSeries.combined.map((rev, idx) => {
+      const exp = expCombinedAdj[idx];
       if (rev === null || exp === null) return null;
-      return Number(rev || 0) - Number(exp || 0);
+      runningTotal += Number(rev || 0) - Number(exp || 0);
+      return runningTotal;
     });
 
     XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
       labels: monthInitialLabels(sales.labels),
       datasets: [
         {
-          label: "Net (Revenue − Expenses)",
-          data: monthlyNet,
-          backgroundColor: monthlyNet.map((v, idx) => {
+          label: "Cumulative Net",
+          data: runningNet,
+          backgroundColor: runningNet.map((v, idx) => {
             const isFuture = !isPastFinancialYearSelection(data) && idx > cutoffIdx;
             if (Number(v || 0) < 0) return isFuture ? "rgba(236,72,153,0.42)" : "rgba(236,72,153,0.84)";
             return isFuture ? "rgba(59,130,246,0.42)" : "rgba(59,130,246,0.82)";
@@ -204,6 +222,7 @@ function renderOverviewCharts(data) {
   if (sales?.labels?.length && expenses?.labels?.length) {
     const revenueSeries = splitActualProjectedSeries(data, sales.labels, sales.actual_monthly || [], sales.projected_monthly || []);
     const expenseSeries = splitActualProjectedSeries(data, expenses.labels, expenses.actual_monthly || [], expenses.projected_monthly || []);
+    const expProjectedAdj = addLiabsToProjected(expenseSeries.projectedOnly, expenses.labels, revenueSeries.cutoffIdx);
 
     XeroCharts.renderChart("dashboardRevenueExpenses", "dashboardRevenueExpensesChart", "line", {
       labels: monthInitialLabels(sales.labels),
@@ -244,7 +263,7 @@ function renderOverviewCharts(data) {
         },
         {
           label: "Expenses Projection",
-          data: expenseSeries.projectedOnly,
+          data: expProjectedAdj,
           borderColor: "rgba(236, 72, 153, 0.55)",
           backgroundColor: "rgba(236, 72, 153, 0.08)",
           pointBackgroundColor: "rgba(236, 72, 153, 0.55)",

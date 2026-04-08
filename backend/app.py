@@ -973,7 +973,7 @@ def _build_liability_schedule(
         _, accrual_period_end = _period_bounds(last_accrual_dt, period, fy_start_month)
 
         ltype = _liability_type(code, name)
-        expected_due, _ = _expected_due_date(ltype, accrual_period_end, freq_map)
+        expected_due, _ = _expected_due_date(ltype, accrual_period_end, freq_map, last_accrual_dt=last_accrual_dt)
 
         if expected_due is None or expected_due.date() <= today.date():
             # No due date or already overdue — place in current month
@@ -1098,31 +1098,63 @@ def _liability_frequency_config(
     }
 
 
+def _ato_quarter_end(dt: datetime) -> datetime:
+    """Return the last day of the ATO quarter containing dt."""
+    m = dt.month
+    if m in (7, 8, 9):    return datetime(dt.year, 9, 30)
+    if m in (10, 11, 12): return datetime(dt.year, 12, 31)
+    if m in (1, 2, 3):    return datetime(dt.year, 3, 31)
+    return datetime(dt.year, 6, 30)
+
+
+def _ato_bas_due(quarter_end: datetime) -> datetime:
+    """Fixed ATO due date for BAS (GST / PAYG quarterly) from the quarter end date."""
+    qm, qy = quarter_end.month, quarter_end.year
+    if qm == 9:  return datetime(qy,     10, 28)   # Q1 Jul-Sep  → 28 Oct
+    if qm == 12: return datetime(qy + 1,  2, 28)   # Q2 Oct-Dec  → 28 Feb
+    if qm == 3:  return datetime(qy,      4, 28)   # Q3 Jan-Mar  → 28 Apr
+    return           datetime(qy,          7, 28)   # Q4 Apr-Jun  → 28 Jul
+
+
+def _ato_super_due(quarter_end: datetime) -> datetime:
+    """Fixed ATO due date for Super Guarantee from the quarter end date."""
+    qm, qy = quarter_end.month, quarter_end.year
+    if qm == 9:  return datetime(qy,     10, 28)   # Q1 → 28 Oct
+    if qm == 12: return datetime(qy + 1,  1, 28)   # Q2 → 28 Jan
+    if qm == 3:  return datetime(qy,      4, 28)   # Q3 → 28 Apr
+    return           datetime(qy,          7, 28)   # Q4 → 28 Jul
+
+
 def _expected_due_date(
     liability_type: str,
     period_end: datetime,
     frequency_map: dict,
+    last_accrual_dt: datetime | None = None,
 ) -> tuple[datetime | None, str | None]:
     payg_monthly_due_day = int(os.getenv("PAYG_MONTHLY_DUE_DAY", "21"))
+    accrual = last_accrual_dt or period_end
+
     if liability_type == "GST":
-        freq = frequency_map.get("GST", "monthly")
+        freq = frequency_map.get("GST", "quarterly")
         if freq == "monthly":
             next_month = pd.Timestamp(period_end) + pd.DateOffset(months=1)
             due = datetime(next_month.year, next_month.month, 21)
             return _next_business_day_if_weekend(due), "GST monthly: 21st next month"
-        else:
-            due = period_end + pd.Timedelta(days=28)
-            return _next_business_day_if_weekend(due), "GST quarterly: 28 days after quarter end"
+        qe = _ato_quarter_end(accrual)
+        due = _ato_bas_due(qe)
+        return _next_business_day_if_weekend(due), f"GST quarterly: ATO calendar {due.strftime('%d %b %Y')}"
 
     if liability_type == "SUPER":
-        due = period_end + pd.Timedelta(days=28)
-        return _next_business_day_if_weekend(due), "SG: 28 days after quarter end"
+        qe = _ato_quarter_end(accrual)
+        due = _ato_super_due(qe)
+        return _next_business_day_if_weekend(due), f"Super: ATO calendar {due.strftime('%d %b %Y')}"
 
     if liability_type == "PAYG":
         freq = frequency_map.get("PAYG", "monthly")
         if freq == "quarterly":
-            due = period_end + pd.Timedelta(days=28)
-            return _next_business_day_if_weekend(due), "PAYG quarterly: 28 days after quarter end"
+            qe = _ato_quarter_end(accrual)
+            due = _ato_bas_due(qe)
+            return _next_business_day_if_weekend(due), f"PAYG quarterly: ATO calendar {due.strftime('%d %b %Y')}"
         next_month = pd.Timestamp(period_end) + pd.DateOffset(months=1)
         due = datetime(next_month.year, next_month.month, payg_monthly_due_day)
         return _next_business_day_if_weekend(due), f"PAYG monthly: {payg_monthly_due_day}th next month"
@@ -1396,6 +1428,129 @@ def _fetch_balance_sheet_liabilities(as_of_date: datetime) -> dict | None:
         return None
     liab = bs.get("liabilities") or {}
     return liab if liab.get("accounts") else None
+
+
+def _fetch_outstanding_bills() -> list[dict]:
+    """Fetch unpaid supplier bills (accounts payable) from Xero with real invoice due dates.
+
+    Returns a list of dicts: {name, amount, due_date, due_month, overdue}
+    Only includes bills with AmountDue > 0 and status AUTHORISED or SUBMITTED.
+    """
+    try:
+        resp = _xero_get("Invoices", params={
+            "Type": "ACCPAY",
+            "Statuses": "AUTHORISED,SUBMITTED",
+            "where": "AmountDue>0",
+            "summaryOnly": "false",
+        })
+        if resp.status_code != 200:
+            return []
+        invoices = resp.json().get("Invoices") or []
+        today = datetime.now().date()
+        bills = []
+        for inv in invoices:
+            amount_due = float(inv.get("AmountDue") or 0)
+            if amount_due < 0.01:
+                continue
+            contact = (inv.get("Contact") or {}).get("Name") or "Unknown supplier"
+            due_raw = inv.get("DueDateString") or inv.get("DueDate") or ""
+            # Xero returns dates as "/Date(1234567890000+0000)/" or ISO strings
+            due_date = None
+            if due_raw.startswith("/Date("):
+                try:
+                    # Extract digits only — strip timezone offset and trailing )/
+                    import re as _re
+                    m = _re.search(r"/Date\((-?\d+)", due_raw)
+                    if m:
+                        due_date = datetime.utcfromtimestamp(int(m.group(1)) / 1000).date()
+                except Exception:
+                    pass
+            elif due_raw:
+                try:
+                    due_date = datetime.fromisoformat(due_raw[:10]).date()
+                except ValueError:
+                    pass
+            if due_date:
+                due_month = f"{due_date.year}-{due_date.month:02d}"
+                overdue = due_date < today
+            else:
+                due_month = f"{today.year}-{today.month:02d}"
+                overdue = False
+            bills.append({
+                "name": contact,
+                "amount": round(amount_due, 2),
+                "due_month": due_month,
+                "due_date": due_date.isoformat() if due_date else None,
+                "overdue": overdue,
+                "type": "payable",
+            })
+        # Sort by due date ascending
+        bills.sort(key=lambda b: b["due_date"] or "9999-12-31")
+        return bills
+    except Exception:
+        return []
+
+
+def _estimate_upcoming_accruals(
+    actuals_df: "pd.DataFrame",
+    today: datetime,
+    fy_start_month: int,
+    freq_map: dict,
+) -> list[dict]:
+    """Estimate GST, PAYG and Super obligations not yet on the Balance Sheet.
+
+    Uses the current month's actuals to project what will be owed at the next
+    lodgement date.  Flagged as indicative — not confirmed Balance Sheet values.
+    """
+    accruals = []
+    if actuals_df is None or actuals_df.empty:
+        return accruals
+
+    cur_month_start = datetime(today.year, today.month, 1)
+    cur_month_end = (pd.Timestamp(cur_month_start) + pd.DateOffset(months=1) - pd.Timedelta(days=1)).to_pydatetime()
+
+    cur_mask = (
+        (actuals_df["JOURNAL_DATE"] >= cur_month_start) &
+        (actuals_df["JOURNAL_DATE"] <= cur_month_end)
+    )
+    cur_df = actuals_df[cur_mask]
+
+    # GST estimate: 10% of net revenue this month
+    rev_mask = cur_df["ACCOUNT_TYPE"].isin(["REVENUE", "SALES", "OTHERINCOME"]) if "ACCOUNT_TYPE" in cur_df.columns else pd.Series(False, index=cur_df.index)
+    revenue_this_month = abs(float(pd.to_numeric(cur_df.loc[rev_mask, "NET_AMOUNT"], errors="coerce").fillna(0).sum()))
+    if revenue_this_month > 1.0:
+        gst_estimate = round(revenue_this_month * 0.10, 2)
+        qe = _ato_quarter_end(today)
+        due = _ato_bas_due(qe)
+        due = _next_business_day_if_weekend(due)
+        accruals.append({
+            "name": "GST (estimated)",
+            "amount": gst_estimate,
+            "month": f"{due.year}-{due.month:02d}",
+            "due_date": due.strftime("%Y-%m-%d"),
+            "type": "gst_accrual",
+            "indicative": True,
+        })
+
+    # PAYG estimate: ~28% of wages this month (average withholding rate)
+    wages_mask = cur_df["ACCOUNT_TYPE"].isin(["DIRECTCOSTS", "EXPENSE", "OVERHEADS"]) if "ACCOUNT_TYPE" in cur_df.columns else pd.Series(False, index=cur_df.index)
+    wages_name_mask = cur_df["ACCOUNT_NAME"].str.lower().str.contains("wage|salary|payroll", na=False) if "ACCOUNT_NAME" in cur_df.columns else pd.Series(False, index=cur_df.index)
+    wages_this_month = abs(float(pd.to_numeric(cur_df.loc[wages_mask & wages_name_mask, "NET_AMOUNT"], errors="coerce").fillna(0).sum()))
+    if wages_this_month > 1.0:
+        super_estimate = round(wages_this_month * 0.11, 2)
+        qe = _ato_quarter_end(today)
+        due = _ato_super_due(qe)
+        due = _next_business_day_if_weekend(due)
+        accruals.append({
+            "name": "Super (estimated)",
+            "amount": super_estimate,
+            "month": f"{due.year}-{due.month:02d}",
+            "due_date": due.strftime("%Y-%m-%d"),
+            "type": "super_accrual",
+            "indicative": True,
+        })
+
+    return accruals
 
 
 def _build_sales_series(
@@ -1862,6 +2017,12 @@ def build_overview_payload(
                     "type": "other",
                 })
 
+    # Accounts payable — real supplier invoices with actual due dates
+    accounts_payable = _fetch_outstanding_bills()
+
+    # Upcoming accruals — GST/Super estimates not yet on Balance Sheet
+    upcoming_accruals = _estimate_upcoming_accruals(actuals, today, fy_start_month, _liab_freq_map)
+
     profit_fy = {
         "labels": sales_series["labels"],
         "actual_monthly_profit": [round(v, 2) for v in actual_profit],
@@ -1925,6 +2086,8 @@ def build_overview_payload(
             "spending_this_month": round(float(month_exp), 2) if month_exp is not None else None,
             "current_liabilities": round(float(current_liabilities), 2) if current_liabilities is not None else None,
             "liability_schedule": liability_schedule,
+            "accounts_payable": accounts_payable,
+            "upcoming_accruals": upcoming_accruals,
             "warnings": warnings,
         },
         "charts": {
@@ -2040,7 +2203,8 @@ def build_liabilities_payload(
             accrual_period_end = period_end
 
         ltype = _liability_type(code, name)
-        expected_due, basis_rule = _expected_due_date(ltype, accrual_period_end, freq_map)
+        last_accrual_dt_debug = last_accrual_ts.to_pydatetime() if pd.notna(last_accrual_ts) and hasattr(last_accrual_ts, "to_pydatetime") else (last_accrual_ts if pd.notna(last_accrual_ts) else None)
+        expected_due, basis_rule = _expected_due_date(ltype, accrual_period_end, freq_map, last_accrual_dt=last_accrual_dt_debug)
         days_to_due = (expected_due.date() - today.date()).days if expected_due else None
 
         if credit_balance > 0:
