@@ -732,34 +732,40 @@
       gap: 8px;
       margin-bottom: 18px;
     }
-    /* ── Cash Timeline layout ── */
+    /* ═══════════════════════════════
+       CASH TIMELINE — design system
+       3 text levels: 28px / 15px / 12px
+       Color: meaning only (pink=neg, blue=pos, slate=neutral)
+       ═══════════════════════════════ */
+
+    /* ── Summary KPI bar ── */
     .ct-summary-bar {
       display: flex;
       gap: 0;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      overflow: hidden;
-      margin-bottom: 16px;
-      background: #fff;
+      margin-bottom: 20px;
     }
     .ct-summary-item {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 5px;
-      padding: 16px 22px;
-      border-right: 1px solid #e2e8f0;
+      gap: 6px;
+      padding: 20px 24px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-right: none;
     }
-    .ct-summary-item:last-child { border-right: none; }
+    .ct-summary-item:first-child { border-radius: 12px 0 0 12px; }
+    .ct-summary-item:last-child  { border-right: 1px solid #e2e8f0; border-radius: 0 12px 12px 0; }
     .ct-summary-label {
-      font-size: 10px;
-      font-weight: 700;
+      font-size: 11px;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: #94a3b8;
+      color: #b0bac9;
     }
-    .ct-summary-value { font-size: 22px; font-weight: 800; }
-    /* ── Page cards ── */
+    .ct-summary-value { font-size: 28px; font-weight: 800; line-height: 1; }
+
+    /* ── Page section cards ── */
     .ct-page-card {
       background: #fff;
       border: 1px solid #e2e8f0;
@@ -771,189 +777,101 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 16px 22px;
+      padding: 14px 22px;
       border-bottom: 1px solid #f1f5f9;
-      background: #f8fafc;
     }
     .ct-page-card-title {
-      font-size: 13px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #475569;
-    }
-    /* ── Accordion ── */
-    .ct-accordion { border-top: 1px solid #f1f5f9; }
-    .ct-accordion:first-of-type { border-top: none; }
-    .ct-accordion-trigger {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 22px;
-      background: none;
-      border: none;
-      cursor: pointer;
-      text-align: left;
-      transition: background 0.15s;
-    }
-    .ct-accordion-trigger:hover { background: #f8fafc; }
-    .ct-acc-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: #1e293b;
-    }
-    .ct-acc-right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .ct-chevron {
-      width: 16px;
-      height: 16px;
-      color: #94a3b8;
-      transition: transform 0.2s ease;
-      flex-shrink: 0;
-    }
-    .ct-accordion-content { border-top: 1px solid #f1f5f9; }
-    /* ── Obligations table ── */
-    .ct-obligations-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
-    }
-    .ct-obligations-table thead th {
-      padding: 8px 22px;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #94a3b8;
-      text-align: left;
-      background: #fafafa;
-      border-bottom: 1px solid #f1f5f9;
-    }
-    .ct-obligations-table thead th:last-child { text-align: right; }
-    .ct-liab-view-row td { padding: 10px 22px; border-top: 1px solid #f8fafc; }
-    .ct-liab-view-name { font-weight: 600; color: #374151; }
-    .ct-liab-view-month { color: #94a3b8; font-size: 13px; }
-    .ct-liab-view-amt { text-align: right; font-weight: 700; }
-    .ct-ap-group-row td {
-      padding: 7px 22px 4px;
       font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #64748b;
-      background: #f8fafc;
-      border-top: 1px solid #f1f5f9;
+      letter-spacing: 0.08em;
+      color: #b0bac9;
     }
-    .ct-ap-group-row td:last-child { text-align: right; }
-    /* ── Tags ── */
-    .ct-overdue-tag {
-      font-size: 9px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: #ec4899;
-      background: #fdf2f8;
-      border-radius: 3px;
-      padding: 1px 5px;
-      margin-left: 5px;
-      vertical-align: middle;
-    }
-    .ct-indicative-tag {
-      font-size: 9px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: #94a3b8;
-      background: #f1f5f9;
-      border-radius: 3px;
-      padding: 1px 5px;
-      margin-left: 4px;
-      vertical-align: middle;
-    }
-    .ct-liab-indicative td { opacity: 0.75; }
-    .ct-neg-amt-muted { color: #94a3b8; font-weight: 600; text-align: right; }
-    /* ── Headline ── */
-    .ct-headline { font-size: 13px; font-weight: 700; }
-    .ct-headline-pos { color: #2563eb; }
-    .ct-headline-neg { color: #ec4899; }
-    /* ── Budget net row ── */
-    .ct-budget-net-row td {
-      padding-top: 4px !important;
-      border-top: 1px solid #f1f5f9;
-      font-weight: 700 !important;
-    }
+
+    /* ── Cash projection table ── */
     .cash-timeline-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 17px;
+      font-size: 15px;
     }
+
     /* Starting balance row */
     .ct-start-row td {
-      padding: 10px 16px;
-      border-bottom: 1px solid #e2e8f0;
-      font-size: 15px;
+      padding: 14px 22px;
+      font-size: 13px;
+      font-weight: 500;
       color: #94a3b8;
-      font-weight: 600;
+      border-bottom: 1px solid #f1f5f9;
     }
     .ct-start-row td:last-child { text-align: right; }
-    /* Month header row */
+
+    /* Month header — strongest element in projection */
     .ct-month-row td {
-      padding: 13px 16px;
+      padding: 18px 22px 14px;
       font-size: 17px;
       font-weight: 800;
-      color: #0d1b4b;
-      background: #f8fafc;
-      border-top: 1px solid #e2e8f0;
-      border-bottom: none;
+      color: #0f172a;
+      background: #fff;
+      border-top: 2px solid #e2e8f0;
     }
     .ct-month-row td:last-child { text-align: right; }
     .ct-group-neg .ct-month-row td,
-    .ct-group-first-neg .ct-month-row td { background: #fff0f6; }
+    .ct-group-first-neg .ct-month-row td { background: #fff8fb; border-top-color: #fce7f3; }
     .ct-group-neg .ct-month-row td:first-child,
     .ct-group-first-neg .ct-month-row td:first-child { color: #ec4899; }
-    /* Section label rows inside a month group */
+
+    /* Section labels — "Obligations due" / "Forecast" */
     .ct-section-label td {
-      padding: 8px 16px 2px 16px;
+      padding: 10px 22px 2px;
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #94a3b8;
-      border-bottom: none;
+      letter-spacing: 0.08em;
+      color: #b0bac9;
     }
     .ct-section-label.ct-section-budget td {
-      padding-top: 10px;
+      padding-top: 12px;
       border-top: 1px solid #f1f5f9;
     }
-    /* Liability detail rows */
+
+    /* Detail rows — light, indented */
     .ct-detail-row.ct-liab-row td {
-      padding: 4px 16px 4px 20px;
-      border-bottom: none;
-      font-size: 15px;
-      font-weight: 500;
-      color: #374151;
+      padding: 3px 22px 3px 30px;
+      font-size: 13px;
+      font-weight: 400;
+      color: #64748b;
     }
-    .ct-detail-row.ct-liab-row td:last-child { text-align: right; padding-right: 16px; }
-    /* Budget net row */
+    .ct-detail-row.ct-liab-row td:last-child { text-align: right; padding-right: 22px; }
+
     .ct-detail-row.ct-budget-row td {
-      padding: 4px 16px 10px 20px;
-      font-size: 15px;
-      font-weight: 600;
-      color: #374151;
-      border-bottom: none;
+      padding: 3px 22px 3px 30px;
+      font-size: 13px;
+      font-weight: 400;
+      color: #64748b;
     }
-    .ct-detail-row.ct-budget-row td:last-child { text-align: right; padding-right: 16px; }
-    /* Group separator */
-    .ct-group-sep td { padding: 0; border: none; }
-    /* Balance */
+    .ct-detail-row.ct-budget-row td:last-child { text-align: right; padding-right: 22px; }
+
+    /* Net row — bold, stands out from siblings */
+    .ct-budget-net-row td {
+      padding-top: 8px !important;
+      padding-bottom: 12px !important;
+      border-top: 1px solid #f1f5f9;
+      font-size: 14px !important;
+      font-weight: 700 !important;
+      color: #1e293b !important;
+    }
+
+    /* Group separator — breathing room between months */
+    .ct-group-sep td { padding: 4px 0; border: none; background: #f8fafc; }
+
+    /* Balance amounts */
     .ct-bal { font-weight: 800; }
-    .ct-bal-pos { color: #1e2a78 !important; }
+    .ct-bal-pos { color: #1e40af !important; }
     .ct-bal-neg { color: #ec4899 !important; }
-    /* Amount colours */
-    .ct-pos-amt { color: #1e2a78 !important; font-weight: 600; }
-    .ct-neg-amt { color: #ec4899 !important; font-weight: 600; }
+    .ct-pos-amt { color: #1e40af !important; font-weight: 500; }
+    .ct-neg-amt { color: #ec4899 !important; font-weight: 500; }
+    .ct-neg-amt-muted { color: #94a3b8; font-weight: 500; text-align: right; }
+
     /* Shortfall badge */
     .ct-badge-neg {
       display: inline-block;
@@ -964,9 +882,87 @@
       color: #ec4899;
       font-size: 11px;
       font-weight: 700;
-      letter-spacing: 0.02em;
       vertical-align: middle;
     }
+
+    /* Headline */
+    .ct-headline { font-size: 13px; font-weight: 600; }
+    .ct-headline-pos { color: #2563eb; }
+    .ct-headline-neg { color: #ec4899; }
+
+    /* ── Accordion (Obligations) ── */
+    .ct-accordion { border-top: 1px solid #f1f5f9; }
+    .ct-accordion:first-of-type { border-top: none; }
+    .ct-accordion-trigger {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 22px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.12s;
+    }
+    .ct-accordion-trigger:hover { background: #f8fafc; }
+    .ct-acc-title { font-size: 15px; font-weight: 600; color: #1e293b; }
+    .ct-acc-right { display: flex; align-items: center; gap: 10px; }
+    .ct-chevron {
+      width: 16px; height: 16px;
+      color: #b0bac9;
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+    }
+    .ct-accordion-content { border-top: 1px solid #f1f5f9; }
+
+    /* ── Obligations table ── */
+    .ct-obligations-table { width: 100%; border-collapse: collapse; }
+    .ct-obligations-table thead th {
+      padding: 8px 22px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #b0bac9;
+      text-align: left;
+      background: #fafafa;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .ct-obligations-table thead th:last-child { text-align: right; }
+
+    /* Line item rows */
+    .ct-liab-view-row td { padding: 9px 22px; border-top: 1px solid #fafafa; }
+    .ct-liab-view-name { font-size: 13px; font-weight: 500; color: #475569; }
+    .ct-liab-view-month { font-size: 12px; color: #b0bac9; }
+    .ct-liab-view-amt { text-align: right; font-size: 13px; font-weight: 600; }
+
+    /* Month group headers inside AP section */
+    .ct-ap-group-row td {
+      padding: 8px 22px 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #94a3b8;
+      background: #f8fafc;
+      border-top: 1px solid #f1f5f9;
+    }
+    .ct-ap-group-row td:last-child { text-align: right; }
+
+    /* Indicative / projected rows */
+    .ct-liab-indicative td { opacity: 0.65; }
+    .ct-indicative-tag, .ct-overdue-tag {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-radius: 3px;
+      padding: 1px 5px;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
+    .ct-indicative-tag { color: #94a3b8; background: #f1f5f9; }
+    .ct-overdue-tag    { color: #ec4899; background: #fdf2f8; }
     .rebuilt-kpi-trend-hint {
       font-size: 9px;
       font-weight: 600;
@@ -974,6 +970,33 @@
       letter-spacing: 0.02em;
       cursor: pointer;
     }
+    .oc-card { cursor: pointer; }
+    .oc-breakdown {
+      margin-top: 12px;
+      border-top: 1px solid #f1f5f9;
+      padding-top: 10px;
+    }
+    .oc-section-label {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #94a3b8;
+      padding: 6px 0 2px;
+    }
+    .oc-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 0;
+    }
+    .oc-label { font-size: 12px; color: #64748b; font-weight: 500; }
+    .oc-val { font-size: 12px; font-weight: 700; }
+    .oc-pos { color: #2563eb; }
+    .oc-neg { color: #ec4899; }
+    .oc-divider { height: 1px; background: #f1f5f9; margin: 6px 0; }
+    .oc-total-row .oc-label { font-weight: 700; color: #1e293b; font-size: 13px; }
+    .oc-total-row .oc-val { font-size: 13px; }
     .rebuilt-chart-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2325,17 +2348,27 @@
             <button id="dashboardBalanceAdjustToggle" class="rebuilt-kpi-adjust-btn" type="button" aria-label="Edit current balance">Edit</button>
           </div>
         </div>
-        <div class="rebuilt-kpi-card">
+        <div class="rebuilt-kpi-card oc-card">
           <div class="rebuilt-kpi-head">
             <span id="dashboardThirdKpiLabel">Out of Cash</span>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
-              <span id="dashboardBurnNote" class="rebuilt-kpi-trend">--</span>
-              <span id="dashboardBurnNoteHint" class="rebuilt-kpi-trend-hint" style="display:none;">tap for details</span>
-            </div>
+            <span id="dashboardBurnNote" class="rebuilt-kpi-trend">--</span>
           </div>
-          <div class="rebuilt-kpi-body">
+          <div class="rebuilt-kpi-body" style="display:block;">
             <div id="dashboardRunwayValue" class="rebuilt-kpi-value">--</div>
             <div id="dashboardRunwayBalance" class="rebuilt-kpi-adjust-source" style="margin-top:4px;"></div>
+          </div>
+          <div id="dashboardOcBreakdown" class="oc-breakdown" style="display:none;">
+            <div class="oc-row"><span class="oc-label">Current balance</span><span id="ocBalance" class="oc-val">--</span></div>
+            <div class="oc-divider"></div>
+            <div class="oc-section-label">Projected to FY end</div>
+            <div class="oc-row"><span class="oc-label">Revenue</span><span id="ocRevenue" class="oc-val oc-pos">--</span></div>
+            <div class="oc-row"><span class="oc-label">Expenses</span><span id="ocExpenses" class="oc-val oc-neg">--</span></div>
+            <div class="oc-divider"></div>
+            <div class="oc-section-label">Obligations</div>
+            <div class="oc-row"><span class="oc-label">Tax</span><span id="ocTax" class="oc-val oc-neg">--</span></div>
+            <div class="oc-row"><span class="oc-label">Accounts payable</span><span id="ocPayable" class="oc-val oc-neg">--</span></div>
+            <div class="oc-divider"></div>
+            <div class="oc-row oc-total-row"><span class="oc-label">Net to FY end</span><span id="ocNet" class="oc-val">--</span></div>
           </div>
         </div>
       </div>

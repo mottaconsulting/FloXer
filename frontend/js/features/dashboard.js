@@ -341,12 +341,38 @@ function renderOverview(data) {
         burnNote.textContent = "No budget data";
         burnNote.classList.add("flat");
       } else {
-        const committedAmt = Number(currentLiabilities) || 0;
-        const currentBal = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance : 0;
-        const combinedNet = currentBal + fyNet - committedAmt;
+        const currentBal   = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance : 0;
+        const taxTotal     = (data?.kpis?.liability_schedule || []).reduce((s, l) => s + Number(l.amount || 0), 0);
+        const payableTotal = (data?.kpis?.accounts_payable   || []).reduce((s, l) => s + Number(l.amount || 0), 0);
+        const totalOblig   = taxTotal + payableTotal;
+        const combinedNet  = currentBal + fyNet - totalOblig;
+
+        // Populate breakdown
+        const ocBreakdown = document.getElementById("dashboardOcBreakdown");
+        if (ocBreakdown) {
+          const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+          set("ocBalance",  fmtCurrency(currentBal));
+          set("ocRevenue",  `+${fmtCurrency(fyRevenue)}`);
+          set("ocExpenses", `-${fmtCurrency(fyExpense)}`);
+          set("ocTax",      taxTotal     > 0 ? `-${fmtCurrency(taxTotal)}`     : "—");
+          set("ocPayable",  payableTotal > 0 ? `-${fmtCurrency(payableTotal)}` : "—");
+          const ocNetEl = document.getElementById("ocNet");
+          if (ocNetEl) {
+            ocNetEl.textContent = combinedNet >= 0 ? `+${fmtCurrency(combinedNet)}` : `-${fmtCurrency(Math.abs(combinedNet))}`;
+            ocNetEl.className = `oc-val ${combinedNet >= 0 ? "oc-pos" : "oc-neg"}`;
+          }
+          const ocCard = ocBreakdown.closest(".oc-card");
+          if (ocCard && !ocCard.dataset.ocBound) {
+            ocCard.dataset.ocBound = "1";
+            ocCard.addEventListener("click", () => {
+              ocBreakdown.style.display = ocBreakdown.style.display === "none" ? "" : "none";
+            });
+          }
+        }
+
         if (combinedNet >= 0) {
           burnNote.textContent = `Projected net +${fmtCurrency(combinedNet)} to FY end`;
-          burnNote.style.color = "#3b82f6";
+          burnNote.style.color = "#2563eb";
         } else {
           burnNote.textContent = `Projected net -${fmtCurrency(Math.abs(combinedNet))} to FY end`;
           burnNote.style.color = "#ec4899";
