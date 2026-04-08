@@ -1491,8 +1491,52 @@ def _fetch_outstanding_bills() -> list[dict]:
         return []
 
 
+def _payg_withholding_rate(all_lines: "pd.DataFrame", lookback_months: int = 6) -> float | None:
+    """Estimate PAYG withholding rate from historical journal lines.
+
+    Returns ratio of PAYG accrued / wages paid over the last N months,
+    or None if insufficient history (< 2 months with both values).
+    """
+    if all_lines is None or all_lines.empty:
+        return None
+    required = {"ACCOUNT_TYPE", "ACCOUNT_NAME", "NET_AMOUNT", "JOURNAL_DATE"}
+    if not required.issubset(all_lines.columns):
+        return None
+
+    cutoff = pd.Timestamp(datetime.now()) - pd.DateOffset(months=lookback_months)
+    recent = all_lines[all_lines["JOURNAL_DATE"] >= cutoff].copy()
+    recent["_month"] = recent["JOURNAL_DATE"].dt.to_period("M")
+
+    # PAYG accruals: credits to PAYG liability (NET_AMOUNT < 0 on CURRLIAB PAYG account)
+    payg_mask = recent["ACCOUNT_TYPE"].eq("CURRLIAB") & recent["ACCOUNT_NAME"].str.lower().str.contains("payg|withholding", na=False)
+    payg_monthly = (
+        pd.to_numeric(recent.loc[payg_mask, "NET_AMOUNT"], errors="coerce")
+        .fillna(0).clip(upper=0).abs()
+        .groupby(recent.loc[payg_mask, "_month"]).sum()
+    )
+
+    # Wages: debits to wages/salary expense accounts (NET_AMOUNT > 0 on expense accounts)
+    wages_mask = (
+        recent["ACCOUNT_TYPE"].isin(["EXPENSE", "DIRECTCOSTS", "OVERHEADS"]) &
+        recent["ACCOUNT_NAME"].str.lower().str.contains("wage|salary|payroll", na=False)
+    )
+    wages_monthly = (
+        pd.to_numeric(recent.loc[wages_mask, "NET_AMOUNT"], errors="coerce")
+        .fillna(0).clip(lower=0)
+        .groupby(recent.loc[wages_mask, "_month"]).sum()
+    )
+
+    common = payg_monthly.index.intersection(wages_monthly.index)
+    if len(common) < 2:
+        return None
+
+    rates = (payg_monthly[common] / wages_monthly[common]).replace([float("inf"), float("nan")], None).dropna()
+    return float(rates.mean()) if len(rates) >= 2 else None
+
+
 def _estimate_upcoming_accruals(
     actuals_df: "pd.DataFrame",
+    all_lines: "pd.DataFrame",
     today: datetime,
     fy_start_month: int,
     freq_map: dict,
@@ -1537,6 +1581,26 @@ def _estimate_upcoming_accruals(
     wages_name_mask = cur_df["ACCOUNT_NAME"].str.lower().str.contains("wage|salary|payroll", na=False) if "ACCOUNT_NAME" in cur_df.columns else pd.Series(False, index=cur_df.index)
     wages_this_month = abs(float(pd.to_numeric(cur_df.loc[wages_mask & wages_name_mask, "NET_AMOUNT"], errors="coerce").fillna(0).sum()))
     if wages_this_month > 1.0:
+        # PAYG estimate using historical withholding rate from this business's own data
+        payg_rate = _payg_withholding_rate(all_lines)
+        if payg_rate is not None and payg_rate > 0:
+            payg_estimate = round(wages_this_month * payg_rate, 2)
+            freq = freq_map.get("PAYG", "monthly")
+            if freq == "quarterly":
+                qe = _ato_quarter_end(today)
+                payg_due = _next_business_day_if_weekend(_ato_bas_due(qe))
+            else:
+                nm = pd.Timestamp(today) + pd.DateOffset(months=1)
+                payg_due = _next_business_day_if_weekend(datetime(nm.year, nm.month, 21))
+            accruals.append({
+                "name": f"PAYG withholding (estimated ~{round(payg_rate * 100)}%)",
+                "amount": payg_estimate,
+                "month": f"{payg_due.year}-{payg_due.month:02d}",
+                "due_date": payg_due.strftime("%Y-%m-%d"),
+                "type": "payg_accrual",
+                "indicative": True,
+            })
+
         super_estimate = round(wages_this_month * 0.11, 2)
         qe = _ato_quarter_end(today)
         due = _ato_super_due(qe)
@@ -2021,7 +2085,7 @@ def build_overview_payload(
     accounts_payable = _fetch_outstanding_bills()
 
     # Upcoming accruals — GST/Super estimates not yet on Balance Sheet
-    upcoming_accruals = _estimate_upcoming_accruals(actuals, today, fy_start_month, _liab_freq_map)
+    upcoming_accruals = _estimate_upcoming_accruals(actuals, _liab_all, today, fy_start_month, _liab_freq_map)
 
     profit_fy = {
         "labels": sales_series["labels"],

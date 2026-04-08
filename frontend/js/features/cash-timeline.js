@@ -132,53 +132,80 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
     </tbody>`;
   });
 
-  // ── Obligations section ──
-  const taxObligations  = data?.kpis?.liability_schedule || [];
-  const accountsPayable = data?.kpis?.accounts_payable   || [];
+  // ── Obligations data ──
+  const taxObligations   = data?.kpis?.liability_schedule || [];
+  const accountsPayable  = data?.kpis?.accounts_payable   || [];
   const upcomingAccruals = data?.kpis?.upcoming_accruals  || [];
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const totalTax      = taxObligations.reduce((s, l)  => s + Number(l.amount || 0), 0);
   const totalPayable  = accountsPayable.reduce((s, l) => s + Number(l.amount || 0), 0);
   const totalAccruals = upcomingAccruals.reduce((s, l) => s + Number(l.amount || 0), 0);
   const grandTotal    = totalTax + totalPayable + totalAccruals;
 
-  function liabRow(l, indicative = false) {
+  // ── Helpers ──
+  function liabTableRow(l, indicative = false) {
     const monthLabel = l.due_month ? fmtTimelineMonth(l.due_month) : (l.month ? fmtTimelineMonth(l.month) : "—");
+    const overdue = l.due_date && l.due_date < todayStr;
     return `<tr class="ct-liab-view-row${indicative ? " ct-liab-indicative" : ""}">
-      <td class="ct-liab-view-name">${l.name}${indicative ? ' <span class="ct-indicative-tag">est.</span>' : ""}</td>
+      <td class="ct-liab-view-name">${l.name}${indicative ? ' <span class="ct-indicative-tag">est.</span>' : ""}${overdue ? ' <span class="ct-overdue-tag">overdue</span>' : ""}</td>
       <td class="ct-liab-view-month">${monthLabel}</td>
       <td class="ct-liab-view-amt ${indicative ? "ct-neg-amt-muted" : "ct-neg-amt"}">-${fmtCurrency(l.amount)}</td>
     </tr>`;
   }
 
-  function obligationSection(title, rows, total, indicative = false) {
-    if (!rows.length) return "";
+  function apRows() {
+    if (!accountsPayable.length) return "";
+    const overdue = accountsPayable.filter(l => l.due_date && l.due_date < todayStr);
+    const upcoming = accountsPayable.filter(l => !l.due_date || l.due_date >= todayStr);
+    // Group upcoming by month
+    const byMonth = {};
+    upcoming.forEach(l => {
+      const m = l.due_month || l.month || "unknown";
+      if (!byMonth[m]) byMonth[m] = [];
+      byMonth[m].push(l);
+    });
+    let html = "";
+    if (overdue.length) {
+      const total = overdue.reduce((s, l) => s + Number(l.amount || 0), 0);
+      html += `<tr class="ct-ap-group-row"><td colspan="2">Overdue (${overdue.length})</td><td class="ct-neg-amt">-${fmtCurrency(total)}</td></tr>`;
+      html += overdue.map(l => liabTableRow(l)).join("");
+    }
+    Object.keys(byMonth).sort().forEach(m => {
+      const grp = byMonth[m];
+      const total = grp.reduce((s, l) => s + Number(l.amount || 0), 0);
+      html += `<tr class="ct-ap-group-row"><td colspan="2">${fmtTimelineMonth(m)} (${grp.length})</td><td class="ct-neg-amt">-${fmtCurrency(total)}</td></tr>`;
+      html += grp.map(l => liabTableRow(l)).join("");
+    });
+    return html;
+  }
+
+  function accordion(id, title, total, bodyHtml, indicative = false) {
+    if (!total && !bodyHtml) return "";
+    const amtCls = indicative ? "ct-neg-amt-muted" : "ct-neg-amt";
+    const estBadge = indicative ? '<span class="ct-indicative-tag" style="margin-left:6px;">estimated</span>' : "";
     return `
-      <div class="ct-oblig-section">
-        <div class="ct-oblig-section-head">
-          <span class="ct-oblig-section-title">${title}</span>
-          <span class="${indicative ? "ct-neg-amt-muted" : "ct-neg-amt"}" style="font-size:13px;font-weight:700;">-${fmtCurrency(total)}</span>
+      <div class="ct-accordion" id="ct-acc-${id}">
+        <button class="ct-accordion-trigger" onclick="ctAccToggle('ct-acc-${id}')">
+          <span class="ct-acc-title">${title}${estBadge}</span>
+          <span class="ct-acc-right">
+            <span class="${amtCls}">-${fmtCurrency(total)}</span>
+            <svg class="ct-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+          </span>
+        </button>
+        <div class="ct-accordion-content" style="display:none;">
+          <table class="ct-obligations-table">
+            <thead><tr><th>Name</th><th>Due</th><th>Amount</th></tr></thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>
         </div>
-        <table class="ct-obligations-table">
-          <thead><tr><th>Name</th><th>Due</th><th>Amount</th></tr></thead>
-          <tbody>${rows.map(l => liabRow(l, indicative)).join("")}</tbody>
-        </table>
       </div>`;
   }
 
-  const obligationsHtml = grandTotal < 0.01 ? "" : `
-    <div class="ct-obligations-section">
-      <div class="ct-obligations-header">
-        <span class="ct-obligations-title">Committed obligations</span>
-        <span class="ct-neg-amt" style="font-size:15px;font-weight:800;">-${fmtCurrency(grandTotal)} total</span>
-      </div>
-      ${obligationSection("Tax obligations", taxObligations, totalTax)}
-      ${obligationSection("Accounts payable", accountsPayable, totalPayable)}
-      ${obligationSection("Upcoming accruals", upcomingAccruals, totalAccruals, true)}
-    </div>`;
-
+  // ── Summary bar ──
   const summaryItems = [
     { label: "Current balance", value: fmtCurrency(grossBalance), cls: Number(grossBalance) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
+    { label: "Total obligations", value: grandTotal > 0 ? `-${fmtCurrency(grandTotal)}` : "—", cls: grandTotal > 0 ? "ct-bal-neg" : "ct-bal-pos" },
     { label: "Lowest point", value: minRow ? fmtCurrency(minRow.runningBalance) : "--", cls: minRow && minRow.runningBalance < 0 ? "ct-bal-neg" : "ct-bal-pos" },
     { label: hasNegative ? "First shortfall" : "FY end balance", value: hasNegative ? fmtTimelineMonth(rows[firstNegativeIdx].month) : fmtCurrency(rows[rows.length - 1].runningBalance), cls: hasNegative ? "ct-bal-neg" : "ct-bal-pos" },
   ];
@@ -192,14 +219,39 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
           <span class="ct-summary-value ${s.cls}">${s.value}</span>
         </div>`).join("")}
     </div>
-    ${obligationsHtml}
-    <div class="ct-headline-row">${headlineHtml}</div>
-    <div style="overflow-x:auto">
-      <table class="cash-timeline-table">
-        ${tbodyHtml}
-      </table>
-    </div>`;
+
+    <div class="ct-page-card">
+      <div class="ct-page-card-header">
+        <span class="ct-page-card-title">Cash Projection</span>
+        ${headlineHtml}
+      </div>
+      <div style="overflow-x:auto">
+        <table class="cash-timeline-table">${tbodyHtml}</table>
+      </div>
+    </div>
+
+    ${grandTotal > 0 ? `
+    <div class="ct-page-card ct-page-card-obligations">
+      <div class="ct-page-card-header">
+        <span class="ct-page-card-title">Committed Obligations</span>
+        <span class="ct-neg-amt" style="font-size:16px;font-weight:800;">-${fmtCurrency(grandTotal)}</span>
+      </div>
+      ${accordion("tax", "Tax obligations", totalTax, taxObligations.map(l => liabTableRow(l)).join(""))}
+      ${accordion("ap", "Accounts payable", totalPayable, apRows())}
+      ${accordion("accruals", "Upcoming accruals", totalAccruals, upcomingAccruals.map(l => liabTableRow(l, true)).join(""), true)}
+    </div>` : ""}`;
 }
+
+function ctAccToggle(id) {
+  const acc = document.getElementById(id);
+  if (!acc) return;
+  const content = acc.querySelector(".ct-accordion-content");
+  const chevron = acc.querySelector(".ct-chevron");
+  const open = content.style.display !== "none";
+  content.style.display = open ? "none" : "";
+  chevron.style.transform = open ? "" : "rotate(180deg)";
+}
+window.ctAccToggle = ctAccToggle;
 
 async function showCashTimeline() {
   if (typeof hideAllViews === "function") hideAllViews();
