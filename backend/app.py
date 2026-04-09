@@ -1621,6 +1621,56 @@ def _build_out_of_cash_summary(projection_rows: list[dict], as_of_date: datetime
     }
 
 
+def _dedupe_future_forecast_obligations(items: list[dict]) -> list[dict]:
+    """Deduplicate forecast obligations by liability type and ATO due month.
+
+    We keep one forecast item per (type, month). When both an indicative accrual
+    estimate and a projected installment land in the same due month, prefer the
+    projected installment because it already follows the ATO due-date calendar.
+    """
+    chosen: dict[tuple[str, str], dict] = {}
+
+    for item in items or []:
+        month = str(item.get("month") or item.get("due_month") or "")
+        ltype = str(item.get("type") or "").upper()
+        if not month or not ltype:
+            continue
+
+        key = (ltype, month)
+        existing = chosen.get(key)
+        if existing is None:
+            chosen[key] = item
+            continue
+
+        existing_projected = bool(existing.get("projected"))
+        current_projected = bool(item.get("projected"))
+        existing_indicative = bool(existing.get("indicative"))
+        current_indicative = bool(item.get("indicative"))
+
+        if current_projected and not existing_projected:
+            chosen[key] = item
+            continue
+        if existing_projected and not current_projected:
+            continue
+        if existing_indicative and not current_indicative:
+            chosen[key] = item
+            continue
+        if current_indicative and not existing_indicative:
+            continue
+
+        if float(item.get("amount") or 0) > float(existing.get("amount") or 0):
+            chosen[key] = item
+
+    return sorted(
+        chosen.values(),
+        key=lambda item: (
+            str(item.get("month") or item.get("due_month") or "9999-12"),
+            str(item.get("due_date") or "9999-12-31"),
+            str(item.get("name") or ""),
+        ),
+    )
+
+
 def _payg_withholding_rate(all_lines: "pd.DataFrame", lookback_months: int = 6) -> float | None:
     """Estimate PAYG withholding rate from historical journal lines.
 
@@ -2338,7 +2388,7 @@ def build_overview_payload(
         ),
     )
     future_known_obligations = [item for item in future_obligation_schedule if not bool(item.get("projected"))]
-    future_forecast_obligations = [
+    future_forecast_obligations = _dedupe_future_forecast_obligations([
         *[item for item in future_obligation_schedule if bool(item.get("projected"))],
         *[
             {
@@ -2347,7 +2397,7 @@ def build_overview_payload(
             }
             for item in upcoming_accruals
         ],
-    ]
+    ])
     projection_rows = _build_cash_projection_rows(
         labels=sales_series["labels"],
         current_month_key=current_month_key,

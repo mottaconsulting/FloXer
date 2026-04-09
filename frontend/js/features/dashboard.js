@@ -337,7 +337,6 @@ function renderOverview(data) {
         burnNote.textContent = "No budget data";
         burnNote.classList.add("flat");
       } else {
-        const currentBal   = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance : 0;
         const futureKnown = data?.obligations?.future_known || [];
         const futureForecast = data?.obligations?.future_forecast || [];
         const futureOblig  = [...futureKnown, ...futureForecast].reduce((s, l) => s + Number(l.amount || 0), 0);
@@ -353,7 +352,12 @@ function renderOverview(data) {
         const ocBreakdown = document.getElementById("dashboardOcBreakdown");
         if (ocBreakdown) {
           const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-          set("ocBalance",  fmtCurrency(currentBal));
+          const balanceEl = document.getElementById("ocBalance");
+          if (balanceEl) {
+            balanceEl.textContent = fmtCurrency(freeBalance);
+            const labelEl = balanceEl.previousElementSibling;
+            if (labelEl) labelEl.textContent = "Free cash starting point";
+          }
           set("ocRevenue",  `+${fmtCurrency(fyRevenue)}`);
           set("ocExpenses", `-${fmtCurrency(fyExpense)}`);
           set("ocTax",      taxTotal     > 0 ? `-${fmtCurrency(taxTotal)}`     : "—");
