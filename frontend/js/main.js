@@ -13,58 +13,6 @@ function selectedOverviewToday() {
   return fyEndDateFromYear(endYear);
 }
 
-function applyBudgetUiState(data) {
-  setRawData(data);
-  const meta = document.getElementById("budgetMeta");
-  const backendBadge = document.getElementById("budgetBackendBadge");
-  const backend = String(data?.budget_backend || "--").toLowerCase();
-  const source = data?.source || "--";
-  if (meta) {
-    meta.innerText = backend === "supabase"
-      ? "Simple monthly budget saved to Supabase."
-      : `Simple monthly budget saved to ${source}.`;
-  }
-  if (backendBadge) {
-    backendBadge.textContent = backend === "supabase" ? "Supabase connected" : "Local budget";
-  }
-  renderBudgetRows(data?.rows || []);
-}
-
-// ---------- Data helpers ----------
-async function getJournals() {
-  if (JOURNAL_CACHE) return JOURNAL_CACHE;
-  const data = await XeroAPI.fetch_json("/api/journals");
-  JOURNAL_CACHE = data?.Journals || [];
-  return JOURNAL_CACHE;
-}
-
-function flattenJournalLines(journals) {
-  const rows = [];
-
-  for (const j of journals || []) {
-    const date = j.JournalDate || j.JournalDateString || j.Date || j.DateString;
-
-    const lines = j.JournalLines || j.JournalLineItems || j.Lines || [];
-    for (const line of lines) {
-      rows.push({
-        date,
-        journalId: j.JournalID ?? j.JournalId ?? "",
-        journalNumber: j.JournalNumber ?? "",
-        accountType: line.AccountType ?? line.accountType ?? "",
-        accountCode: line.AccountCode ?? line.accountCode ?? "",
-        accountName: line.AccountName ?? line.accountName ?? "",
-        description: line.Description ?? line.description ?? "",
-        net: Number(line.NetAmount ?? line.GrossAmount ?? line.Net ?? 0)
-      });
-    }
-  }
-  return rows.sort((a, b) => {
-    const aTime = XeroTables.parseXeroDate(a.date)?.getTime?.() || 0;
-    const bTime = XeroTables.parseXeroDate(b.date)?.getTime?.() || 0;
-    return bTime - aTime;
-  });
-}
-
 function monthKey(dateStr) {
   const d = XeroTables.parseXeroDate(dateStr);
   const y = d.getFullYear();
@@ -163,12 +111,10 @@ function renderOverviewCharts(data) {
   const cashflow = data?.charts?.cashflow;
 
   // Build liability-by-month lookup for projected expense adjustment
-  const liabilitySchedule = data?.obligations
-    ? [
-        ...(data.obligations.future_known || []),
-        ...(data.obligations.future_forecast || []),
-      ]
-    : (data?.kpis?.future_obligation_schedule || []);
+  const liabilitySchedule = [
+    ...(data?.obligations?.future_known || []),
+    ...(data?.obligations?.future_forecast || []),
+  ];
   const liabByMonth = {};
   for (const l of liabilitySchedule) {
     liabByMonth[l.month] = (liabByMonth[l.month] || 0) + Number(l.amount || 0);

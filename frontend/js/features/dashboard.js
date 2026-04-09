@@ -50,13 +50,13 @@ function bindBalanceAdjustEvents() {
 
     // Otherwise prompt for a new value
     const defaultValue = Number.isFinite(balanceKpi.balance) ? String(Math.round(balanceKpi.balance)) : "";
-    const raw = window.prompt("Edit Current Balance. Leave blank to cancel.", defaultValue);
+    const raw = window.prompt("Edit Bank Balance. Leave blank to cancel.", defaultValue);
     if (raw === null) return;
     const next = String(raw).trim();
     if (!next) return;
     const parsed = parseCurrencyInput(next);
     if (!Number.isFinite(parsed)) {
-      showError("Enter a valid number for Current Balance.");
+      showError("Enter a valid number for Bank Balance.");
       return;
     }
     setBalanceOverrideValue(data || {}, parsed);
@@ -104,7 +104,7 @@ function bindBurnNotePopover() {
         <div style="font-weight:700;color:#0d1b4b;margin-bottom:4px">Current cash position</div>
         <div style="display:grid;grid-template-columns:1fr auto;gap:2px 16px;color:#374151">
           <span>Free cash</span><span style="color:#3b82f6;font-weight:700">${fmtNum(freeBal)}</span>
-          <span>Committed</span><span style="color:#ec4899;font-weight:700">-${fmtNum(committed)}</span>
+          <span>Committed this month</span><span style="color:#ec4899;font-weight:700">-${fmtNum(committed)}</span>
         </div>
       </div>` : "";
     pop.innerHTML = `
@@ -113,7 +113,7 @@ function bindBurnNotePopover() {
       <div style="display:grid;grid-template-columns:1fr auto;gap:2px 16px;color:#374151">
         <span>Revenue</span><span style="color:#3b82f6;font-weight:700">+${fmtNum(rev)}</span>
         <span>Expenses</span><span style="color:#ec4899;font-weight:700">-${fmtNum(exp)}</span>
-        <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:700">Net</span>
+        <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:700">Projected closing cash</span>
         <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:800;color:${netCol}">${netSign}${fmtNum(net)}</span>
       </div>
       ${committedSection}`;
@@ -147,6 +147,7 @@ function renderBalanceAdjustState(balanceKpi, isPastFy) {
     sourceEl.textContent = "";
     sourceEl.style.color = "";
   }
+  sourceEl.classList.toggle("is-visible", Boolean(sourceEl.textContent));
   if (banner) banner.style.display = balanceKpi.hasManualOverride && !isPastFy ? "" : "none";
 }
 
@@ -165,7 +166,7 @@ function renderOverview(data) {
   const isPastFy = isPastFinancialYearSelection(data);
   const secondKpiLabel = document.getElementById("dashboardSecondKpiLabel");
   const thirdKpiLabel = document.getElementById("dashboardThirdKpiLabel");
-  if (secondKpiLabel) secondKpiLabel.textContent = isPastFy ? "Total Revenue" : "Current Balance";
+  if (secondKpiLabel) secondKpiLabel.textContent = isPastFy ? "Total Revenue" : "Bank Balance";
   if (thirdKpiLabel) thirdKpiLabel.textContent = isPastFy ? "Total Expenses" : "Out of Cash";
   const graphFyCash = document.getElementById("graphFyLabelCashflow");
   const graphFyRevenue = document.getElementById("graphFyLabelRevenue");
@@ -277,8 +278,8 @@ function renderOverview(data) {
         else runwayValue.classList.add("positive");
       }
     } else if (outOfCash.cash_positive_through_fy_end || firstNegIdx < 0) {
-      // Cash positive through FY end
-      runwayValue.textContent = "Cash positive through FY end";
+      // Projected free cash stays positive through FY end
+      runwayValue.textContent = "Positive through FY end";
       runwayValue.style.fontSize = "15px";
       runwayValue.classList.add("positive");
     } else {
@@ -291,10 +292,12 @@ function renderOverview(data) {
   }
   const runwayBalance = document.getElementById("dashboardRunwayBalance");
   if (runwayBalance && !isPastFy && Number.isFinite(balanceKpi.balance)) {
-    const balCol = balanceKpi.balance >= 0 ? "#1e2a78" : "#ec4899";
-    runwayBalance.innerHTML = `Current balance <strong style="color:${balCol}">${fmtCurrency(balanceKpi.balance)}</strong>`;
+    const startCol = freeBalance >= 0 ? "#1e2a78" : "#ec4899";
+    runwayBalance.innerHTML = `Free cash starting point <strong style="color:${startCol}">${fmtCurrency(freeBalance)}</strong>`;
+    runwayBalance.classList.add("is-visible");
   } else if (runwayBalance) {
     runwayBalance.textContent = "";
+    runwayBalance.classList.remove("is-visible");
   }
   const burnNote = document.getElementById("dashboardBurnNote");
   if (burnNote) {
@@ -363,6 +366,7 @@ function renderOverview(data) {
           set("ocTax",      taxTotal     > 0 ? `-${fmtCurrency(taxTotal)}`     : "—");
           set("ocPayable",  payableTotal > 0 ? `-${fmtCurrency(payableTotal)}` : "—");
           const ocNetEl = document.getElementById("ocNet");
+          const ocDisclosure = document.getElementById("dashboardOcDisclosure");
           if (ocNetEl) {
             ocNetEl.textContent = combinedNet >= 0 ? `+${fmtCurrency(combinedNet)}` : `-${fmtCurrency(Math.abs(combinedNet))}`;
             ocNetEl.className = `oc-val ${combinedNet >= 0 ? "oc-pos" : "oc-neg"}`;
@@ -371,16 +375,27 @@ function renderOverview(data) {
           if (ocCard && !ocCard.dataset.ocBound) {
             ocCard.dataset.ocBound = "1";
             ocCard.addEventListener("click", () => {
-              ocBreakdown.style.display = ocBreakdown.style.display === "none" ? "" : "none";
+              const nextOpen = ocBreakdown.style.display === "none";
+              ocBreakdown.style.display = nextOpen ? "" : "none";
+              ocCard.classList.toggle("is-open", nextOpen);
+              if (ocDisclosure) ocDisclosure.textContent = nextOpen ? "Hide cash bridge" : "View cash bridge";
             });
           }
+          if (ocCard) ocCard.classList.toggle("is-open", ocBreakdown.style.display !== "none");
+          if (ocDisclosure) ocDisclosure.textContent = ocBreakdown.style.display === "none" ? "View cash bridge" : "Hide cash bridge";
         }
 
-        if (combinedNet >= 0) {
-          burnNote.textContent = `Projected net +${fmtCurrency(combinedNet)} to FY end`;
+        if (combinedNet >= 0 && freeBalance <= 0) {
+          burnNote.textContent = `Free cash is negative now; projected closing cash +${fmtCurrency(combinedNet)} at FY end`;
           burnNote.style.color = "#2563eb";
+        } else if (combinedNet >= 0) {
+          burnNote.textContent = `Projected closing cash +${fmtCurrency(combinedNet)} at FY end`;
+          burnNote.style.color = "#2563eb";
+        } else if (freeBalance <= 0) {
+          burnNote.textContent = `Free cash is negative now; projected closing cash -${fmtCurrency(Math.abs(combinedNet))} at FY end`;
+          burnNote.style.color = "#ec4899";
         } else {
-          burnNote.textContent = `Projected net -${fmtCurrency(Math.abs(combinedNet))} to FY end`;
+          burnNote.textContent = `Projected closing cash -${fmtCurrency(Math.abs(combinedNet))} at FY end`;
           burnNote.style.color = "#ec4899";
         }
       }

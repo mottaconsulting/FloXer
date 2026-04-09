@@ -2475,8 +2475,6 @@ def build_overview_payload(
             "committed_this_month": committed_cash_today,
             "committed_tax_now": committed_tax_now,
             "committed_ap_now": committed_ap_now,
-            "committed_now_items": committed_tax_items + committed_ap_items,
-            "future_obligation_schedule": future_obligation_schedule,
             "cash_balance_live": (
                 round(float(live_cash_balance), 2) if live_cash_balance is not None else None
             ),
@@ -2497,12 +2495,6 @@ def build_overview_payload(
             "monthly_burn_basis": "bank_net_outflow_3m",
             "sales_this_month": round(float(month_rev), 2) if month_rev is not None else None,
             "spending_this_month": round(float(month_exp), 2) if month_exp is not None else None,
-            # Back-compat: this now means committed cash today, not all BS liabilities.
-            "current_liabilities": committed_cash_today,
-            "balance_sheet_current_liabilities": round(float(current_liabilities), 2) if current_liabilities is not None else None,
-            "liability_schedule": liability_schedule,
-            "accounts_payable": accounts_payable,
-            "upcoming_accruals": upcoming_accruals,
             "warnings": warnings,
         },
         "charts": {

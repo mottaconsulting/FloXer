@@ -678,6 +678,13 @@
     .rebuilt-kpi-adjust-source {
       display: none;
     }
+    .rebuilt-kpi-adjust-source.is-visible {
+      display: block;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
     .rebuilt-kpi-footer {
       margin-top: auto;
       display: flex;
@@ -967,33 +974,113 @@
       letter-spacing: 0.02em;
       cursor: pointer;
     }
-    .oc-card { cursor: pointer; }
+    .oc-card {
+      cursor: pointer;
+      position: relative;
+      background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 34%),
+        linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+      border: 1px solid #dbe7ff;
+      box-shadow: 0 14px 30px rgba(37, 99, 235, 0.08);
+    }
+    .oc-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      border-radius: 10px 0 0 10px;
+      background: linear-gradient(180deg, #2563eb 0%, #60a5fa 100%);
+      opacity: 0.95;
+    }
+    .oc-card.is-open {
+      box-shadow: 0 18px 34px rgba(37, 99, 235, 0.12);
+    }
+    .oc-card .rebuilt-kpi-head,
+    .oc-card .rebuilt-kpi-body,
+    .oc-card .oc-breakdown {
+      position: relative;
+      z-index: 1;
+    }
+    .oc-card .rebuilt-kpi-head {
+      align-items: flex-start;
+    }
+    .oc-model-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #2563eb;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .oc-model-chip::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.9;
+    }
+    .oc-disclosure {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      color: #2563eb;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .oc-disclosure::after {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(45deg) translateY(-1px);
+      transition: transform 0.18s ease;
+    }
+    .oc-card.is-open .oc-disclosure::after {
+      transform: rotate(-135deg) translateY(-1px);
+    }
     .oc-breakdown {
-      margin-top: 12px;
-      border-top: 1px solid #f1f5f9;
-      padding-top: 10px;
+      margin-top: 14px;
+      border-top: 1px solid #dbe7ff;
+      padding-top: 12px;
     }
     .oc-section-label {
-      font-size: 9px;
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: #94a3b8;
-      padding: 6px 0 2px;
+      letter-spacing: 0.08em;
+      color: #7c8aa5;
+      padding: 9px 0 4px;
     }
     .oc-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 3px 0;
+      padding: 5px 0;
+      gap: 16px;
     }
-    .oc-label { font-size: 12px; color: #64748b; font-weight: 500; }
-    .oc-val { font-size: 12px; font-weight: 700; }
+    .oc-label { font-size: 12px; color: #64748b; font-weight: 600; }
+    .oc-val { font-size: 12px; font-weight: 800; }
     .oc-pos { color: #2563eb; }
     .oc-neg { color: #ec4899; }
-    .oc-divider { height: 1px; background: #f1f5f9; margin: 6px 0; }
-    .oc-total-row .oc-label { font-weight: 700; color: #1e293b; font-size: 13px; }
-    .oc-total-row .oc-val { font-size: 13px; }
+    .oc-divider { height: 1px; background: #e5eefc; margin: 8px 0; }
+    .oc-total-row {
+      margin-top: 2px;
+      padding-top: 10px;
+      border-top: 1px solid #dbe7ff;
+    }
+    .oc-total-row .oc-label { font-weight: 800; color: #1e293b; font-size: 13px; }
+    .oc-total-row .oc-val { font-size: 14px; }
     .rebuilt-chart-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2324,7 +2411,7 @@
         </div>
         <div class="rebuilt-kpi-card">
           <div class="rebuilt-kpi-head">
-            <span id="dashboardSecondKpiLabel">Current Balance</span>
+            <span id="dashboardSecondKpiLabel">Bank Balance</span>
             <span id="dashboardBalanceTrend" class="rebuilt-kpi-trend">--</span>
           </div>
           <div class="rebuilt-kpi-split">
@@ -2347,25 +2434,29 @@
         </div>
         <div class="rebuilt-kpi-card oc-card">
           <div class="rebuilt-kpi-head">
-            <span id="dashboardThirdKpiLabel">Out of Cash</span>
+            <div>
+              <span id="dashboardThirdKpiLabel">Out of Cash</span>
+              <div class="oc-model-chip">Free cash model</div>
+            </div>
             <span id="dashboardBurnNote" class="rebuilt-kpi-trend">--</span>
           </div>
           <div class="rebuilt-kpi-body" style="display:block;">
             <div id="dashboardRunwayValue" class="rebuilt-kpi-value">--</div>
             <div id="dashboardRunwayBalance" class="rebuilt-kpi-adjust-source" style="margin-top:4px;"></div>
+            <div id="dashboardOcDisclosure" class="oc-disclosure">View cash bridge</div>
           </div>
           <div id="dashboardOcBreakdown" class="oc-breakdown" style="display:none;">
-            <div class="oc-row"><span class="oc-label">Current balance</span><span id="ocBalance" class="oc-val">--</span></div>
+            <div class="oc-row"><span class="oc-label">Free cash starting point</span><span id="ocBalance" class="oc-val">--</span></div>
             <div class="oc-divider"></div>
-            <div class="oc-section-label">Projected to FY end</div>
+            <div class="oc-section-label">Operating Forecast to FY End</div>
             <div class="oc-row"><span class="oc-label">Revenue</span><span id="ocRevenue" class="oc-val oc-pos">--</span></div>
             <div class="oc-row"><span class="oc-label">Expenses</span><span id="ocExpenses" class="oc-val oc-neg">--</span></div>
             <div class="oc-divider"></div>
-            <div class="oc-section-label">Obligations</div>
+            <div class="oc-section-label">Future Obligations</div>
             <div class="oc-row"><span class="oc-label">Tax</span><span id="ocTax" class="oc-val oc-neg">--</span></div>
             <div class="oc-row"><span class="oc-label">Accounts payable</span><span id="ocPayable" class="oc-val oc-neg">--</span></div>
             <div class="oc-divider"></div>
-            <div class="oc-row oc-total-row"><span class="oc-label">Net to FY end</span><span id="ocNet" class="oc-val">--</span></div>
+            <div class="oc-row oc-total-row"><span class="oc-label">Projected closing cash at FY end</span><span id="ocNet" class="oc-val">--</span></div>
           </div>
         </div>
       </div>
@@ -2556,8 +2647,6 @@
   <script defer src="/js/cache.js"></script>
   <script defer src="/js/formatters.js"></script>
   <script defer src="/js/kpi.js"></script>
-  <script defer src="/js/health.js"></script>
-  <script defer src="/js/liabilities.js"></script>
   <script defer src="/js/main.js"></script>
   <script defer src="/js/features/cash-timeline.js"></script>
   <script defer src="/js/features/dashboard.js"></script>
