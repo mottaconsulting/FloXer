@@ -100,10 +100,25 @@ function computeBalanceKpi(data) {
   const isPastFy = isPastFinancialYearSelection(data);
   const liveBalance = finiteNumberOrNaN(data?.kpis?.cash_balance_live);
   const proxyBalance = finiteNumberOrNaN(data?.kpis?.cash_balance_proxy);
-  const sourceBalance = Number.isFinite(liveBalance) ? liveBalance : proxyBalance;
+  const grossCashToday = finiteNumberOrNaN(data?.kpis?.gross_cash_today);
+  const committedCashToday = finiteNumberOrNaN(data?.kpis?.committed_cash_today);
+  const freeCashToday = finiteNumberOrNaN(data?.kpis?.free_cash_today);
+  const sourceBalance = Number.isFinite(grossCashToday)
+    ? grossCashToday
+    : (Number.isFinite(liveBalance) ? liveBalance : proxyBalance);
   const manualOverride = isPastFy ? null : getBalanceOverrideValue(data);
   const hasManualOverride = Number.isFinite(manualOverride);
   const balance = hasManualOverride ? Number(manualOverride) : sourceBalance;
+  const committedCash = hasManualOverride
+    ? 0
+    : (Number.isFinite(committedCashToday) ? committedCashToday : 0);
+  const freeCash = hasManualOverride
+    ? balance
+    : (
+      Number.isFinite(freeCashToday)
+        ? freeCashToday
+        : (Number.isFinite(balance) ? balance - committedCash : NaN)
+    );
   const previousMonthBalance = finiteNumberOrNaN(data?.kpis?.cash_balance_prev_month);
   const balanceSeries = data?.charts?.cash_balance || {};
   const monthlyNet = (balanceSeries.monthly_net || []).map(v => finiteNumberOrNaN(v)).filter(v => Number.isFinite(v));
@@ -118,7 +133,7 @@ function computeBalanceKpi(data) {
   if (hasManualOverride) source = "manual";
   else if (Number.isFinite(liveBalance)) source = "xero";
   else if (Number.isFinite(proxyBalance)) source = "proxy";
-  return { balance, previousBalance, changePct, monthlyNet, hasManualOverride, source };
+  return { balance, grossCash: balance, freeCash, committedCash, previousBalance, changePct, monthlyNet, hasManualOverride, source };
 }
 
 function computeForwardRunwayMetrics(data, startingBalance) {

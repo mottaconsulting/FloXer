@@ -1448,7 +1448,7 @@ def _fetch_balance_sheet_liabilities(as_of_date: datetime) -> dict | None:
     return liab if liab.get("accounts") else None
 
 
-def _fetch_outstanding_bills() -> list[dict]:
+def _fetch_outstanding_bills(as_of_date: datetime | None = None) -> list[dict]:
     """Fetch unpaid supplier bills (accounts payable) from Xero with real invoice due dates.
 
     Returns a list of dicts: {name, amount, due_date, due_month, overdue}
@@ -1464,7 +1464,7 @@ def _fetch_outstanding_bills() -> list[dict]:
         if resp.status_code != 200:
             return []
         invoices = resp.json().get("Invoices") or []
-        today = datetime.now().date()
+        today = (as_of_date or datetime.now()).date()
         bills = []
         for inv in invoices:
             amount_due = float(inv.get("AmountDue") or 0)
@@ -1489,11 +1489,12 @@ def _fetch_outstanding_bills() -> list[dict]:
                 except ValueError:
                     pass
             cur_month_str = f"{today.year}-{today.month:02d}"
+            overdue = bool(due_date and due_date < today)
             if due_date:
                 due_month = f"{due_date.year}-{due_date.month:02d}"
-                # Skip invoices due before this month
+                # Reserve overdue bills immediately in the current month.
                 if due_month < cur_month_str:
-                    continue
+                    due_month = cur_month_str
             else:
                 due_month = cur_month_str
             bills.append({
@@ -1502,12 +1503,122 @@ def _fetch_outstanding_bills() -> list[dict]:
                 "due_month": due_month,
                 "due_date": due_date.isoformat() if due_date else None,
                 "type": "payable",
+                "overdue": overdue,
             })
         # Sort by due date ascending
         bills.sort(key=lambda b: b["due_date"] or "9999-12-31")
         return bills
     except Exception:
         return []
+
+
+def _month_key(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    return f"{dt.year}-{dt.month:02d}"
+
+
+def _split_schedule_by_current_month(
+    schedule: list[dict],
+    current_month_key: str,
+) -> tuple[list[dict], list[dict]]:
+    committed_now: list[dict] = []
+    future_items: list[dict] = []
+
+    for item in schedule or []:
+        month = str(item.get("month") or item.get("due_month") or "")
+        target = committed_now if month and month <= current_month_key else future_items
+        target.append(item)
+
+    return committed_now, future_items
+
+
+def _monthly_amount_lookup(items: list[dict], month_field: str = "month") -> dict[str, float]:
+    lookup: dict[str, float] = {}
+    for item in items or []:
+        month = str(item.get(month_field) or item.get("due_month") or item.get("month") or "")
+        if not month:
+            continue
+        lookup[month] = lookup.get(month, 0.0) + float(item.get("amount") or 0.0)
+    return lookup
+
+
+def _build_cash_projection_rows(
+    *,
+    labels: list[str],
+    current_month_key: str,
+    starting_cash: float | None,
+    revenue_projected: list,
+    expense_projected: list,
+    future_known: list[dict],
+    future_forecast: list[dict],
+) -> list[dict]:
+    if starting_cash is None:
+        return []
+
+    known_by_month = _monthly_amount_lookup(future_known)
+    forecast_by_month = _monthly_amount_lookup(future_forecast)
+    running_cash = float(starting_cash)
+    rows: list[dict] = []
+
+    for idx, month in enumerate(labels or []):
+        if month <= current_month_key:
+            continue
+
+        revenue = revenue_projected[idx] if idx < len(revenue_projected) else None
+        expenses = expense_projected[idx] if idx < len(expense_projected) else None
+        revenue_val = float(revenue) if revenue is not None else None
+        expense_val = float(expenses) if expenses is not None else None
+        operating_net = (
+            round(revenue_val - expense_val, 2)
+            if revenue_val is not None and expense_val is not None
+            else None
+        )
+        obligations_known = round(float(known_by_month.get(month, 0.0)), 2)
+        obligations_forecast = round(float(forecast_by_month.get(month, 0.0)), 2)
+        obligations_total = round(obligations_known + obligations_forecast, 2)
+
+        if operating_net is not None:
+            running_cash += operating_net
+        running_cash -= obligations_total
+
+        rows.append(
+            {
+                "month": month,
+                "operating_revenue": round(revenue_val, 2) if revenue_val is not None else None,
+                "operating_expenses": round(expense_val, 2) if expense_val is not None else None,
+                "operating_net": operating_net,
+                "obligations_known": obligations_known,
+                "obligations_forecast": obligations_forecast,
+                "obligations_total": obligations_total,
+                "closing_cash": round(float(running_cash), 2),
+                "is_negative": running_cash < 0,
+            }
+        )
+
+    return rows
+
+
+def _build_out_of_cash_summary(projection_rows: list[dict], as_of_date: datetime) -> dict:
+    first_negative = next((row for row in projection_rows if row.get("is_negative")), None)
+    if not first_negative:
+        return {
+            "first_negative_month": None,
+            "first_negative_date": None,
+            "days_until_out_of_cash": None,
+            "cash_positive_through_fy_end": True,
+        }
+
+    month = str(first_negative.get("month") or "")
+    year_str, month_str = month.split("-")
+    first_negative_date = datetime(int(year_str), int(month_str), 1)
+    days_until = max(0, (first_negative_date.date() - as_of_date.date()).days)
+    return {
+        "first_negative_month": month,
+        "first_negative_date": first_negative_date.date().isoformat(),
+        "days_until_out_of_cash": int(days_until),
+        "cash_positive_through_fy_end": False,
+    }
 
 
 def _payg_withholding_rate(all_lines: "pd.DataFrame", lookback_months: int = 6) -> float | None:
@@ -2129,6 +2240,8 @@ def build_overview_payload(
     if budget.empty:
         warnings.append("No manual budget yet. Future Profit is unavailable until budget rows are added.")
 
+    current_month_key = _month_key(current_month)
+
     # Current Liabilities — use Balance Sheet parsed earlier (same API call, no extra request).
     current_liabilities = _bs["total"] if _bs else None
 
@@ -2193,10 +2306,58 @@ def build_overview_payload(
     )
 
     # Accounts payable — real supplier invoices with actual due dates
-    accounts_payable = _fetch_outstanding_bills()
+    accounts_payable = _fetch_outstanding_bills(today)
 
     # Upcoming accruals — GST/Super estimates not yet on Balance Sheet
     upcoming_accruals = _estimate_upcoming_accruals(actuals, _liab_all, today, fy_start_month, _liab_freq_map)
+
+    committed_tax_items, future_tax_schedule = _split_schedule_by_current_month(liability_schedule, current_month_key)
+    committed_ap_items, future_ap_schedule = _split_schedule_by_current_month(accounts_payable, current_month_key)
+
+    committed_tax_now = round(float(sum(float(item.get("amount") or 0) for item in committed_tax_items)), 2)
+    committed_ap_now = round(float(sum(float(item.get("amount") or 0) for item in committed_ap_items)), 2)
+    committed_cash_today = round(committed_tax_now + committed_ap_now, 2)
+    gross_cash_today = round(float(effective_cash_balance), 2) if effective_cash_balance is not None else None
+    free_cash_today = (
+        round(float(gross_cash_today - committed_cash_today), 2)
+        if gross_cash_today is not None
+        else None
+    )
+    future_obligation_schedule = sorted(
+        [
+            {
+                **dict(item),
+                "month": str(item.get("month") or item.get("due_month") or ""),
+            }
+            for item in (future_tax_schedule + future_ap_schedule)
+        ],
+        key=lambda item: (
+            str(item.get("month") or item.get("due_month") or "9999-12"),
+            str(item.get("due_date") or "9999-12-31"),
+            str(item.get("name") or ""),
+        ),
+    )
+    future_known_obligations = [item for item in future_obligation_schedule if not bool(item.get("projected"))]
+    future_forecast_obligations = [
+        *[item for item in future_obligation_schedule if bool(item.get("projected"))],
+        *[
+            {
+                **dict(item),
+                "month": str(item.get("month") or item.get("due_month") or ""),
+            }
+            for item in upcoming_accruals
+        ],
+    ]
+    projection_rows = _build_cash_projection_rows(
+        labels=sales_series["labels"],
+        current_month_key=current_month_key,
+        starting_cash=free_cash_today,
+        revenue_projected=sales_series["projected_monthly"],
+        expense_projected=projected_expense,
+        future_known=future_known_obligations,
+        future_forecast=future_forecast_obligations,
+    )
+    out_of_cash = _build_out_of_cash_summary(projection_rows, today)
 
     profit_fy = {
         "labels": sales_series["labels"],
@@ -2234,11 +2395,38 @@ def build_overview_payload(
             "balance_sheet_source": "xero_report" if _bs else "journal_lines_fallback",
             "balance_sheet_accounts": _bs["accounts"] if _bs else None,
         },
+        "obligations": {
+            "committed_this_month": committed_tax_items + committed_ap_items,
+            "future_known": future_known_obligations,
+            "future_forecast": future_forecast_obligations,
+            "summary": {
+                "committed_this_month": committed_cash_today,
+                "future_known": round(float(sum(float(item.get("amount") or 0) for item in future_known_obligations)), 2),
+                "future_forecast": round(float(sum(float(item.get("amount") or 0) for item in future_forecast_obligations)), 2),
+            },
+        },
+        "projection": {
+            "starting_cash": free_cash_today,
+            "forecast_operating": projection_rows,
+            "forecast_obligations": {
+                "known": future_known_obligations,
+                "forecast": future_forecast_obligations,
+            },
+            "out_of_cash": out_of_cash,
+        },
         "kpis": {
             "profit_now": round(float(profit_now), 2),
             "profit_now_prev": round(float(profit_now_prev), 2) if profit_now_prev is not None else None,
             "future_profit": round(float(future_profit), 2) if future_profit is not None else None,
             "future_profit_prev": round(float(future_profit_prev), 2) if future_profit_prev is not None else None,
+            "gross_cash_today": gross_cash_today,
+            "committed_cash_today": committed_cash_today,
+            "free_cash_today": free_cash_today,
+            "committed_this_month": committed_cash_today,
+            "committed_tax_now": committed_tax_now,
+            "committed_ap_now": committed_ap_now,
+            "committed_now_items": committed_tax_items + committed_ap_items,
+            "future_obligation_schedule": future_obligation_schedule,
             "cash_balance_live": (
                 round(float(live_cash_balance), 2) if live_cash_balance is not None else None
             ),
@@ -2259,7 +2447,9 @@ def build_overview_payload(
             "monthly_burn_basis": "bank_net_outflow_3m",
             "sales_this_month": round(float(month_rev), 2) if month_rev is not None else None,
             "spending_this_month": round(float(month_exp), 2) if month_exp is not None else None,
-            "current_liabilities": round(float(current_liabilities), 2) if current_liabilities is not None else None,
+            # Back-compat: this now means committed cash today, not all BS liabilities.
+            "current_liabilities": committed_cash_today,
+            "balance_sheet_current_liabilities": round(float(current_liabilities), 2) if current_liabilities is not None else None,
             "liability_schedule": liability_schedule,
             "accounts_payable": accounts_payable,
             "upcoming_accruals": upcoming_accruals,
@@ -3380,4 +3570,3 @@ if __name__ == "__main__":
         port=port,
         debug=False
     )
-

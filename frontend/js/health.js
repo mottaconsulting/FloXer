@@ -8,10 +8,19 @@ function avgLastNMonths(values, n = 3) {
 }
 
 function computeHealthFromModel(model, liabilitiesRows) {
-  const cashBalance = Number(model?.kpis?.cash_balance_live ?? model?.kpis?.cash_balance_proxy ?? 0);
+  const cashBalance = Number(
+    model?.kpis?.free_cash_today
+    ?? model?.kpis?.gross_cash_today
+    ?? model?.kpis?.cash_balance_live
+    ?? model?.kpis?.cash_balance_proxy
+    ?? 0
+  );
   const cashOutMonthly = (model?.charts?.cashflow?.cashOut || []).map(x => Number(x || 0));
   const avgCashOut = avgLastNMonths(cashOutMonthly, 3);
-  const runwayMonths = avgCashOut > 0 ? (cashBalance / avgCashOut) : null;
+  const projectedDays = Number(model?.projection?.out_of_cash?.days_until_out_of_cash);
+  const runwayMonths = Number.isFinite(projectedDays)
+    ? (projectedDays / 30)
+    : (avgCashOut > 0 ? (cashBalance / avgCashOut) : null);
 
   const TAX_BUCKETS = new Set(["GST", "PAYG", "SUPER", "INCOME_TAX", "WAGES"]);
   const nextTax = (liabilitiesRows || [])

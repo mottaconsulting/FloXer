@@ -163,7 +163,11 @@ function renderOverviewCharts(data) {
   const cashflow = data?.charts?.cashflow;
 
   // Build liability-by-month lookup for projected expense adjustment
-  const liabilitySchedule = data?.kpis?.liability_schedule || [];
+  const liabilitySchedule = [
+    ...(data?.obligations?.future_known || []),
+    ...(data?.obligations?.future_forecast || []),
+    ...(data?.kpis?.future_obligation_schedule || []),
+  ];
   const liabByMonth = {};
   for (const l of liabilitySchedule) {
     liabByMonth[l.month] = (liabByMonth[l.month] || 0) + Number(l.amount || 0);

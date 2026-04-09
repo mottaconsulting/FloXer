@@ -11,7 +11,27 @@ function _bestOf(actual, budget) {
   return NaN;
 }
 
-function buildCashTimeline(data, grossBalance) {
+function buildCashTimeline(data, startingBalance) {
+  const explicitRows = data?.projection?.forecast_operating || [];
+  if (explicitRows.length) {
+    const rows = explicitRows.map(row => ({
+      month: row.month,
+      liabsThisMonth: [
+        ...(data?.obligations?.future_known || []).filter(item => item.month === row.month),
+        ...(data?.obligations?.future_forecast || []).filter(item => item.month === row.month),
+      ],
+      liabTotal: Number(row.obligations_total || 0),
+      budgetNet: row.operating_net,
+      budgetRev: row.operating_revenue,
+      budgetExp: row.operating_expenses,
+      runningBalance: Number(row.closing_cash || 0),
+      isNegative: Boolean(row.is_negative),
+    }));
+    const firstNegativeIdx = rows.findIndex(r => r.isNegative);
+    const minRow = rows.length ? rows.reduce((a, b) => b.runningBalance < a.runningBalance ? b : a, rows[0]) : null;
+    return { rows, firstNegativeIdx, minRow };
+  }
+
   const salesChart = data?.charts?.sales_fy || {};
   const expensesChart = data?.charts?.expenses_fy || {};
   const labels = salesChart.labels || expensesChart.labels || [];
@@ -19,18 +39,18 @@ function buildCashTimeline(data, grossBalance) {
   const expenseProjected = expensesChart.projected_monthly || [];
   const asOfMonth = data?.meta?.as_of_month;
   const cutoffIdx = asOfMonth ? labels.indexOf(asOfMonth) : -1;
-  const liabilitySchedule = data?.kpis?.liability_schedule || [];
+  const obligationSchedule = data?.kpis?.future_obligation_schedule || data?.kpis?.liability_schedule || [];
 
   if (!labels.length || cutoffIdx < 0) return null;
 
   // Group liabilities by due month
   const liabByMonth = {};
-  for (const liab of liabilitySchedule) {
+  for (const liab of obligationSchedule) {
     if (!liabByMonth[liab.month]) liabByMonth[liab.month] = [];
     liabByMonth[liab.month].push(liab);
   }
 
-  let runningBalance = Number(grossBalance);
+  let runningBalance = Number(startingBalance);
   const rows = [];
 
   for (let i = cutoffIdx + 1; i < labels.length; i++) {
@@ -62,11 +82,17 @@ function fmtTimelineMonth(yyyymm) {
   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-AU", { month: "short", year: "numeric" });
 }
 
-function renderCashTimeline(data, grossBalance, isPastFy) {
+function renderCashTimeline(data, startingBalance, isPastFy) {
   const container = document.getElementById("dashboardCashTimeline");
   if (!container || isPastFy) { if (container) container.style.display = "none"; return; }
 
-  const timeline = buildCashTimeline(data, grossBalance);
+  const grossCashToday = Number(data?.kpis?.gross_cash_today ?? startingBalance);
+  const committedCashToday = Number(data?.kpis?.committed_cash_today ?? 0);
+  const freeCashToday = Number.isFinite(Number(data?.kpis?.free_cash_today))
+    ? Number(data.kpis.free_cash_today)
+    : Number(startingBalance);
+
+  const timeline = buildCashTimeline(data, freeCashToday);
   if (!timeline || !timeline.rows.length) { container.style.display = "none"; return; }
 
   const { rows, firstNegativeIdx, minRow } = timeline;
@@ -79,11 +105,20 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
     : `<span class="ct-headline ct-headline-pos">Cash positive through FY end${minRow ? ` · lowest <strong>${fmtCurrency(minRow.runningBalance)}</strong> in ${fmtTimelineMonth(minRow.month)}` : ""}</span>`;
 
   // Starting balance tbody
-  const startBalClass = Number(grossBalance) >= 0 ? "ct-bal-pos" : "ct-bal-neg";
+  const startBalClass = Number(grossCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg";
+  const freeCashClass = Number(freeCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg";
   let tbodyHtml = `<tbody>
     <tr class="ct-start-row">
       <td>Current balance</td>
-      <td class="ct-bal ${startBalClass}">${fmtCurrency(grossBalance)}</td>
+      <td class="ct-bal ${startBalClass}">${fmtCurrency(grossCashToday)}</td>
+    </tr>
+    <tr class="ct-detail-row ct-liab-row">
+      <td>Committed now</td>
+      <td class="ct-neg-amt">-${fmtCurrency(committedCashToday)}</td>
+    </tr>
+    <tr class="ct-month-row">
+      <td>Free cash starting point</td>
+      <td class="ct-bal ${freeCashClass}">${fmtCurrency(freeCashToday)}</td>
     </tr>
   </tbody>`;
 
@@ -133,13 +168,17 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
   });
 
   // ── Obligations data ──
-  const taxObligations   = data?.kpis?.liability_schedule || [];
-  const accountsPayable  = data?.kpis?.accounts_payable   || [];
-  const upcomingAccruals = data?.kpis?.upcoming_accruals  || [];
-  const totalTax      = taxObligations.reduce((s, l)  => s + Number(l.amount || 0), 0);
+  const committedNow     = data?.obligations?.committed_this_month || data?.kpis?.committed_now_items || [];
+  const futureKnown = data?.obligations?.future_known || [];
+  const futureForecast = data?.obligations?.future_forecast || [];
+  const taxObligations   = [...futureKnown, ...futureForecast].filter(l => String(l.type || "").toLowerCase() !== "payable");
+  const accountsPayable  = [...futureKnown, ...futureForecast].filter(l => String(l.type || "").toLowerCase() === "payable");
+  const upcomingAccruals = futureForecast.filter(l => Boolean(l.indicative));
+  const totalCommittedNow = committedNow.reduce((s, l) => s + Number(l.amount || 0), 0);
+  const totalTax      = taxObligations.filter(l => !Boolean(l.indicative)).reduce((s, l)  => s + Number(l.amount || 0), 0);
   const totalPayable  = accountsPayable.reduce((s, l) => s + Number(l.amount || 0), 0);
   const totalAccruals = upcomingAccruals.reduce((s, l) => s + Number(l.amount || 0), 0);
-  const grandTotal    = totalTax + totalPayable + totalAccruals;
+  const grandTotal    = totalCommittedNow + totalTax + totalPayable + totalAccruals;
 
   // ── Helpers ──
   function liabTableRow(l, indicative = false) {
@@ -198,8 +237,9 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
 
   // ── Summary bar ──
   const summaryItems = [
-    { label: "Current balance", value: fmtCurrency(grossBalance), cls: Number(grossBalance) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
-    { label: "Total obligations", value: grandTotal > 0 ? `-${fmtCurrency(grandTotal)}` : "—", cls: grandTotal > 0 ? "ct-bal-neg" : "ct-bal-pos" },
+    { label: "Current balance", value: fmtCurrency(grossCashToday), cls: Number(grossCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
+    { label: "Committed now", value: totalCommittedNow > 0 ? `-${fmtCurrency(totalCommittedNow)}` : "—", cls: totalCommittedNow > 0 ? "ct-bal-neg" : "ct-bal-pos" },
+    { label: "Free cash", value: fmtCurrency(freeCashToday), cls: Number(freeCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
     { label: "Lowest point", value: minRow ? fmtCurrency(minRow.runningBalance) : "--", cls: minRow && minRow.runningBalance < 0 ? "ct-bal-neg" : "ct-bal-pos" },
     { label: hasNegative ? "First shortfall" : "FY end balance", value: hasNegative ? fmtTimelineMonth(rows[firstNegativeIdx].month) : fmtCurrency(rows[rows.length - 1].runningBalance), cls: hasNegative ? "ct-bal-neg" : "ct-bal-pos" },
   ];
@@ -230,7 +270,8 @@ function renderCashTimeline(data, grossBalance, isPastFy) {
         <span class="ct-page-card-title">Committed Obligations</span>
         <span class="ct-neg-amt" style="font-size:16px;font-weight:800;">-${fmtCurrency(grandTotal)}</span>
       </div>
-      ${accordion("tax", "Tax obligations", totalTax, taxObligations.map(l => liabTableRow(l)).join(""))}
+      ${accordion("now", "Committed now", totalCommittedNow, committedNow.map(l => liabTableRow(l)).join(""))}
+      ${accordion("tax", "Tax obligations", totalTax, taxObligations.filter(l => !Boolean(l.indicative)).map(l => liabTableRow(l)).join(""))}
       ${accordion("ap", "Accounts payable", totalPayable, apRows())}
       ${accordion("accruals", "Upcoming accruals", totalAccruals, upcomingAccruals.map(l => liabTableRow(l, true)).join(""), true)}
     </div>` : ""}`;
@@ -262,7 +303,7 @@ async function showCashTimeline() {
   if (cachedData) {
     const isPastFy = typeof isPastFinancialYearSelection === "function" ? isPastFinancialYearSelection(cachedData) : false;
     const balanceKpi = typeof computeBalanceKpi === "function" ? computeBalanceKpi(cachedData) : { balance: cachedData?.kpis?.cash_balance_live ?? 0 };
-    renderCashTimeline(cachedData, balanceKpi.balance, isPastFy);
+    renderCashTimeline(cachedData, balanceKpi.freeCash ?? balanceKpi.balance, isPastFy);
     return;
   }
 
@@ -272,7 +313,7 @@ async function showCashTimeline() {
     if (typeof stopLoading === "function") stopLoading();
     const isPastFy = typeof isPastFinancialYearSelection === "function" ? isPastFinancialYearSelection(data) : false;
     const balanceKpi = typeof computeBalanceKpi === "function" ? computeBalanceKpi(data) : { balance: data?.kpis?.cash_balance_live ?? 0 };
-    renderCashTimeline(data, balanceKpi.balance, isPastFy);
+    renderCashTimeline(data, balanceKpi.freeCash ?? balanceKpi.balance, isPastFy);
   } catch (e) {
     if (typeof stopLoading === "function") stopLoading();
     if (typeof showError === "function") showError(e.message);

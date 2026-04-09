@@ -230,19 +230,19 @@ function renderOverview(data) {
     balanceSparkline.innerHTML = buildSparklineMarkup(cumulativeBalanceSeries);
   }
   renderBalanceAdjustState(balanceKpi, isPastFy);
-  const currentLiabilities = !balanceKpi.hasManualOverride && Number.isFinite(Number(data?.kpis?.current_liabilities))
-    ? Number(data.kpis.current_liabilities) : 0;
-  const freeBalance = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance - currentLiabilities : balanceKpi.balance;
+  const committedCash = !balanceKpi.hasManualOverride && Number.isFinite(balanceKpi.committedCash)
+    ? Number(balanceKpi.committedCash) : 0;
+  const freeBalance = Number.isFinite(balanceKpi.freeCash) ? balanceKpi.freeCash : balanceKpi.balance;
   // Free cash bar: only show when using Xero balance (liabilities are already known in manual override)
   const freeCashBar = document.getElementById("dashboardFreeCashBar");
   const freeCashFill = document.getElementById("dashboardFreeCashFill");
   const freeCashLabel = document.getElementById("dashboardFreeCashLabel");
   const committedLabel = document.getElementById("dashboardCommittedLabel");
-  if (!isPastFy && !balanceKpi.hasManualOverride && freeCashBar && Number.isFinite(balanceKpi.balance) && balanceKpi.balance > 0 && currentLiabilities > 0) {
+  if (!isPastFy && !balanceKpi.hasManualOverride && freeCashBar && Number.isFinite(balanceKpi.balance) && balanceKpi.balance > 0 && committedCash > 0) {
     const pctFree = Math.min(100, Math.max(0, (freeBalance / balanceKpi.balance) * 100));
     freeCashFill.style.width = `${pctFree}%`;
     freeCashLabel.textContent = `${fmtCurrency(Math.max(0, freeBalance))} free`;
-    committedLabel.textContent = `${fmtCurrency(currentLiabilities)} committed`;
+    committedLabel.textContent = `${fmtCurrency(committedCash)} committed`;
     freeCashBar.style.display = "";
   } else if (freeCashBar) {
     freeCashBar.style.display = "none";
@@ -251,9 +251,10 @@ function renderOverview(data) {
   // Drive Out of Cash from the cash timeline — same logic as the Cash Timeline page.
   // Timeline uses _bestOf(actual, budget) per month and places liabilities at their real due months,
   // which is more accurate than the old computeForwardRunwayMetrics approach.
-  const timeline = !isPastFy ? buildCashTimeline(data, balanceKpi.balance) : null;
+  const timeline = !isPastFy ? buildCashTimeline(data, freeBalance) : null;
   const timelineRows = timeline?.rows || [];
   const firstNegIdx = timeline?.firstNegativeIdx ?? -1;
+  const outOfCash = data?.projection?.out_of_cash || {};
   if (runwayValue) {
     runwayValue.classList.remove("positive", "negative", "warning");
     runwayValue.style.fontSize = "";
@@ -275,18 +276,13 @@ function renderOverview(data) {
         else if (fallbackDays <= 90) runwayValue.classList.add("warning");
         else runwayValue.classList.add("positive");
       }
-    } else if (firstNegIdx < 0) {
+    } else if (outOfCash.cash_positive_through_fy_end || firstNegIdx < 0) {
       // Cash positive through FY end
       runwayValue.textContent = "Cash positive through FY end";
       runwayValue.style.fontSize = "15px";
       runwayValue.classList.add("positive");
     } else {
-      // Days from today to the start of the first negative month
-      const negMonth = timelineRows[firstNegIdx].month;
-      const [y, m] = negMonth.split("-").map(Number);
-      const negDate = new Date(y, m - 1, 1);
-      const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
-      const runwayDays = Math.max(0, Math.round((negDate - todayDate) / 86400000));
+      const runwayDays = Number(outOfCash.days_until_out_of_cash);
       runwayValue.textContent = `${runwayDays} Days`;
       if (runwayDays <= 30) runwayValue.classList.add("negative");
       else if (runwayDays <= 90) runwayValue.classList.add("warning");
@@ -332,7 +328,7 @@ function renderOverview(data) {
       burnNote.dataset.fyExpense   = fyExpense;
       burnNote.dataset.fyNet       = fyNet;
       burnNote.dataset.monthsLeft  = monthsLeft;
-      burnNote.dataset.committed   = currentLiabilities;
+      burnNote.dataset.committed   = committedCash;
       burnNote.dataset.freeBalance = Math.max(0, freeBalance);
       const burnHint = document.getElementById("dashboardBurnNoteHint");
       if (burnHint) burnHint.style.display = timelineRows.length ? "" : "none";
@@ -342,10 +338,16 @@ function renderOverview(data) {
         burnNote.classList.add("flat");
       } else {
         const currentBal   = Number.isFinite(balanceKpi.balance) ? balanceKpi.balance : 0;
-        const taxTotal     = (data?.kpis?.liability_schedule || []).reduce((s, l) => s + Number(l.amount || 0), 0);
-        const payableTotal = (data?.kpis?.accounts_payable   || []).reduce((s, l) => s + Number(l.amount || 0), 0);
-        const totalOblig   = taxTotal + payableTotal;
-        const combinedNet  = currentBal + fyNet - totalOblig;
+        const futureKnown = data?.obligations?.future_known || [];
+        const futureForecast = data?.obligations?.future_forecast || [];
+        const futureOblig  = [...futureKnown, ...futureForecast].reduce((s, l) => s + Number(l.amount || 0), 0);
+        const taxTotal     = [...futureKnown, ...futureForecast]
+          .filter(l => String(l.type || "").toLowerCase() !== "payable")
+          .reduce((s, l) => s + Number(l.amount || 0), 0);
+        const payableTotal = [...futureKnown, ...futureForecast]
+          .filter(l => String(l.type || "").toLowerCase() === "payable")
+          .reduce((s, l) => s + Number(l.amount || 0), 0);
+        const combinedNet  = freeBalance + fyNet - futureOblig;
 
         // Populate breakdown
         const ocBreakdown = document.getElementById("dashboardOcBreakdown");
