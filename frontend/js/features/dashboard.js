@@ -104,7 +104,7 @@ function bindBurnNotePopover() {
         <div style="font-weight:700;color:#0d1b4b;margin-bottom:4px">Current cash position</div>
         <div style="display:grid;grid-template-columns:1fr auto;gap:2px 16px;color:#374151">
           <span>Free cash</span><span style="color:#3b82f6;font-weight:700">${fmtNum(freeBal)}</span>
-          <span>Committed this month</span><span style="color:#ec4899;font-weight:700">-${fmtNum(committed)}</span>
+          <span>Tax committed this month</span><span style="color:#ec4899;font-weight:700">-${fmtNum(committed)}</span>
         </div>
       </div>` : "";
     pop.innerHTML = `
@@ -174,7 +174,11 @@ function renderOverview(data) {
   if (graphFyRevenue) graphFyRevenue.textContent = fyLabel;
   const fyEndYear = data?.meta?.fy_end ? Number(String(data.meta.fy_end).slice(0, 4)) : null;
   const profitLabel = document.getElementById("dashboardProfitLabel");
-  if (profitLabel) profitLabel.textContent = Number.isFinite(fyEndYear) ? `Profit ${fyEndYear - 1}-${fyEndYear}` : "Profit";
+  if (profitLabel) {
+    profitLabel.textContent = Number.isFinite(fyEndYear)
+      ? `Profit YTD (FY ${fyEndYear - 1}-${fyEndYear})`
+      : "Profit YTD";
+  }
   const profitValue = document.getElementById("dashboardProfitValue");
   if (profitValue) {
     profitValue.classList.remove("positive", "negative");
@@ -243,7 +247,7 @@ function renderOverview(data) {
     const pctFree = Math.min(100, Math.max(0, (freeBalance / balanceKpi.balance) * 100));
     freeCashFill.style.width = `${pctFree}%`;
     freeCashLabel.textContent = `${fmtCurrency(Math.max(0, freeBalance))} free`;
-    committedLabel.textContent = `${fmtCurrency(committedCash)} committed`;
+    committedLabel.textContent = `${fmtCurrency(committedCash)} tax committed`;
     freeCashBar.style.display = "";
   } else if (freeCashBar) {
     freeCashBar.style.display = "none";
@@ -264,7 +268,7 @@ function renderOverview(data) {
       runwayValue.classList.add("negative");
     } else if (freeBalance <= 0) {
       // Already committed more than available — out of cash now
-      runwayValue.textContent = "0 Days";
+      runwayValue.textContent = "Now";
       runwayValue.classList.add("negative");
     } else if (!timelineRows.length) {
       // No budget data — fall back to freeBalance / monthly_burn
@@ -346,9 +350,6 @@ function renderOverview(data) {
         const taxTotal     = [...futureKnown, ...futureForecast]
           .filter(l => String(l.type || "").toLowerCase() !== "payable")
           .reduce((s, l) => s + Number(l.amount || 0), 0);
-        const payableTotal = [...futureKnown, ...futureForecast]
-          .filter(l => String(l.type || "").toLowerCase() === "payable")
-          .reduce((s, l) => s + Number(l.amount || 0), 0);
         const combinedNet  = freeBalance + fyNet - futureOblig;
 
         // Populate breakdown
@@ -364,9 +365,7 @@ function renderOverview(data) {
           set("ocRevenue",  `+${fmtCurrency(fyRevenue)}`);
           set("ocExpenses", `-${fmtCurrency(fyExpense)}`);
           set("ocTax",      taxTotal     > 0 ? `-${fmtCurrency(taxTotal)}`     : "—");
-          set("ocPayable",  payableTotal > 0 ? `-${fmtCurrency(payableTotal)}` : "—");
           const ocNetEl = document.getElementById("ocNet");
-          const ocDisclosure = document.getElementById("dashboardOcDisclosure");
           if (ocNetEl) {
             ocNetEl.textContent = combinedNet >= 0 ? `+${fmtCurrency(combinedNet)}` : `-${fmtCurrency(Math.abs(combinedNet))}`;
             ocNetEl.className = `oc-val ${combinedNet >= 0 ? "oc-pos" : "oc-neg"}`;
@@ -375,14 +374,9 @@ function renderOverview(data) {
           if (ocCard && !ocCard.dataset.ocBound) {
             ocCard.dataset.ocBound = "1";
             ocCard.addEventListener("click", () => {
-              const nextOpen = ocBreakdown.style.display === "none";
-              ocBreakdown.style.display = nextOpen ? "" : "none";
-              ocCard.classList.toggle("is-open", nextOpen);
-              if (ocDisclosure) ocDisclosure.textContent = nextOpen ? "Hide cash bridge" : "View cash bridge";
+              ocBreakdown.style.display = ocBreakdown.style.display === "none" ? "" : "none";
             });
           }
-          if (ocCard) ocCard.classList.toggle("is-open", ocBreakdown.style.display !== "none");
-          if (ocDisclosure) ocDisclosure.textContent = ocBreakdown.style.display === "none" ? "View cash bridge" : "Hide cash bridge";
         }
 
         if (combinedNet >= 0 && freeBalance <= 0) {

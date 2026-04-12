@@ -109,11 +109,9 @@ function computeBalanceKpi(data) {
   const manualOverride = isPastFy ? null : getBalanceOverrideValue(data);
   const hasManualOverride = Number.isFinite(manualOverride);
   const balance = hasManualOverride ? Number(manualOverride) : sourceBalance;
-  const committedCash = hasManualOverride
-    ? 0
-    : (Number.isFinite(committedCashToday) ? committedCashToday : 0);
+  const committedCash = Number.isFinite(committedCashToday) ? committedCashToday : 0;
   const freeCash = hasManualOverride
-    ? balance
+    ? (Number.isFinite(balance) ? balance - committedCash : NaN)
     : (
       Number.isFinite(freeCashToday)
         ? freeCashToday

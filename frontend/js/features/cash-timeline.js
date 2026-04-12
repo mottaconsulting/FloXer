@@ -56,9 +56,11 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
   const allNoBudget = rows.every(r => r.budgetNet === null);
   if (allNoBudget) { container.style.display = "none"; return; }
 
-  const headlineHtml = hasNegative
-    ? `<span class="ct-headline ct-headline-neg">Shortfall projected in <strong>${fmtTimelineMonth(rows[firstNegativeIdx].month)}</strong></span>`
-    : `<span class="ct-headline ct-headline-pos">Projected cash positive through FY end${minRow ? ` · lowest <strong>${fmtCurrency(minRow.runningBalance)}</strong> in ${fmtTimelineMonth(minRow.month)}` : ""}</span>`;
+  const headlineHtml = freeCashToday <= 0
+    ? `<span class="ct-headline ct-headline-neg">Free cash is negative now${rows.length ? ` · projected ${rows[rows.length - 1].runningBalance >= 0 ? "to recover" : "to remain under pressure"} by FY end` : ""}</span>`
+    : hasNegative
+      ? `<span class="ct-headline ct-headline-neg">Shortfall projected in <strong>${fmtTimelineMonth(rows[firstNegativeIdx].month)}</strong></span>`
+      : `<span class="ct-headline ct-headline-pos">Projected cash positive through FY end${minRow ? ` · lowest <strong>${fmtCurrency(minRow.runningBalance)}</strong> in ${fmtTimelineMonth(minRow.month)}` : ""}</span>`;
 
   // Starting balance tbody
   const startBalClass = Number(grossCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg";
@@ -69,7 +71,7 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
       <td class="ct-bal ${startBalClass}">${fmtCurrency(grossCashToday)}</td>
     </tr>
     <tr class="ct-detail-row ct-liab-row">
-      <td>Committed this month</td>
+      <td>Tax committed this month</td>
       <td class="ct-neg-amt">-${fmtCurrency(committedCashToday)}</td>
     </tr>
     <tr class="ct-month-row">
@@ -127,14 +129,12 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
   const committedThisMonth = data?.obligations?.committed_this_month || [];
   const futureKnown = data?.obligations?.future_known || [];
   const futureForecast = data?.obligations?.future_forecast || [];
-  const taxObligations   = [...futureKnown, ...futureForecast].filter(l => String(l.type || "").toLowerCase() !== "payable");
-  const accountsPayable  = [...futureKnown, ...futureForecast].filter(l => String(l.type || "").toLowerCase() === "payable");
+  const taxObligations   = [...futureKnown, ...futureForecast];
   const upcomingAccruals = futureForecast.filter(l => Boolean(l.indicative));
   const totalCommittedThisMonth = committedThisMonth.reduce((s, l) => s + Number(l.amount || 0), 0);
   const totalTax      = taxObligations.filter(l => !Boolean(l.indicative)).reduce((s, l)  => s + Number(l.amount || 0), 0);
-  const totalPayable  = accountsPayable.reduce((s, l) => s + Number(l.amount || 0), 0);
   const totalAccruals = upcomingAccruals.reduce((s, l) => s + Number(l.amount || 0), 0);
-  const grandTotal    = totalCommittedThisMonth + totalTax + totalPayable + totalAccruals;
+  const grandTotal    = totalCommittedThisMonth + totalTax + totalAccruals;
 
   // ── Helpers ──
   function liabTableRow(l, indicative = false) {
@@ -148,25 +148,6 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
       <td class="ct-liab-view-month">${monthLabel}</td>
       <td class="ct-liab-view-amt ${indicative || isProjected ? "ct-neg-amt-muted" : "ct-neg-amt"}">-${fmtCurrency(l.amount)}</td>
     </tr>`;
-  }
-
-  function apRows() {
-    if (!accountsPayable.length) return "";
-    // Group by month (all already current month+)
-    const byMonth = {};
-    accountsPayable.forEach(l => {
-      const m = l.due_month || l.month || "unknown";
-      if (!byMonth[m]) byMonth[m] = [];
-      byMonth[m].push(l);
-    });
-    let html = "";
-    Object.keys(byMonth).sort().forEach(m => {
-      const grp = byMonth[m];
-      const total = grp.reduce((s, l) => s + Number(l.amount || 0), 0);
-      html += `<tr class="ct-ap-group-row"><td colspan="2">${fmtTimelineMonth(m)} (${grp.length})</td><td class="ct-neg-amt">-${fmtCurrency(total)}</td></tr>`;
-      html += grp.map(l => liabTableRow(l)).join("");
-    });
-    return html;
   }
 
   function accordion(id, title, total, bodyHtml, indicative = false) {
@@ -194,7 +175,7 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
   // ── Summary bar ──
   const summaryItems = [
     { label: "Bank balance", value: fmtCurrency(grossCashToday), cls: Number(grossCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
-    { label: "Committed this month", value: totalCommittedThisMonth > 0 ? `-${fmtCurrency(totalCommittedThisMonth)}` : "—", cls: totalCommittedThisMonth > 0 ? "ct-bal-neg" : "ct-bal-pos" },
+    { label: "Tax committed this month", value: totalCommittedThisMonth > 0 ? `-${fmtCurrency(totalCommittedThisMonth)}` : "—", cls: totalCommittedThisMonth > 0 ? "ct-bal-neg" : "ct-bal-pos" },
     { label: "Free cash", value: fmtCurrency(freeCashToday), cls: Number(freeCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
     { label: "Lowest point", value: minRow ? fmtCurrency(minRow.runningBalance) : "--", cls: minRow && minRow.runningBalance < 0 ? "ct-bal-neg" : "ct-bal-pos" },
     { label: hasNegative ? "First shortfall" : "FY end cash", value: hasNegative ? fmtTimelineMonth(rows[firstNegativeIdx].month) : fmtCurrency(rows[rows.length - 1].runningBalance), cls: hasNegative ? "ct-bal-neg" : "ct-bal-pos" },
@@ -223,12 +204,11 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
     ${grandTotal > 0 ? `
     <div class="ct-page-card ct-page-card-obligations">
       <div class="ct-page-card-header">
-        <span class="ct-page-card-title">Committed Obligations</span>
+        <span class="ct-page-card-title">Tax Obligations</span>
         <span class="ct-neg-amt" style="font-size:16px;font-weight:800;">-${fmtCurrency(grandTotal)}</span>
       </div>
-      ${accordion("now", "Committed this month", totalCommittedThisMonth, committedThisMonth.map(l => liabTableRow(l)).join(""))}
-      ${accordion("tax", "Tax obligations", totalTax, taxObligations.filter(l => !Boolean(l.indicative)).map(l => liabTableRow(l)).join(""))}
-      ${accordion("ap", "Accounts payable", totalPayable, apRows())}
+      ${accordion("now", "Tax committed this month", totalCommittedThisMonth, committedThisMonth.map(l => liabTableRow(l)).join(""))}
+      ${accordion("tax", "Future tax obligations", totalTax, taxObligations.filter(l => !Boolean(l.indicative)).map(l => liabTableRow(l)).join(""))}
       ${accordion("accruals", "Upcoming accruals", totalAccruals, upcomingAccruals.map(l => liabTableRow(l, true)).join(""), true)}
     </div>` : ""}`;
 }

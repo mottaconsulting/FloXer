@@ -2356,17 +2356,14 @@ def build_overview_payload(
     )
 
     # Accounts payable — real supplier invoices with actual due dates
-    accounts_payable = _fetch_outstanding_bills(today)
-
     # Upcoming accruals — GST/Super estimates not yet on Balance Sheet
     upcoming_accruals = _estimate_upcoming_accruals(actuals, _liab_all, today, fy_start_month, _liab_freq_map)
 
     committed_tax_items, future_tax_schedule = _split_schedule_by_current_month(liability_schedule, current_month_key)
-    committed_ap_items, future_ap_schedule = _split_schedule_by_current_month(accounts_payable, current_month_key)
 
     committed_tax_now = round(float(sum(float(item.get("amount") or 0) for item in committed_tax_items)), 2)
-    committed_ap_now = round(float(sum(float(item.get("amount") or 0) for item in committed_ap_items)), 2)
-    committed_cash_today = round(committed_tax_now + committed_ap_now, 2)
+    committed_ap_now = 0.0
+    committed_cash_today = round(committed_tax_now, 2)
     gross_cash_today = round(float(effective_cash_balance), 2) if effective_cash_balance is not None else None
     free_cash_today = (
         round(float(gross_cash_today - committed_cash_today), 2)
@@ -2379,7 +2376,7 @@ def build_overview_payload(
                 **dict(item),
                 "month": str(item.get("month") or item.get("due_month") or ""),
             }
-            for item in (future_tax_schedule + future_ap_schedule)
+            for item in future_tax_schedule
         ],
         key=lambda item: (
             str(item.get("month") or item.get("due_month") or "9999-12"),
@@ -2446,7 +2443,7 @@ def build_overview_payload(
             "balance_sheet_accounts": _bs["accounts"] if _bs else None,
         },
         "obligations": {
-            "committed_this_month": committed_tax_items + committed_ap_items,
+            "committed_this_month": committed_tax_items,
             "future_known": future_known_obligations,
             "future_forecast": future_forecast_obligations,
             "summary": {
