@@ -17,22 +17,30 @@ function buildCashTimeline(data, startingBalance) {
 
   let openingBalance = Number(startingBalance);
   const rows = explicitRows.map(row => {
-    const closingBalance = Number(row.closing_cash || 0);
+    const liabsThisMonth = [
+      ...(data?.obligations?.future_known || []).filter(item => item.month === row.month),
+      ...(data?.obligations?.future_forecast || []).filter(item => item.month === row.month),
+    ];
+    const liabTotal = liabsThisMonth.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const budgetRev = Number.isFinite(Number(row.operating_revenue)) ? Number(row.operating_revenue) : null;
+    const budgetExp = Number.isFinite(Number(row.operating_expenses)) ? Number(row.operating_expenses) : null;
+    const budgetNet = Number.isFinite(Number(row.operating_net))
+      ? Number(row.operating_net)
+      : (budgetRev !== null && budgetExp !== null ? budgetRev - budgetExp : null);
+    let closingBalance = openingBalance - liabTotal;
+    if (budgetNet !== null) closingBalance += budgetNet;
     const timelineRow = {
       month: row.month,
       openingBalance,
-      liabsThisMonth: [
-        ...(data?.obligations?.future_known || []).filter(item => item.month === row.month),
-        ...(data?.obligations?.future_forecast || []).filter(item => item.month === row.month),
-      ],
-      liabTotal: Number(row.obligations_total || 0),
-      budgetNet: row.operating_net,
-      budgetRev: row.operating_revenue,
-      budgetExp: row.operating_expenses,
-      runningBalance: closingBalance,
-      isNegative: Boolean(row.is_negative),
+      liabsThisMonth,
+      liabTotal,
+      budgetNet,
+      budgetRev,
+      budgetExp,
+      runningBalance: Number(closingBalance.toFixed(2)),
+      isNegative: closingBalance < 0,
     };
-    openingBalance = closingBalance;
+    openingBalance = timelineRow.runningBalance;
     return timelineRow;
   });
   const firstNegativeIdx = rows.findIndex(r => r.isNegative);

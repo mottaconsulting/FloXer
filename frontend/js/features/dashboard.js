@@ -193,7 +193,14 @@ function renderOverview(data) {
   const timeline = !isPastFy ? buildCashTimeline(data, freeBalance) : null;
   const timelineRows = timeline?.rows || [];
   const firstNegIdx = timeline?.firstNegativeIdx ?? -1;
-  const outOfCash = data?.projection?.out_of_cash || {};
+  const timelineAsOfDate = data?.meta?.today ? new Date(data.meta.today) : new Date();
+  const firstNegativeMonth = firstNegIdx >= 0 ? timelineRows[firstNegIdx]?.month : null;
+  const firstNegativeDate = firstNegativeMonth
+    ? new Date(Number(firstNegativeMonth.slice(0, 4)), Number(firstNegativeMonth.slice(5, 7)) - 1, 1)
+    : null;
+  const localOutOfCashDays = firstNegativeDate
+    ? Math.max(0, Math.round((firstNegativeDate - timelineAsOfDate) / (1000 * 60 * 60 * 24)))
+    : null;
   if (runwayValue) {
     runwayValue.classList.remove("positive", "negative", "warning");
     runwayValue.style.fontSize = "";
@@ -215,13 +222,13 @@ function renderOverview(data) {
         else if (fallbackDays <= 90) runwayValue.classList.add("warning");
         else runwayValue.classList.add("positive");
       }
-    } else if (outOfCash.cash_positive_through_fy_end || firstNegIdx < 0) {
+    } else if (firstNegIdx < 0) {
       // Projected free cash stays positive through FY end
       runwayValue.textContent = "Positive through FY end";
       runwayValue.style.fontSize = "15px";
       runwayValue.classList.add("positive");
     } else {
-      const runwayDays = Number(outOfCash.days_until_out_of_cash);
+      const runwayDays = Number(localOutOfCashDays);
       runwayValue.textContent = `${runwayDays} Days`;
       if (runwayDays <= 30) runwayValue.classList.add("negative");
       else if (runwayDays <= 90) runwayValue.classList.add("warning");
@@ -261,13 +268,10 @@ function renderOverview(data) {
         burnNote.textContent = "No budget data";
         burnNote.classList.add("flat");
       } else {
-        const futureKnown = data?.obligations?.future_known || [];
-        const futureForecast = data?.obligations?.future_forecast || [];
-        const futureOblig  = [...futureKnown, ...futureForecast].reduce((s, l) => s + Number(l.amount || 0), 0);
-        const taxTotal     = [...futureKnown, ...futureForecast]
-          .filter(l => String(l.type || "").toLowerCase() !== "payable")
-          .reduce((s, l) => s + Number(l.amount || 0), 0);
-        const combinedNet  = freeBalance + fyNet - futureOblig;
+        const taxTotal = timelineRows.reduce((s, r) => s + Number(r.liabTotal || 0), 0);
+        const combinedNet  = timelineRows.length
+          ? Number(timelineRows[timelineRows.length - 1].runningBalance || 0)
+          : freeBalance;
 
         // Populate breakdown
         const ocBreakdown = document.getElementById("dashboardOcBreakdown");
