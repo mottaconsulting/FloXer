@@ -15,19 +15,26 @@ function buildCashTimeline(data, startingBalance) {
   const explicitRows = data?.projection?.forecast_operating || [];
   if (!explicitRows.length) return null;
 
-  const rows = explicitRows.map(row => ({
-    month: row.month,
-    liabsThisMonth: [
-      ...(data?.obligations?.future_known || []).filter(item => item.month === row.month),
-      ...(data?.obligations?.future_forecast || []).filter(item => item.month === row.month),
-    ],
-    liabTotal: Number(row.obligations_total || 0),
-    budgetNet: row.operating_net,
-    budgetRev: row.operating_revenue,
-    budgetExp: row.operating_expenses,
-    runningBalance: Number(row.closing_cash || 0),
-    isNegative: Boolean(row.is_negative),
-  }));
+  let openingBalance = Number(startingBalance);
+  const rows = explicitRows.map(row => {
+    const closingBalance = Number(row.closing_cash || 0);
+    const timelineRow = {
+      month: row.month,
+      openingBalance,
+      liabsThisMonth: [
+        ...(data?.obligations?.future_known || []).filter(item => item.month === row.month),
+        ...(data?.obligations?.future_forecast || []).filter(item => item.month === row.month),
+      ],
+      liabTotal: Number(row.obligations_total || 0),
+      budgetNet: row.operating_net,
+      budgetRev: row.operating_revenue,
+      budgetExp: row.operating_expenses,
+      runningBalance: closingBalance,
+      isNegative: Boolean(row.is_negative),
+    };
+    openingBalance = closingBalance;
+    return timelineRow;
+  });
   const firstNegativeIdx = rows.findIndex(r => r.isNegative);
   const minRow = rows.length ? rows.reduce((a, b) => b.runningBalance < a.runningBalance ? b : a, rows[0]) : null;
   return { rows, firstNegativeIdx, minRow };
@@ -42,9 +49,14 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
   const container = document.getElementById("dashboardCashTimeline");
   if (!container || isPastFy) { if (container) container.style.display = "none"; return; }
 
-  const grossCashToday = Number(data?.kpis?.gross_cash_today ?? startingBalance);
+  const hasManualOverride = Boolean(typeof getBalanceOverrideValue === "function" && getBalanceOverrideValue(data) !== null);
+  const grossCashToday = hasManualOverride
+    ? Number(startingBalance) + Number(data?.kpis?.committed_cash_today ?? 0)
+    : Number(data?.kpis?.gross_cash_today ?? startingBalance);
   const committedCashToday = Number(data?.kpis?.committed_cash_today ?? 0);
-  const freeCashToday = Number.isFinite(Number(data?.kpis?.free_cash_today))
+  const freeCashToday = hasManualOverride
+    ? Number(startingBalance)
+    : Number.isFinite(Number(data?.kpis?.free_cash_today))
     ? Number(data.kpis.free_cash_today)
     : Number(startingBalance);
 
@@ -86,10 +98,12 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
     const groupClass = isFirstNeg ? "ct-group ct-group-first-neg" : (row.isNegative ? "ct-group ct-group-neg" : "ct-group");
     const balClass = row.runningBalance >= 0 ? "ct-bal-pos" : "ct-bal-neg";
 
+    const openingClass = Number(row.openingBalance) >= 0 ? "ct-bal-pos" : "ct-bal-neg";
+
     // Liability sub-rows with section label
     const hasLiabs = row.liabsThisMonth.length > 0;
     const liabSection = hasLiabs
-      ? `<tr class="ct-section-label"><td colspan="2">Obligations due</td></tr>` +
+      ? `<tr class="ct-section-label"><td colspan="2">Tax obligations</td></tr>` +
         row.liabsThisMonth.map(l =>
           `<tr class="ct-detail-row ct-liab-row">
             <td>${l.name}</td>
@@ -120,7 +134,15 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
         <td>${fmtTimelineMonth(row.month)}${isFirstNeg ? ' <span class="ct-badge-neg">Shortfall</span>' : ""}</td>
         <td class="ct-bal ${balClass}">${fmtCurrency(row.runningBalance)}</td>
       </tr>
+      <tr class="ct-detail-row ct-opening-row">
+        <td>Opening cash</td>
+        <td class="ct-bal ${openingClass}">${fmtCurrency(row.openingBalance)}</td>
+      </tr>
       ${liabSection}${budgetRow}
+      <tr class="ct-detail-row ct-closing-row">
+        <td>Closing cash</td>
+        <td class="ct-bal ${balClass}">${fmtCurrency(row.runningBalance)}</td>
+      </tr>
       <tr class="ct-group-sep"><td colspan="2"></td></tr>
     </tbody>`;
   });
@@ -195,6 +217,10 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
       <div class="ct-page-card-header">
         <span class="ct-page-card-title">Cash Projection</span>
         ${headlineHtml}
+      </div>
+      <div class="ct-explainer">
+        <div class="ct-explainer-title">How to read this</div>
+        <div class="ct-explainer-copy">Starting Point = Bank balance - tax committed this month. Each future month shows opening cash + revenue - expenses - tax obligations = closing cash.</div>
       </div>
       <div style="overflow-x:auto">
         <table class="cash-timeline-table">${tbodyHtml}</table>

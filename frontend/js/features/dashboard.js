@@ -169,7 +169,7 @@ function renderOverview(data) {
     balanceSparkline.innerHTML = buildSparklineMarkup(cumulativeBalanceSeries);
   }
   renderBalanceAdjustState(balanceKpi, isPastFy);
-  const committedCash = !balanceKpi.hasManualOverride && Number.isFinite(balanceKpi.committedCash)
+  const committedCash = Number.isFinite(balanceKpi.committedCash)
     ? Number(balanceKpi.committedCash) : 0;
   const freeBalance = Number.isFinite(balanceKpi.freeCash) ? balanceKpi.freeCash : balanceKpi.balance;
   // Free cash bar: only show when using Xero balance (liabilities are already known in manual override)
