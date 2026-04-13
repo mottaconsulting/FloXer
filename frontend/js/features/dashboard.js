@@ -65,71 +65,6 @@ function bindBalanceAdjustEvents() {
   BALANCE_ADJUST_EVENTS_BOUND = true;
 }
 
-let BURN_NOTE_EVENTS_BOUND = false;
-function bindBurnNotePopover() {
-  if (BURN_NOTE_EVENTS_BOUND) return;
-  const note = document.getElementById("dashboardBurnNote");
-  if (!note) return;
-
-  // Create popover element once
-  const pop = document.createElement("div");
-  pop.id = "burnNotePopover";
-  pop.style.cssText = [
-    "position:fixed", "z-index:9999", "background:#fff",
-    "border:1px solid #dbe2ea", "border-radius:10px",
-    "padding:14px 16px", "box-shadow:0 8px 24px rgba(15,23,42,0.12)",
-    "font-size:13px", "font-family:Inter,sans-serif", "min-width:200px",
-    "display:none", "line-height:1.7"
-  ].join(";");
-  document.body.appendChild(pop);
-
-  note.style.cursor = "pointer";
-  note.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (pop.style.display !== "none") { pop.style.display = "none"; return; }
-    const rev        = Number(note.dataset.fyRevenue);
-    const exp        = Number(note.dataset.fyExpense);
-    const net        = Number(note.dataset.fyNet);
-    const monthsLeft = Number(note.dataset.monthsLeft) || 0;
-    const committed  = Number(note.dataset.committed) || 0;
-    const freeBal    = Number(note.dataset.freeBalance);
-    const fmtNum     = v => Number.isFinite(v) ? fmtCurrency(Math.abs(v)) : "--";
-    const netSign    = net >= 0 ? "+" : "-";
-    const netCol     = net >= 0 ? "#3b82f6" : "#ec4899";
-    const sentence   = net >= 0
-      ? `Budget projects a surplus over the next ${monthsLeft} month${monthsLeft !== 1 ? "s" : ""}.`
-      : `Budget projects a shortfall over the next ${monthsLeft} month${monthsLeft !== 1 ? "s" : ""}.`;
-    const committedSection = committed > 0 ? `
-      <div style="margin-top:12px;padding-top:10px;border-top:1px solid #dbe2ea;">
-        <div style="font-weight:700;color:#0d1b4b;margin-bottom:4px">Current cash position</div>
-        <div style="display:grid;grid-template-columns:1fr auto;gap:2px 16px;color:#374151">
-          <span>Free cash</span><span style="color:#3b82f6;font-weight:700">${fmtNum(freeBal)}</span>
-          <span>Tax committed this month</span><span style="color:#ec4899;font-weight:700">-${fmtNum(committed)}</span>
-        </div>
-      </div>` : "";
-    pop.innerHTML = `
-      <div style="font-weight:700;color:#0d1b4b;margin-bottom:6px">Remaining FY budget</div>
-      <div style="color:#6b7280;font-size:12px;margin-bottom:10px">${sentence}</div>
-      <div style="display:grid;grid-template-columns:1fr auto;gap:2px 16px;color:#374151">
-        <span>Revenue</span><span style="color:#3b82f6;font-weight:700">+${fmtNum(rev)}</span>
-        <span>Expenses</span><span style="color:#ec4899;font-weight:700">-${fmtNum(exp)}</span>
-        <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:700">Projected closing cash</span>
-        <span style="border-top:1px solid #dbe2ea;padding-top:6px;margin-top:4px;font-weight:800;color:${netCol}">${netSign}${fmtNum(net)}</span>
-      </div>
-      ${committedSection}`;
-    const rect = note.getBoundingClientRect();
-    pop.style.display = "block";
-    const pw = pop.offsetWidth;
-    let left = rect.right - pw;
-    if (left < 8) left = 8;
-    pop.style.top  = `${rect.bottom + 6}px`;
-    pop.style.left = `${left}px`;
-  });
-
-  document.addEventListener("click", () => { pop.style.display = "none"; });
-  BURN_NOTE_EVENTS_BOUND = true;
-}
-
 function renderBalanceAdjustState(balanceKpi, isPastFy) {
   const toggleBtn = document.getElementById("dashboardBalanceAdjustToggle");
   const sourceEl  = document.getElementById("dashboardBalanceSource");
@@ -155,7 +90,6 @@ function renderOverview(data) {
   const kpis = data?.kpis || {};
   setAppCurrency(data?.meta?.currency);
   bindBalanceAdjustEvents();
-  bindBurnNotePopover();
   populateFySelect(data);
   const yearProfitKpi = computeYearProfitKpi(data);
   const balanceKpi = computeBalanceKpi(data);
@@ -297,7 +231,7 @@ function renderOverview(data) {
   const runwayBalance = document.getElementById("dashboardRunwayBalance");
   if (runwayBalance && !isPastFy && Number.isFinite(balanceKpi.balance)) {
     const startCol = freeBalance >= 0 ? "#1e2a78" : "#ec4899";
-    runwayBalance.innerHTML = `Free cash starting point <strong style="color:${startCol}">${fmtCurrency(freeBalance)}</strong>`;
+    runwayBalance.innerHTML = `Starting Point <strong style="color:${startCol}">${fmtCurrency(freeBalance)}</strong>`;
     runwayBalance.classList.add("is-visible");
   } else if (runwayBalance) {
     runwayBalance.textContent = "";
@@ -310,26 +244,9 @@ function renderOverview(data) {
       burnNote.textContent = "FY total";
       burnNote.classList.add("flat");
     } else {
-      // Derive fyRevenue/fyExpense using the same _bestOf(actual, budget) logic as the timeline
-      const salesChart = data?.charts?.sales_fy || {};
-      const expensesChart = data?.charts?.expenses_fy || {};
-      const labels = salesChart.labels || expensesChart.labels || [];
-      const asOfMonth = data?.meta?.as_of_month;
-      const cutoffIdx = asOfMonth ? labels.indexOf(asOfMonth) : -1;
-      const revenueActual = salesChart.actual_monthly || [];
-      const revenueProjected = salesChart.projected_monthly || [];
-      const expenseActual = expensesChart.actual_monthly || [];
-      const expenseProjected = expensesChart.projected_monthly || [];
-      let fyRevenue = 0, fyExpense = 0;
-      labels.forEach((_, idx) => {
-        if (idx <= cutoffIdx) return;
-        const rev = _bestOf(revenueActual[idx], revenueProjected[idx]);
-        const exp = _bestOf(expenseActual[idx], expenseProjected[idx]);
-        if (!Number.isFinite(rev) || !Number.isFinite(exp)) return;
-        fyRevenue += rev;
-        fyExpense += exp;
-      });
-      const fyNet = timelineRows.reduce((s, r) => r.budgetNet !== null ? s + r.budgetNet : s, 0);
+      const fyRevenue = timelineRows.reduce((s, r) => Number.isFinite(r.budgetRev) ? s + Number(r.budgetRev) : s, 0);
+      const fyExpense = timelineRows.reduce((s, r) => Number.isFinite(r.budgetExp) ? s + Number(r.budgetExp) : s, 0);
+      const fyNet = timelineRows.reduce((s, r) => Number.isFinite(r.budgetNet) ? s + Number(r.budgetNet) : s, 0);
       const monthsLeft = timelineRows.filter(r => r.budgetNet !== null).length;
       burnNote.dataset.fyRevenue   = fyRevenue;
       burnNote.dataset.fyExpense   = fyExpense;
@@ -356,11 +273,13 @@ function renderOverview(data) {
         const ocBreakdown = document.getElementById("dashboardOcBreakdown");
         if (ocBreakdown) {
           const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+          set("ocBankBalance", Number.isFinite(balanceKpi.balance) ? fmtCurrency(balanceKpi.balance) : "--");
+          set("ocCommittedTax", committedCash > 0 ? `-${fmtCurrency(committedCash)}` : "—");
           const balanceEl = document.getElementById("ocBalance");
           if (balanceEl) {
             balanceEl.textContent = fmtCurrency(freeBalance);
             const labelEl = balanceEl.previousElementSibling;
-            if (labelEl) labelEl.textContent = "Free cash starting point";
+            if (labelEl) labelEl.textContent = "Starting Point";
           }
           set("ocRevenue",  `+${fmtCurrency(fyRevenue)}`);
           set("ocExpenses", `-${fmtCurrency(fyExpense)}`);

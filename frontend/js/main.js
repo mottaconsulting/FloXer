@@ -244,8 +244,22 @@ function renderOverviewCharts(data) {
           callbacks: {
             label: (ctx) => {
               const label = ctx.dataset.label.replace(" Projection", "");
-              const prefix = ctx.dataset.label.includes("Projection") ? "Projected " : "";
+              const isProjected = ctx.dataset.label.includes("Projection");
+              const isExpenseProjection = ctx.dataset.label === "Expenses Projection";
+              if (isExpenseProjection) {
+                return `Projected ${label} incl. future tax: ${fmtCurrency(Number(ctx.parsed?.y || 0))}`;
+              }
+              const prefix = isProjected ? "Projected " : "";
               return `${prefix}${label}: ${fmtCurrency(Number(ctx.parsed?.y || 0))}`;
+            },
+            footer: (items) => {
+              if (!items?.length) return "";
+              const monthLabel = sales.labels?.[items[0].dataIndex];
+              if (!monthLabel) return "";
+              const taxAmount = Number(liabByMonth[monthLabel] || 0);
+              if (taxAmount <= 0) return "";
+              const hasExpenseProjection = items.some(item => item.dataset?.label === "Expenses Projection");
+              return hasExpenseProjection ? `Includes future tax obligations: ${fmtCurrency(taxAmount)}` : "";
             }
           }
         }
