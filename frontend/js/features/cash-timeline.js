@@ -15,6 +15,10 @@ function buildCashTimeline(data, startingBalance) {
   const explicitRows = data?.projection?.forecast_operating || [];
   if (!explicitRows.length) return null;
 
+  // Frontend is the active source of truth for projection math because the
+  // manual Bank Balance override lives in the UI. We therefore rebuild the
+  // month-by-month walk here from the current Starting Point instead of
+  // trusting backend closing_cash values that may predate a local override.
   let openingBalance = Number(startingBalance);
   const rows = explicitRows.map(row => {
     const liabsThisMonth = [
@@ -95,7 +99,7 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
       <td class="ct-neg-amt">-${fmtCurrency(committedCashToday)}</td>
     </tr>
     <tr class="ct-month-row">
-      <td>Free cash starting point</td>
+      <td>Starting Point</td>
       <td class="ct-bal ${freeCashClass}">${fmtCurrency(freeCashToday)}</td>
     </tr>
   </tbody>`;
@@ -132,15 +136,15 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
            <td class="ct-neg-amt">-${fmtCurrency(row.budgetExp)}</td>
          </tr>
          <tr class="ct-detail-row ct-budget-row ct-budget-net-row">
-           <td>Operating net</td>
+           <td>Net movement</td>
            <td class="${row.budgetNet >= 0 ? "ct-pos-amt" : "ct-neg-amt"}">${row.budgetNet >= 0 ? "+" : ""}${fmtCurrency(row.budgetNet)}</td>
          </tr>`
       : "";
 
     tbodyHtml += `<tbody class="${groupClass}">
       <tr class="ct-month-row">
-        <td>${fmtTimelineMonth(row.month)}${isFirstNeg ? ' <span class="ct-badge-neg">Shortfall</span>' : ""}</td>
-        <td class="ct-bal ${balClass}">${fmtCurrency(row.runningBalance)}</td>
+        <td>${fmtTimelineMonth(row.month)}${isFirstNeg ? ' <span class="ct-badge-neg">First month below zero</span>' : ""}</td>
+        <td></td>
       </tr>
       <tr class="ct-detail-row ct-opening-row">
         <td>Opening cash</td>
@@ -206,7 +210,7 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
   const summaryItems = [
     { label: "Bank balance", value: fmtCurrency(grossCashToday), cls: Number(grossCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
     { label: "Tax committed this month", value: totalCommittedThisMonth > 0 ? `-${fmtCurrency(totalCommittedThisMonth)}` : "—", cls: totalCommittedThisMonth > 0 ? "ct-bal-neg" : "ct-bal-pos" },
-    { label: "Free cash", value: fmtCurrency(freeCashToday), cls: Number(freeCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
+    { label: "Starting Point", value: fmtCurrency(freeCashToday), cls: Number(freeCashToday) >= 0 ? "ct-bal-pos" : "ct-bal-neg" },
     { label: "Lowest point", value: minRow ? fmtCurrency(minRow.runningBalance) : "--", cls: minRow && minRow.runningBalance < 0 ? "ct-bal-neg" : "ct-bal-pos" },
     { label: hasNegative ? "First shortfall" : "FY end cash", value: hasNegative ? fmtTimelineMonth(rows[firstNegativeIdx].month) : fmtCurrency(rows[rows.length - 1].runningBalance), cls: hasNegative ? "ct-bal-neg" : "ct-bal-pos" },
   ];
@@ -238,7 +242,7 @@ function renderCashTimeline(data, startingBalance, isPastFy) {
     ${grandTotal > 0 ? `
     <div class="ct-page-card ct-page-card-obligations">
       <div class="ct-page-card-header">
-        <span class="ct-page-card-title">Tax Obligations</span>
+        <span class="ct-page-card-title">Tax Details</span>
         <span class="ct-neg-amt" style="font-size:16px;font-weight:800;">-${fmtCurrency(grandTotal)}</span>
       </div>
       ${accordion("now", "Tax committed this month", totalCommittedThisMonth, committedThisMonth.map(l => liabTableRow(l)).join(""))}

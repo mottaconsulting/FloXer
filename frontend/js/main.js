@@ -145,7 +145,7 @@ function renderOverviewCharts(data) {
       labels: monthInitialLabels(sales.labels),
       datasets: [
         {
-          label: "Cumulative Net",
+          label: "Cash Outlook",
           data: runningNet,
           backgroundColor: runningNet.map((v, idx) => {
             const isFuture = !isPastFinancialYearSelection(data) && idx > cutoffIdx;
@@ -213,7 +213,7 @@ function renderOverviewCharts(data) {
           tension: 0.35
         },
         {
-          label: "Expenses Projection",
+          label: "Expenses + Tax Projection",
           data: expProjectedAdj,
           borderColor: "rgba(236, 72, 153, 0.55)",
           backgroundColor: "rgba(236, 72, 153, 0.08)",
@@ -245,9 +245,9 @@ function renderOverviewCharts(data) {
             label: (ctx) => {
               const label = ctx.dataset.label.replace(" Projection", "");
               const isProjected = ctx.dataset.label.includes("Projection");
-              const isExpenseProjection = ctx.dataset.label === "Expenses Projection";
+              const isExpenseProjection = ctx.dataset.label === "Expenses + Tax Projection";
               if (isExpenseProjection) {
-                return `Projected ${label} incl. future tax: ${fmtCurrency(Number(ctx.parsed?.y || 0))}`;
+                return `Projected ${label}: ${fmtCurrency(Number(ctx.parsed?.y || 0))}`;
               }
               const prefix = isProjected ? "Projected " : "";
               return `${prefix}${label}: ${fmtCurrency(Number(ctx.parsed?.y || 0))}`;
@@ -258,7 +258,7 @@ function renderOverviewCharts(data) {
               if (!monthLabel) return "";
               const taxAmount = Number(liabByMonth[monthLabel] || 0);
               if (taxAmount <= 0) return "";
-              const hasExpenseProjection = items.some(item => item.dataset?.label === "Expenses Projection");
+              const hasExpenseProjection = items.some(item => item.dataset?.label === "Expenses + Tax Projection");
               return hasExpenseProjection ? `Includes future tax obligations: ${fmtCurrency(taxAmount)}` : "";
             }
           }

@@ -187,9 +187,9 @@ function renderOverview(data) {
     freeCashBar.style.display = "none";
   }
   const runwayValue = document.getElementById("dashboardRunwayValue");
-  // Drive Out of Cash from the cash timeline — same logic as the Cash Timeline page.
-  // Timeline uses _bestOf(actual, budget) per month and places liabilities at their real due months,
-  // which is more accurate than the old computeForwardRunwayMetrics approach.
+  // Frontend cash projection is the active source of truth because manual
+  // Bank Balance edits happen locally in the UI and must flow instantly into
+  // the same Starting Point / Out of Cash logic used by the Cash Timeline page.
   const timeline = !isPastFy ? buildCashTimeline(data, freeBalance) : null;
   const timelineRows = timeline?.rows || [];
   const firstNegIdx = timeline?.firstNegativeIdx ?? -1;
@@ -253,16 +253,10 @@ function renderOverview(data) {
     } else {
       const fyRevenue = timelineRows.reduce((s, r) => Number.isFinite(r.budgetRev) ? s + Number(r.budgetRev) : s, 0);
       const fyExpense = timelineRows.reduce((s, r) => Number.isFinite(r.budgetExp) ? s + Number(r.budgetExp) : s, 0);
-      const fyNet = timelineRows.reduce((s, r) => Number.isFinite(r.budgetNet) ? s + Number(r.budgetNet) : s, 0);
-      const monthsLeft = timelineRows.filter(r => r.budgetNet !== null).length;
       burnNote.dataset.fyRevenue   = fyRevenue;
       burnNote.dataset.fyExpense   = fyExpense;
-      burnNote.dataset.fyNet       = fyNet;
-      burnNote.dataset.monthsLeft  = monthsLeft;
       burnNote.dataset.committed   = committedCash;
       burnNote.dataset.freeBalance = Math.max(0, freeBalance);
-      const burnHint = document.getElementById("dashboardBurnNoteHint");
-      if (burnHint) burnHint.style.display = timelineRows.length ? "" : "none";
       burnNote.style.color = "";
       if (!timelineRows.length) {
         burnNote.textContent = "No budget data";

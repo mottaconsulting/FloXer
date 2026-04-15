@@ -589,6 +589,13 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 18px;
     }
+    .rebuilt-panel-note {
+      margin-top: 4px;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.45;
+    }
     .rebuilt-kpi-card,
     .rebuilt-panel {
       background: #ffffff;
@@ -780,6 +787,21 @@
       overflow: hidden;
       margin-bottom: 12px;
     }
+    .ct-page-card-obligations {
+      border-color: #eef2f7;
+      box-shadow: none;
+    }
+    .ct-page-card-obligations .ct-page-card-header {
+      padding-top: 10px;
+      padding-bottom: 10px;
+      background: #fbfcfe;
+    }
+    .ct-page-card-obligations .ct-page-card-title {
+      color: #475569;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
     .ct-page-card-header {
       display: flex;
       align-items: center;
@@ -957,6 +979,7 @@
       flex-shrink: 0;
     }
     .ct-accordion-content { border-top: 1px solid #f4f6f8; }
+    .ct-page-card-obligations .ct-acc-title { font-size: 14px; font-weight: 600; }
 
     /* ── Obligations table ── */
     .ct-obligations-table { width: 100%; border-collapse: collapse; }
@@ -2420,6 +2443,7 @@
       <div class="rebuilt-chart-grid">
         <section class="rebuilt-panel">
           <h3 class="rebuilt-panel-title">Cash Outlook <span id="graphFyLabelCashflow" class="rebuilt-fy-chip">--</span></h3>
+          <div class="rebuilt-panel-note">Projected from revenue, expenses, and future tax obligations.</div>
           <div class="rebuilt-chart-wrap">
             <canvas id="dashboardCashflowChart"></canvas>
           </div>
@@ -2432,6 +2456,7 @@
               <span class="revenue-legend-item"><span class="revenue-legend-dot expense" aria-hidden="true"></span>Expenses</span>
             </div>
           </div>
+          <div class="rebuilt-panel-note">Projected expenses include future tax obligations.</div>
           <div class="rebuilt-chart-wrap">
             <canvas id="dashboardRevenueExpensesChart"></canvas>
           </div>

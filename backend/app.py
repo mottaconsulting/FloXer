@@ -2292,27 +2292,9 @@ def build_overview_payload(
 
     current_month_key = _month_key(current_month)
 
-    # Current Liabilities — use Balance Sheet parsed earlier (same API call, no extra request).
-    current_liabilities = _bs["total"] if _bs else None
-
-    # Fall back to journal lines if Balance Sheet fetch failed.
     _liab_all = actuals[actuals["JOURNAL_DATE"] <= pd.Timestamp(today)]
-    if current_liabilities is None:
-        if "ACCOUNT_TYPE" in _liab_all.columns and "NET_AMOUNT" in _liab_all.columns:
-            cur_df = _liab_all.loc[_liab_all["ACCOUNT_TYPE"] == "CURRLIAB"].copy()
-            if len(cur_df):
-                code_col = cur_df["ACCOUNT_CODE"].fillna("").astype(str).str.strip() if "ACCOUNT_CODE" in cur_df.columns else pd.Series("", index=cur_df.index)
-                name_col = cur_df["ACCOUNT_NAME"].fillna("").astype(str).str.strip() if "ACCOUNT_NAME" in cur_df.columns else pd.Series("", index=cur_df.index)
-                cur_df["_LIAB_KEY"] = code_col.where(code_col != "", name_col)
-                cur_df = cur_df[cur_df["_LIAB_KEY"] != ""]
-                cur_df = cur_df[~name_col.reindex(cur_df.index).map(_is_bookkeeping_artefact)]
-                if len(cur_df):
-                    balances = cur_df.groupby("_LIAB_KEY")["NET_AMOUNT"].sum()
-                    outstanding = balances[balances < 0].abs()
-                    if len(outstanding):
-                        current_liabilities = float(outstanding.sum())
 
-    # Build per-account liability schedule for the frontend cash timeline.
+    # Build the tax-only obligations schedule used by the dashboard cash model.
     # Reuses _liab_all already filtered above — no extra API call.
     _liab_currliab = _liab_all[_liab_all["ACCOUNT_TYPE"] == "CURRLIAB"].copy() if "ACCOUNT_TYPE" in _liab_all.columns else pd.DataFrame()
     _liab_freq_map = _liability_frequency_config(lines=_liab_currliab)
@@ -2355,14 +2337,12 @@ def build_overview_payload(
         liability_schedule, today, fy_end, _liab_freq_map, fy_start_month
     )
 
-    # Accounts payable — real supplier invoices with actual due dates
-    # Upcoming accruals — GST/Super estimates not yet on Balance Sheet
+    # Upcoming accruals — GST/Super estimates not yet on Balance Sheet.
     upcoming_accruals = _estimate_upcoming_accruals(actuals, _liab_all, today, fy_start_month, _liab_freq_map)
 
     committed_tax_items, future_tax_schedule = _split_schedule_by_current_month(liability_schedule, current_month_key)
 
     committed_tax_now = round(float(sum(float(item.get("amount") or 0) for item in committed_tax_items)), 2)
-    committed_ap_now = 0.0
     committed_cash_today = round(committed_tax_now, 2)
     gross_cash_today = round(float(effective_cash_balance), 2) if effective_cash_balance is not None else None
     free_cash_today = (
@@ -2370,7 +2350,7 @@ def build_overview_payload(
         if gross_cash_today is not None
         else None
     )
-    future_obligation_schedule = sorted(
+    future_tax_schedule_normalized = sorted(
         [
             {
                 **dict(item),
@@ -2384,9 +2364,9 @@ def build_overview_payload(
             str(item.get("name") or ""),
         ),
     )
-    future_known_obligations = [item for item in future_obligation_schedule if not bool(item.get("projected"))]
+    future_known_obligations = [item for item in future_tax_schedule_normalized if not bool(item.get("projected"))]
     future_forecast_obligations = _dedupe_future_forecast_obligations([
-        *[item for item in future_obligation_schedule if bool(item.get("projected"))],
+        *[item for item in future_tax_schedule_normalized if bool(item.get("projected"))],
         *[
             {
                 **dict(item),
@@ -2471,7 +2451,6 @@ def build_overview_payload(
             "free_cash_today": free_cash_today,
             "committed_this_month": committed_cash_today,
             "committed_tax_now": committed_tax_now,
-            "committed_ap_now": committed_ap_now,
             "cash_balance_live": (
                 round(float(live_cash_balance), 2) if live_cash_balance is not None else None
             ),
