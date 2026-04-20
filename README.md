@@ -31,6 +31,7 @@ Detailed docs live in [`docs/`](./docs):
 - [API Reference](./docs/07-api-reference.md)
 - [Frontend Modules](./docs/08-frontend-modules.md)
 - [Development Guide](./docs/09-development-guide.md)
+- [app.py Structure Map](./docs/10-apppy-structure.md)
 
 ## Current Product Model
 
