@@ -28,6 +28,9 @@ Detailed docs live in [`docs/`](./docs):
 - [Architecture](./docs/04-architecture.md)
 - [Known Limitations](./docs/05-known-limitations.md)
 - [Setup and Deployment](./docs/06-setup-and-deployment.md)
+- [API Reference](./docs/07-api-reference.md)
+- [Frontend Modules](./docs/08-frontend-modules.md)
+- [Development Guide](./docs/09-development-guide.md)
 
 ## Current Product Model
 
@@ -81,6 +84,9 @@ MMXeroAPI/
     04-architecture.md
     05-known-limitations.md
     06-setup-and-deployment.md
+    07-api-reference.md
+    08-frontend-modules.md
+    09-development-guide.md
   .env.example
   render.yaml
   README.md
