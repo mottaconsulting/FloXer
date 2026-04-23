@@ -92,6 +92,7 @@ There is no automated test suite. Manual testing workflow:
 |---|---|
 | `docs/01-financial-model.md` | Changing any money calculation |
 | `docs/02-product-overview.md` | Unsure if a feature belongs |
+| `docs/03-dashboard-and-pages.md` | Understanding what each page/card shows |
 | `docs/04-architecture.md` | Changing data flow between backend and frontend |
 | `docs/05-known-limitations.md` | Before "fixing" something that may be intentional |
 | `docs/06-setup-and-deployment.md` | First-time setup or deployment issues |

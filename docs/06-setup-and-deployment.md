@@ -95,18 +95,7 @@ XERO_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 To find your tenant ID: connect Xero in the app, then visit `/connections` — the tenant ID appears there.
 
-### 1.8 Optional: Bank Account for Live Balance
-
-To show a live bank balance on the dashboard, tell the app which account to read:
-
-```env
-XERO_PRIMARY_BANK_ACCOUNT_CODE=1200
-XERO_PRIMARY_BANK_ACCOUNT_NAME=business cheque account
-```
-
-These values come from your Xero **Chart of Accounts** (Accounting → Chart of Accounts in Xero).
-
-### 1.9 How Tokens Are Stored
+### 1.8 How Tokens Are Stored
 
 After a user connects Xero, the access and refresh tokens are saved in Supabase in the `xero_tokens` table. The app auto-refreshes tokens when they expire — no user action needed. See section 2 for the table schema.
 
@@ -344,8 +333,9 @@ Then trigger a redeploy: **Manual Deploy** → **Deploy latest commit**.
 | `SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
 | `SUPABASE_DB_URL` | Yes | Supabase PostgreSQL pooler connection string |
 | `XERO_TENANT_ID` | No | Pin a specific Xero organisation |
-| `XERO_PRIMARY_BANK_ACCOUNT_CODE` | No | Chart of accounts code for live bank balance |
-| `XERO_PRIMARY_BANK_ACCOUNT_NAME` | No | Account name for live bank balance |
-| `GST_FREQUENCY` | No | `monthly` or `quarterly` (default: monthly) |
-| `PAYG_FREQUENCY` | No | `monthly` or `quarterly` (default: monthly) |
-| `SUPER_FREQUENCY` | No | `monthly` or `quarterly` (default: quarterly) |
+| `GST_FREQUENCY` | No | Override auto-detected GST lodgement frequency (`monthly` or `quarterly`) |
+| `PAYG_FREQUENCY` | No | Override auto-detected PAYG lodgement frequency (`monthly` or `quarterly`) |
+| `SUPER_FREQUENCY` | No | Override Super frequency (`monthly` or `quarterly`, default: quarterly) |
+| `PAYG_MONTHLY_DUE_DAY` | No | Day of month PAYG is due when frequency is monthly (default: 21) |
+
+> **Tax frequency note:** GST and PAYG frequency are auto-detected from Xero transaction history. Only set these overrides if the detected frequency is wrong — for example, if the Xero file is new, history is sparse, or the lodgement schedule recently changed. See `docs/05-known-limitations.md` limitation #11 for more context.

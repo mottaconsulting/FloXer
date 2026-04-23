@@ -50,9 +50,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 if not SUPABASE_URL or not SUPABASE_ANON_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set.")
-PRIMARY_BANK_ACCOUNT_CODE = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_CODE", "").strip()
-PRIMARY_BANK_ACCOUNT_NAME = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_NAME", "").strip().lower()
-PRIMARY_BANK_ACCOUNT_NUMBER = os.getenv("XERO_PRIMARY_BANK_ACCOUNT_NUMBER", "").strip()
 
 
 def _origin_from_url(url: str) -> str:
@@ -529,33 +526,13 @@ def _bank_account_matches(account: dict) -> bool:
         return False
     if str(account.get("Status") or "").upper() not in {"", "ACTIVE"}:
         return False
-
-    if PRIMARY_BANK_ACCOUNT_NUMBER:
-        return str(account.get("BankAccountNumber") or "").strip() == PRIMARY_BANK_ACCOUNT_NUMBER
-    if PRIMARY_BANK_ACCOUNT_CODE:
-        return str(account.get("Code") or "").strip() == PRIMARY_BANK_ACCOUNT_CODE
-    if PRIMARY_BANK_ACCOUNT_NAME:
-        return str(account.get("Name") or "").strip().lower() == PRIMARY_BANK_ACCOUNT_NAME
     return True
-
-
-def _filter_bank_rows_for_selected_account(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return df
-    out = df.copy()
-    if PRIMARY_BANK_ACCOUNT_CODE and "ACCOUNT_CODE" in out.columns:
-        out = out.loc[out["ACCOUNT_CODE"].fillna("").astype(str).str.strip() == PRIMARY_BANK_ACCOUNT_CODE]
-    elif PRIMARY_BANK_ACCOUNT_NAME and "ACCOUNT_NAME" in out.columns:
-        out = out.loc[out["ACCOUNT_NAME"].fillna("").astype(str).str.strip().str.lower() == PRIMARY_BANK_ACCOUNT_NAME]
-    return out
 
 
 def _load_live_bank_balance_xero() -> tuple[float | None, str | None]:
     """Return live bank balance from Xero Accounts plus an optional diagnostic.
 
-    If XERO_PRIMARY_BANK_ACCOUNT_NUMBER, XERO_PRIMARY_BANK_ACCOUNT_CODE,
-    or XERO_PRIMARY_BANK_ACCOUNT_NAME is set,
-    only that bank account is used. Otherwise all active bank accounts are summed.
+    All active BANK accounts are summed.
     """
     try:
         accounts = _xero_collection("Accounts", "Accounts")
@@ -1374,18 +1351,12 @@ def _fetch_balance_sheet(as_of_date: datetime) -> dict | None:
                 name = (cells[0].get("Value") or "").strip()
                 amount = _parse_signed(cells[1])  # preserve sign: negative = overdrawn
                 if name:
-                    # Filter to primary bank account if configured
-                    name_matches = (not PRIMARY_BANK_ACCOUNT_NAME) or name.lower() == PRIMARY_BANK_ACCOUNT_NAME
-                    if name_matches:
-                        bank_accounts.append({"name": name, "amount": amount})
+                    bank_accounts.append({"name": name, "amount": amount})
             elif rt == "SummaryRow" and len(cells) >= 2:
                 bank_total = _parse_signed(cells[1])
         break
 
-    # If filtered to a specific account, use its balance; otherwise use Total Bank
-    if bank_accounts and PRIMARY_BANK_ACCOUNT_NAME:
-        bs_bank_total = sum(a["amount"] for a in bank_accounts)
-    elif bank_total is not None:
+    if bank_total is not None:
         bs_bank_total = bank_total
     else:
         bs_bank_total = sum(a["amount"] for a in bank_accounts) if bank_accounts else None
@@ -2192,17 +2163,14 @@ def build_overview_payload(
         (actuals_fy["ACCOUNT_TYPE"] == "BANK")
         & (actuals_fy["JOURNAL_DATE"] < next_month)
     ].copy()
-    bank_rows = _filter_bank_rows_for_selected_account(bank_rows)
     bank_rows_all = actuals[
         (actuals["ACCOUNT_TYPE"] == "BANK")
         & (actuals["JOURNAL_DATE"] < next_month)
     ].copy()
-    bank_rows_all = _filter_bank_rows_for_selected_account(bank_rows_all)
     bank_rows_before_current = actuals[
         (actuals["ACCOUNT_TYPE"] == "BANK")
         & (actuals["JOURNAL_DATE"] < current_month)
     ].copy()
-    bank_rows_before_current = _filter_bank_rows_for_selected_account(bank_rows_before_current)
     bank_burn_series: list[float] = []
     bank_monthly_net: list[float | None] = []
     cashflow_cash_in: list[float] = []

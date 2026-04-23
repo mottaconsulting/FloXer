@@ -1,9 +1,0 @@
-{
-  "access_token": "<xero_access_token_jwt>",
-  "expires_in": 1800,
-  "token_type": "Bearer",
-  "refresh_token": "<xero_refresh_token>",
-  "scope": "accounting.contacts accounting.settings accounting.journals.read accounting.transactions offline_access",
-  "expires_at": 0,
-  "tenant_id": "<xero_tenant_uuid>"
-}

@@ -65,7 +65,7 @@ Important current scope decision:
 ## Project Structure
 
 ```text
-MMXeroAPI/
+FloXerAPP/
   backend/
     app.py
     requirements.txt
@@ -99,7 +99,7 @@ MMXeroAPI/
 
 ```bash
 git clone <repo-url>
-cd MMXeroAPI
+cd FloXerAPP
 ```
 
 ### 2. Create a virtual environment

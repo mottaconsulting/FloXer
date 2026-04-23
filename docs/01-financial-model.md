@@ -36,7 +36,7 @@ This is gross cash only. It does not subtract commitments.
 
 Tax already committed from current cash.
 
-This represents tax obligations that are due this month or overdue. In the current product scope, this is the only amount removed immediately from available cash.
+This represents tax obligations (PAYG, GST and Super) that are due this month or overdue. In the current product scope, this is the only amount removed immediately from available cash. 
 
 ### Starting Point
 
@@ -46,7 +46,7 @@ The amount of cash available after removing tax already committed this month.
 Starting Point = Bank Balance - Tax committed this month
 ```
 
-This is the number that should be used as the opening point for forward-looking cash analysis.
+This is the number that should be used as the opening point for forward-looking cash analysis. Thinking about a better name might be a good idea. 
 
 ### Future Tax Obligations
 

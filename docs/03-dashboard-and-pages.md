@@ -72,15 +72,75 @@ The card should preserve its current footprint and visual hierarchy. Extra expla
 
 ### Charts
 
-The dashboard charts provide supporting context, not the primary decision logic.
+The dashboard shows two charts side by side. Both span the full selected financial year (one bar or data point per month) and split at the current month — past months show actual Xero data, future months show projections from budget and tax schedules.
 
-They should help explain:
+A dashed vertical line with a "Forecast" label marks the boundary between actual and projected data on both charts.
 
-- actual vs projected performance
-- future operating outlook
-- cash direction
+---
 
-Chart titles and tooltips should use cash language where appropriate and stay consistent with the dashboard model.
+#### Cash Outlook (bar chart)
+
+**What it shows:** cumulative net cash position, built up month by month across the financial year.
+
+**How it is calculated:**
+
+Each bar represents the running total of:
+
+```text
+Revenue − Expenses − Tax obligations
+```
+
+accumulated from the start of the financial year through that month. It is not a bank balance — it is the net operating surplus or deficit built up over the year.
+
+**Colour coding:**
+
+| Bar colour | Meaning |
+|---|---|
+| Solid blue | Positive cumulative cash, actual months |
+| Solid pink | Negative cumulative cash, actual months |
+| Light blue | Positive cumulative cash, projected months |
+| Light pink | Negative cumulative cash, projected months |
+
+Projected bars (future months) use reduced opacity to signal they are estimates.
+
+**Key reading:** when bars turn pink, the business has consumed more cash than it has generated from that point in the year. A bar crossing zero into negative territory is a visual warning consistent with the Out of Cash card.
+
+**Tax obligations:** future months include scheduled tax payments (GST, PAYG, Super) added to projected expenses. This is what makes the projected expense line in the companion chart steeper than the raw budget line.
+
+---
+
+#### Revenue & Expenses (line chart)
+
+**What it shows:** monthly revenue and expenses as separate lines, with actual and projected series split at the current month.
+
+**Four series:**
+
+| Series | Style | Meaning |
+|---|---|---|
+| Revenue | Solid blue line | Actual revenue from Xero journals |
+| Revenue Projection | Dashed blue line | Projected revenue from budget |
+| Expenses | Solid pink line | Actual expenses from Xero journals |
+| Expenses + Tax Projection | Dashed pink line | Projected expenses including future tax obligations |
+
+Actual and projected series connect at the current month so the chart reads as a continuous line.
+
+**Tooltip behaviour:** hovering over a month shows values for all four series. For projected months that include tax obligations, the tooltip footer adds a line:
+
+```text
+Includes future tax obligations: $X,XXX
+```
+
+This lets users see exactly how much of the projected expense line is tax versus operating costs.
+
+**Legend:** the panel shows a Revenue (blue) and Expenses (pink) legend dot — these refer to the actual series. The projected series use the same colours at reduced opacity.
+
+---
+
+#### What these charts are not
+
+- They do not replace the Out of Cash card — the card is the primary cash risk indicator
+- The Cash Outlook chart is not a cash flow statement — it does not include accounts payable, capital items, or opening bank balance
+- The Revenue & Expenses chart does not show profit margin — use the Profit YTD card for that
 
 ## Cash Timeline Page
 

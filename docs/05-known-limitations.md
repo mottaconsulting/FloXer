@@ -91,6 +91,32 @@ The main areas most likely to drift are:
 - projection field names
 - page terminology
 
+## 10. Security Hardening Required Before Wider Use
+
+The current login and session setup was intentionally kept simple to speed up development.
+
+Specific issues that need to be addressed:
+
+- **Persistent test account**: there is a long-lived test account in use that has not been rotated. Before the app is shared with real users, this account should be removed or replaced with a properly scoped credential.
+- **Supabase signup errors**: new user signup through the app currently triggers intermittent errors from Supabase. The root cause has not been fully investigated. This needs to be diagnosed and resolved before onboarding real users — a broken signup flow is a hard blocker for any public launch.
+- **Session lifetime**: the current session is set to 8 hours. This was chosen for development convenience and may need tightening for a production environment depending on the risk profile of the users.
+
+None of these are complex to fix, but they need deliberate attention before the app handles real business data.
+
+## 11. Committed Tax Calculation Needs Review
+
+The current logic for "tax committed this month" (the amount subtracted from bank balance to produce Starting Point) has two unresolved questions:
+
+**Source data reliability:**
+The committed tax amounts are derived from Xero balance sheet liability accounts (GST, PAYG, Super). The accuracy of these numbers depends on how well the Xero file is set up and reconciled. If tax accounts are not updated consistently — or if the account codes do not match the patterns the app looks for — the committed amount can be wrong without any visible error.
+
+**Frequency and due date logic:**
+The app auto-detects whether GST and PAYG are lodged monthly or quarterly by looking at transaction history. This detection can be wrong for new Xero files, recently changed lodgement frequencies, or files with sparse history. When detection is wrong, the due dates shift and the committed vs future split changes, which flows through to Starting Point and the full cash projection.
+
+The right long-term fix is to make it clearer where committed tax comes from and to give the user a way to verify or override the detected frequency — similar to how bank balance can be overridden today.
+
+Until this is resolved, treat committed tax figures as estimates. Use `/api/debug/balance-sheet` to inspect what the app is reading from Xero, and check detected frequencies via `/api/debug/config`.
+
 ## 9. Some Complexity Is Product Complexity, Not Just Code Complexity
 
 Cash forecasting is inherently a layered problem:
