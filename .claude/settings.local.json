@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(git -C /c/Users/loren/Documents/GitHub/MMXeroAPI rm --cached .env .env.local)",
-      "Bash(git -C:*)"
-    ]
-  }
-}
