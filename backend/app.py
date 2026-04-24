@@ -2794,7 +2794,6 @@ def auth_logout():
         with _supabase_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM xero_tokens WHERE user_id = %s", (user_id,))
-                cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
             conn.commit()
     return jsonify({"ok": True, "session_cleared": True, "tokens_deleted": bool(clear_tokens and user_id)})
 
