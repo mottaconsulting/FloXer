@@ -988,11 +988,13 @@ def _is_trade_creditor(account_name: str) -> bool:
 
 
 def _is_bookkeeping_artefact(account_name: str) -> bool:
-    """Return True for Xero accounts that are bookkeeping artefacts, not real cash liabilities.
+    """Return True for Xero accounts that are bookkeeping artefacts or equity movements,
+    not real cash liabilities owed to third parties.
 
-    These accounts exist in virtually every Xero file but represent opening-balance
-    adjustments, rounding differences, or conversion entries — not money owed to anyone.
-    Including them in 'committed cash' produces misleading numbers.
+    Covers:
+    - Opening balance / conversion / rounding entries (present in almost every Xero file)
+    - Owner drawings, funds introduced, shareholder / director loan accounts
+      (equity movements — not obligations to third parties)
     """
     name = str(account_name or "").lower()
     artefact_patterns = [
@@ -1002,6 +1004,17 @@ def _is_bookkeeping_artefact(account_name: str) -> bool:
         "rounding",
         "suspense",
         "clearing",
+        # Equity / owner accounts — discretionary, not third-party obligations
+        "drawings",
+        "funds introduced",
+        "shareholder loan",
+        "shareholder account",
+        "director loan",
+        "director account",
+        "owner account",
+        "owner equity",
+        "retained earnings",
+        "share capital",
     ]
     return any(p in name for p in artefact_patterns)
 
