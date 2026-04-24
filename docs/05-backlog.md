@@ -55,11 +55,19 @@ If Xero is not fully reconciled, bank balance and tax balances may be misleading
 - Long-term fix: let users verify or override detected frequency (similar to bank balance override)
 - Workaround: use `/api/debug/balance-sheet` and `/api/debug/config` to inspect
 
-**12. Future Obligations Calculation Needs Review**
-- Need to verify how future tax and other obligations are calculated in the cash projection
-- Specifically: confirm whether obligations already paid in the current period are correctly subtracted before projecting forward
-- Risk: if paid obligations are not excluded, the projection will double-count them, making the cash position look worse than it is
-- Check `/api/dashboard/liabilities` and `/api/dashboard/forecast` payloads against actual Xero payment history to validate
+✅ **12. ATO Due Dates Wrong (BAS Agent calendar)**
+Code was using self-lodger dates (1 month after quarter end). Fixed to use 26th of the month 2 months after quarter end, matching BAS Agent extended lodgement:
+- Q1 Jul–Sep → 26 Nov
+- Q2 Oct–Dec → 26 Feb
+- Q3 Jan–Mar → 26 May
+- Q4 Apr–Jun → 26 Aug
+Applies to GST (quarterly), PAYG (quarterly), and Super.
+
+✅ **13. Paid obligations are correctly subtracted**
+Verified: `build_liabilities_payload()` uses net journal position (accruals negative, payments positive). Fully paid items are filtered out. No bug here.
+
+**14. Cash Outlook chart — expense data needs investigation**
+The chart formula correctly computes cumulative (revenue − expenses − obligations). However the chart may appear to show only revenue if Xero journal account types don't map to the expected strings (`EXPENSE`, `OVERHEADS`, `DIRECTCOSTS`, `DEPRECIATION`). Use `/api/debug/balance-sheet` to inspect what account types are present in the journal data and verify expenses are non-zero in the backend response at `data.charts.expenses_fy.actual_monthly`.
 
 ---
 

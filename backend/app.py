@@ -1103,21 +1103,17 @@ def _ato_quarter_end(dt: datetime) -> datetime:
 
 
 def _ato_bas_due(quarter_end: datetime) -> datetime:
-    """Fixed ATO due date for BAS (GST / PAYG quarterly) from the quarter end date."""
-    qm, qy = quarter_end.month, quarter_end.year
-    if qm == 9:  return datetime(qy,     10, 28)   # Q1 Jul-Sep  → 28 Oct
-    if qm == 12: return datetime(qy + 1,  2, 28)   # Q2 Oct-Dec  → 28 Feb
-    if qm == 3:  return datetime(qy,      4, 28)   # Q3 Jan-Mar  → 28 Apr
-    return           datetime(qy,          7, 28)   # Q4 Apr-Jun  → 28 Jul
+    """ATO BAS due date (GST / PAYG quarterly): 26th of the month 2 months after quarter end.
+    Matches BAS Agent extended lodgement calendar (Jan-Mar → 26 May, etc.)."""
+    next2 = pd.Timestamp(quarter_end) + pd.DateOffset(months=2)
+    return datetime(next2.year, next2.month, 26)
 
 
 def _ato_super_due(quarter_end: datetime) -> datetime:
-    """Fixed ATO due date for Super Guarantee from the quarter end date."""
-    qm, qy = quarter_end.month, quarter_end.year
-    if qm == 9:  return datetime(qy,     10, 28)   # Q1 → 28 Oct
-    if qm == 12: return datetime(qy + 1,  1, 28)   # Q2 → 28 Jan
-    if qm == 3:  return datetime(qy,      4, 28)   # Q3 → 28 Apr
-    return           datetime(qy,          7, 28)   # Q4 → 28 Jul
+    """ATO Super Guarantee due date: 26th of the month 2 months after quarter end.
+    Matches BAS Agent extended lodgement calendar (Jan-Mar → 26 May, etc.)."""
+    next2 = pd.Timestamp(quarter_end) + pd.DateOffset(months=2)
+    return datetime(next2.year, next2.month, 26)
 
 
 def _expected_due_date(
