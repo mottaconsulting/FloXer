@@ -133,12 +133,10 @@ function renderOverviewCharts(data) {
     const expenseSeries = splitActualProjectedSeries(data, expenses.labels, expenses.actual_monthly || [], expenses.projected_monthly || []);
     const cutoffIdx = revenueSeries.cutoffIdx;
     const expCombinedAdj = addLiabsToProjected(expenseSeries.combined, expenses.labels, cutoffIdx);
-    let runningTotal = 0;
     const runningNet = revenueSeries.combined.map((rev, idx) => {
       const exp = expCombinedAdj[idx];
       if (rev === null || exp === null) return null;
-      runningTotal += Number(rev || 0) - Number(exp || 0);
-      return runningTotal;
+      return Number(rev || 0) - Number(exp || 0);
     });
 
     XeroCharts.renderChart("dashboardCashflow", "dashboardCashflowChart", "bar", {
