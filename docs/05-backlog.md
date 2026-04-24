@@ -55,6 +55,12 @@ If Xero is not fully reconciled, bank balance and tax balances may be misleading
 - Long-term fix: let users verify or override detected frequency (similar to bank balance override)
 - Workaround: use `/api/debug/balance-sheet` and `/api/debug/config` to inspect
 
+**12. Future Obligations Calculation Needs Review**
+- Need to verify how future tax and other obligations are calculated in the cash projection
+- Specifically: confirm whether obligations already paid in the current period are correctly subtracted before projecting forward
+- Risk: if paid obligations are not excluded, the projection will double-count them, making the cash position look worse than it is
+- Check `/api/dashboard/liabilities` and `/api/dashboard/forecast` payloads against actual Xero payment history to validate
+
 ---
 
 ## Architecture
